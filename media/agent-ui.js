@@ -138,13 +138,14 @@ function renderState(value) {
   $('workspace').querySelector('span').textContent = state.workspace;
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
   $('connectionLabel').textContent = state.connection?.ready ? '已連線' : '連線 NTPU AI';
-  $('logout').hidden = !state.connection?.ready;
+  $('connectionActions').hidden = !!state.connection?.ready;
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
   $('stop').hidden = !state.busy; $('send').title = state.busy ? '排入佇列' : '送出'; $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
   $('sendHint').textContent = state.busy ? '排入佇列' : '⌘ ↵';
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
+  if (!$('drawer').hidden && tab === 'tools') renderDrawer();
   $('skillsCount').textContent = state.options.skills?.length ? state.options.skills.length : '';
   $('new').disabled = state.busy || !!approval;
   $('permission').title = { ask: '專案讀取與基本唯讀指令自動；修改、其他指令及外部工具先確認。', assisted: '工作區修改及公開搜尋自動；只有已辨識的唯讀指令自動執行。', full: '工具自動執行。終端機與 MCP 使用你的使用者權限；檔案工具維持工作區範圍。' }[state.options.permission];
@@ -180,7 +181,7 @@ function renderApproval(value) {
 
 function openDrawer(nextTab) { tab = nextTab; $('drawer').hidden = false; renderDrawer(); }
 function renderDrawer() {
-  $('drawerTitle').textContent = { sessions: '工作階段', skills: 'Skills', tools: '工具與 MCP' }[tab];
+  $('drawerTitle').textContent = { sessions: '工作階段', skills: 'Skills', tools: '工具與設定' }[tab];
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === tab));
   const content = $('drawerContent'); content.replaceChildren();
   if (tab === 'sessions') {
@@ -203,6 +204,15 @@ function renderDrawer() {
     if (capabilities.skillErrors?.length) content.append(element('p', 'warning-text', capabilities.skillErrors.join('\n')));
     content.append(element('p', 'panel-footnote', '支援 .agents/skills、.opencode/skills、.claude/skills，以及 ~/.ntpu-ai-coder/skills。'));
   } else {
+    const account = element('section', 'account-card');
+    const accountHeader = element('div', 'account-heading');
+    accountHeader.append(element('strong', '', 'NTPU AI 帳號'), element('span', 'badge' + (state.connection?.ready ? ' connected' : ''), state.connection?.ready ? '已登入' : '未登入'));
+    account.append(accountHeader, element('p', 'panel-description', state.connection?.message || '登入後即可使用 NTPU AI 模型。'));
+    account.append(button(state.connection?.ready ? '登出' : '登入 NTPU AI', state.connection?.ready ? 'secondary-button account-logout' : 'secondary-button', () => {
+      send(state.connection?.ready ? 'logout' : 'login');
+    }, state.connection?.ready ? 'close' : 'connect'));
+    account.lastChild.disabled = state.busy;
+    content.append(account);
     content.append(element('h3', '', '終端機核准規則'), element('p', 'panel-description', '基本唯讀指令可自動執行。可在使用者設定加入指令開頭或正規表示式；false 規則優先要求核准。'), button('設定指令自動核准', 'secondary-button full-width', () => send('terminalSettings'), 'terminal'));
     content.append(element('h3', '', '外部能力'));
     content.append(element('p', 'panel-description', '搜尋、網頁讀取與擴充工具由本地 agent 執行。NTPU AI 負責理解需求和決定下一步。'));
@@ -252,7 +262,6 @@ $('closeDrawer').addEventListener('click', () => { $('drawer').hidden = true; })
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { tab = item.dataset.tab; renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
-$('logout').addEventListener('click', () => send('logout'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });
 $('approve').addEventListener('click', () => { if (!approval) return; $('approve').disabled = true; $('deny').disabled = true;
   if (approval.type === 'question') { const answer = $('questionAnswer').value.trim(); if (!answer) { $('approve').disabled = false; $('deny').disabled = false; $('questionAnswer').focus(); return; } send('answer', { id: approval.id, answer }); }

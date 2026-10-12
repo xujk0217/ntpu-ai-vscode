@@ -62,7 +62,7 @@ code --install-extension ntpu-ai-coder-darwin-arm64-0.3.2.vsix --force
 
 登入保留在專用 Chrome profile（預設 `~/.ntpu-ai-coder/browser-profile`），後續可沿用，不必每次登入。這不是 VS Code 帳號登入，也不與日常 Chrome 自動共享 Cookie。工作階段過期時需在專用 Chrome 重新登入。機器人辨識由使用者完成。
 
-登入後，側欄連線狀態旁會出現 **登出**。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
+未登入時，主介面會顯示 **連線 NTPU AI**。登入後，主介面會收起連線狀態；到右上角 **設定 → 工具／設定** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
 
 專用 Chrome 需保持開啟；同一個 profile 不可同時供兩個擴充功能視窗或 smoke 程式使用。
 
