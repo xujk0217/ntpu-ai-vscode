@@ -17,6 +17,17 @@ test('agent sends actual denied results back and never invents completed edits',
   assert.deepEqual(finals, ['修改未被批准，沒有建立檔案。']);
 });
 
+test('agent reuses one NTPU conversation for all rounds of a VS Code task', async () => {
+  const conversations = [];
+  const replies = [JSON.stringify({ kind: 'tool', name: 'read_file', args: { path: 'README.md' } }),
+    JSON.stringify({ kind: 'final', message: '已檢查。' })];
+  await runAgent({ bridge: { chat: async (prompt, options) => {
+    conversations.push(options.newConversation); return { text: replies.shift() };
+  } }, tools: { execute: async () => ({ ok: true, content: 'test' }) }, request: '檢查 README',
+  signal: new AbortController().signal });
+  assert.deepEqual(conversations, [true, false]);
+});
+
 test('unstructured prose never executes tools and canceled requests never start a model call', async () => {
   let executed = false;
   const result = await runAgent({ bridge: { chat: async () => ({ text: '```js\nconsole.log(1)\n```' }) },

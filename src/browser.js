@@ -177,8 +177,10 @@ class BrowserBridge {
       const button = document.getElementById('sendBtn');
       return button && !button.classList.contains('stop');
     }, null, { timeout: 10000 });
-    const newChat = this.page.locator('#newChatBtn');
-    await newChat.click({ timeout: 10000 });
+    if (options.newConversation !== false) {
+      const newChat = this.page.locator('#newChatBtn');
+      await newChat.click({ timeout: 10000 });
+    }
     for (const action of ['clear-attach', 'clear-quote']) {
       const clear = this.page.locator(`[data-action="${action}"]`);
       if (await clear.count()) await clear.first().click({ timeout: 5000 });

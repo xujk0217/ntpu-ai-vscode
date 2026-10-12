@@ -19,7 +19,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     onBudget({ used: prompt.length, total: budget });
     let rawReply = '';
     const response = await bridge.chat(prompt, {
-      signal, timeoutMs, onJudge, attachment: step === 0 ? attachment : undefined,
+      signal, timeoutMs, onJudge, newConversation: step === 0, attachment: step === 0 ? attachment : undefined,
       onUpload: name => onActivity('正在上傳附件 ' + name),
       onToken: token => {
         rawReply += token;
