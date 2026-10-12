@@ -111,6 +111,17 @@ class AgentApp {
     await this.getBridge().open(); await this.checkConnection();
     this.progress = '就緒'; this.state();
   }
+  async logout() {
+    if (this.busy()) return;
+    const choice = await vscode.window.showWarningMessage(
+      '登出 NTPU AI？這會清除專用瀏覽器中 NTPU／北大網域的登入 Cookie 與網站資料。其他網站的資料不會變更。',
+      { modal: true }, '登出');
+    if (choice !== '登出') return;
+    await this.getBridge().logout();
+    this.connection = { ready: false, message: '已登出 NTPU AI' };
+    this.post({ kind: 'connection', connection: this.connection });
+    this.state();
+  }
   async checkConnection() {
     this.connection = await this.getBridge().status(); this.state(); return this.connection;
   }
@@ -135,6 +146,7 @@ class AgentApp {
     switch (message.kind) {
       case 'ready': await this.ready; this.render(); break;
       case 'login': await this.login(); break;
+      case 'logout': await this.logout(); break;
       case 'status': await this.checkConnection(); break;
       case 'ask': if (typeof message.text === 'string') await this.ask(message.text, message.includeEditor !== false); break;
       case 'stop': this.stop(); break;

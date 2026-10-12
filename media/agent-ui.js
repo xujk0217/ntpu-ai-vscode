@@ -138,6 +138,7 @@ function renderState(value) {
   $('workspace').querySelector('span').textContent = state.workspace;
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
   $('connectionLabel').textContent = state.connection?.ready ? '已連線' : '連線 NTPU AI';
+  $('logout').hidden = !state.connection?.ready;
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
@@ -251,6 +252,7 @@ $('closeDrawer').addEventListener('click', () => { $('drawer').hidden = true; })
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { tab = item.dataset.tab; renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
+$('logout').addEventListener('click', () => send('logout'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });
 $('approve').addEventListener('click', () => { if (!approval) return; $('approve').disabled = true; $('deny').disabled = true;
   if (approval.type === 'question') { const answer = $('questionAnswer').value.trim(); if (!answer) { $('approve').disabled = false; $('deny').disabled = false; $('questionAnswer').focus(); return; } send('answer', { id: approval.id, answer }); }

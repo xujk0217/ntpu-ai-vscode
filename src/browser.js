@@ -157,6 +157,16 @@ class BrowserBridge {
     }).catch(() => ({ ready: false, message: '登入頁面正在切換，請稍候再檢查。' }));
   }
 
+  async logout() {
+    if (this.pending) throw new Error('請先停止目前執行中的任務，再登出 NTPU AI。');
+    if (!this.context || !this.page || this.page.isClosed()) await this.open();
+    await this.context.clearCookies({ domain: /(^|\.)ntpu\.edu\.tw$/ });
+    if (!this.page.url().startsWith(ORIGIN + '/'))
+      await this.page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await this.page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); }).catch(() => {});
+    await this.page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  }
+
   async chat(prompt, options = {}) {
     if (this.pending) throw new Error('已有一個 NTPU AI 請求執行中。');
     if (!this.page || this.page.isClosed()) await this.open();

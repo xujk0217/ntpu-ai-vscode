@@ -10,6 +10,7 @@ function activate(context) {
   }));
   command('ntpuAI.open', () => vscode.commands.executeCommand('workbench.view.extension.ntpuAI'));
   command('ntpuAI.login', () => app.login());
+  command('ntpuAI.logout', () => app.logout());
   command('ntpuAI.status', () => app.checkConnection());
   command('ntpuAI.stop', () => app.stop());
   command('ntpuAI.askSelection', async () => {

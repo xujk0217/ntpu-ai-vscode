@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -31,6 +31,10 @@
       {
         "command": "ntpuAI.login",
         "title": "NTPU AI: 開啟登入瀏覽器"
+      },
+      {
+        "command": "ntpuAI.logout",
+        "title": "NTPU AI: 登出並清除本機登入資料"
       },
       {
         "command": "ntpuAI.status",

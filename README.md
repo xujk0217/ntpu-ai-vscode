@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.3.1 · 狀態：實驗版 · 已實際使用的平台：macOS Apple Silicon**
+**版本：0.3.2 · 狀態：實驗版 · 已實際使用的平台：macOS Apple Silicon**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -45,10 +45,10 @@
 
 ### 安裝
 
-從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 下載 `ntpu-ai-coder-darwin-arm64-0.3.1.vsix`，在 VS Code 執行 **Extensions: Install from VSIX**，或：
+從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 下載 `ntpu-ai-coder-darwin-arm64-0.3.2.vsix`，在 VS Code 執行 **Extensions: Install from VSIX**，或：
 
 ```sh
-code --install-extension ntpu-ai-coder-darwin-arm64-0.3.1.vsix --force
+code --install-extension ntpu-ai-coder-darwin-arm64-0.3.2.vsix --force
 ```
 
 已開啟的視窗請執行 **Developer: Reload Window**。
@@ -61,6 +61,8 @@ code --install-extension ntpu-ai-coder-darwin-arm64-0.3.1.vsix --force
 4. 以 Build 模式輸入任務，按送出或 `Cmd+Enter`／`Ctrl+Enter`。
 
 登入保留在專用 Chrome profile（預設 `~/.ntpu-ai-coder/browser-profile`），後續可沿用，不必每次登入。這不是 VS Code 帳號登入，也不與日常 Chrome 自動共享 Cookie。工作階段過期時需在專用 Chrome 重新登入。機器人辨識由使用者完成。
+
+登入後，側欄連線狀態旁會出現 **登出**。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
 
 專用 Chrome 需保持開啟；同一個 profile 不可同時供兩個擴充功能視窗或 smoke 程式使用。
 
