@@ -1,0 +1,172 @@
+{
+  "name": "ntpu-ai-coder",
+  "displayName": "NTPU AI Agent",
+  "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
+  "version": "0.3.1",
+  "publisher": "ntpu-local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "main": "./src/main.js",
+  "activationEvents": [
+    "onView:ntpuAI.chat"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "ntpuAI.open",
+        "title": "NTPU AI: 開啟程式助理"
+      },
+      {
+        "command": "ntpuAI.login",
+        "title": "NTPU AI: 開啟登入瀏覽器"
+      },
+      {
+        "command": "ntpuAI.status",
+        "title": "NTPU AI: 檢查連線"
+      },
+      {
+        "command": "ntpuAI.askSelection",
+        "title": "NTPU AI: 詢問選取的程式碼"
+      },
+      {
+        "command": "ntpuAI.stop",
+        "title": "NTPU AI: 停止"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ntpuAI.askSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@20"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ntpuAI",
+          "title": "NTPU AI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ntpuAI": [
+        {
+          "type": "webview",
+          "id": "ntpuAI.chat",
+          "name": "Agent"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "NTPU AI Coder",
+      "properties": {
+        "ntpuAI.chromePath": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "Chrome 執行檔路徑；留空自動偵測。"
+        },
+        "ntpuAI.browserProfilePath": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "專用瀏覽器設定檔路徑；留空使用 ~/.ntpu-ai-coder/browser-profile。"
+        },
+        "ntpuAI.maxSteps": {
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "每次任務最多工具輪數，預設 50，上限 100；快速／標準／深入最多 12／50／100 輪。"
+        },
+        "ntpuAI.responseTimeoutSeconds": {
+          "type": "integer",
+          "default": 240,
+          "minimum": 30,
+          "maximum": 600,
+          "description": "每次網站回答最長等待秒數。逾時不自動重送。"
+        },
+        "ntpuAI.contextCharacters": {
+          "type": "integer",
+          "default": 64000,
+          "minimum": 16000,
+          "maximum": 100000,
+          "description": "本地保留的對話與工具結果字元預算。"
+        },
+        "ntpuAI.skillDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "description": "額外的使用者 skills 資料夾絕對路徑。"
+        },
+        "ntpuAI.terminal.enableAutoApprove": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "允許基本唯讀指令及自訂規則自動執行。停用後，每個終端機指令都需要核准。"
+        },
+        "ntpuAI.terminal.autoApprove": {
+          "type": "object",
+          "default": {},
+          "scope": "application",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "markdownDescription": "自訂指令開頭或以 / 包住的 ^ 開頭正規表示式。true 自動核准；false 必須核准且優先於完整存取。例：\"npm run build\": true、\"rm\": false。非完整存取模式的複合指令及 shell 展開仍需核准。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "smoke": "node scripts/browser-smoke.js",
+    "package": "npm run build && vsce package --allow-missing-repository --target darwin-arm64",
+    "build": "node scripts/build-ui.js",
+    "mcp:smoke": "node scripts/mcp-smoke.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "diff": "9.0.0",
+    "highlight.js": "11.12.0",
+    "jsonc-parser": "3.3.1",
+    "markdown-it": "15.0.2",
+    "playwright-core": "1.64.0",
+    "saxes": "6.0.0",
+    "sharp": "0.35.5",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.2.2",
+    "esbuild": "0.25.12"
+  },
+  "author": "許君愷",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xujk0217/ntpu-ai-vscode.git"
+  },
+  "homepage": "https://github.com/xujk0217/ntpu-ai-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/xujk0217/ntpu-ai-vscode/issues"
+  }
+}

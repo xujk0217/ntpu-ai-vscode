@@ -1,0 +1,12 @@
+node_modules/
+.local/
+*.vsix
+*.log
+.DS_Store
+media/chat.bundle.js
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+browser-profile/

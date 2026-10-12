@@ -1,0 +1,321 @@
+'use strict';
+
+const vscode = require('vscode');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
+const { PermissionPolicy } = require('./permissions');
+const { DEFINITIONS } = require('./protocol');
+const { fetchPublic, pageText } = require('./network');
+const { imageMime, renderSvg } = require('./visuals');
+const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
+
+class PreviewProvider {
+  constructor() { this.documents = new Map(); }
+  provideTextDocumentContent(uri) { return this.documents.get(uri.toString()) || ''; }
+  put(label, content) {
+    const uri = vscode.Uri.from({ scheme: 'ntpu-ai-preview', path: '/' + label, query: randomUUID() });
+    this.documents.set(uri.toString(), content);
+    return uri;
+  }
+  remove(uri) { this.documents.delete(uri.toString()); }
+}
+
+class WorkspaceTools {
+  constructor(root, previews, signal, onActivity, onApproval, options = {}) {
+    this.root = root;
+    this.previews = previews;
+    this.signal = signal;
+    this.onActivity = onActivity;
+    this.onApproval = onApproval;
+    this.options = options;
+    this.policy = options.policy || new PermissionPolicy();
+    this.skills = options.skills;
+    this.loadedSkills = new Map();
+    for (const name of options.selectedSkills || []) {
+      try { this.loadedSkills.set(name, this.skills.load(name)); } catch {}
+    }
+    this.snapshots = new Map();
+  }
+
+  catalog() {
+    return DEFINITIONS.filter(tool => this.options.web !== false || !['web_search', 'web_fetch'].includes(tool.name))
+      .concat((this.options.mcp?.catalog() || []).filter(tool => this.options.web !== false || tool.server !== 'exa')).slice(0, 40);
+  }
+
+  async authorize(name, args, detail = {}) {
+    const metadata = this.options.mcp?.tools.get(name) || {};
+    const decision = this.policy.decision(name, args, metadata);
+    if (decision === 'deny') return false;
+    if (decision === 'allow') return true;
+    if (!this.onApproval) return false;
+    this.onActivity('等待核准：' + (detail.title || name));
+    const accept = detail.accept || '允許這次操作';
+    const answer = await this.onApproval({ title: detail.title || '確認工具操作 ' + name,
+      detail: detail.detail || JSON.stringify(args, null, 2).slice(0, 4000), accept, tool: name, ...detail }, this.signal);
+    this.checkStopped();
+    if (answer === accept) this.onActivity('正在執行工具');
+    return answer === accept;
+  }
+
+  checkStopped() { if (this.signal.aborted) throw new Error('已停止'); }
+
+  async text(absolute) {
+    const uri = vscode.Uri.file(absolute);
+    const open = vscode.workspace.textDocuments.find(document => document.uri.toString() === uri.toString());
+    if (open) {
+      const content = open.getText();
+      if (Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES) throw new Error('檔案過大，請選取需要的片段。');
+      return content;
+    }
+    return diskText(absolute);
+  }
+
+  async execute(name, args) {
+    this.checkStopped();
+    if (!vscode.workspace.isTrusted) throw new Error('請先信任目前的 VS Code 工作區。');
+    const methods = {
+      list_files: () => this.list(args), read_file: () => this.read(args), search_text: () => this.search(args),
+      write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
+      update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
+      web_search: () => this.webSearch(args), web_fetch: () => this.webFetch(args),
+      inspect_image: () => this.inspect(args), create_visual: () => this.visual(args),
+    };
+    const mcpTool = this.options.mcp?.tools.get(name);
+    if (!methods[name] && !mcpTool) throw new Error('未知工具。');
+    if (this.options.web === false && (['web_search', 'web_fetch'].includes(name) || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用網路搜尋。' };
+    if (this.policy.decision(name, args, mcpTool) === 'deny') return { ok: false, denied: true, error: '目前 agent 模式禁止這個操作。' };
+    try {
+      if (!['write_file', 'edit_file', 'run_command', 'create_visual'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
+      return methods[name] ? await methods[name]() : await this.options.mcp.call(name, args, this.signal);
+    }
+    catch (error) { if (this.signal.aborted) throw error; return { ok: false, error: error.message }; }
+  }
+
+  async files(glob = '**/*', limit = 250) {
+    if (typeof glob !== 'string' || glob.length > 300 || glob.includes('..') || path.isAbsolute(glob)) throw new Error('glob 必須是工作區內的相對樣式。');
+    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(this.root, glob), EXCLUDES, limit, this.signalToken());
+    const allowed = [];
+    for (const uri of uris) {
+      this.checkStopped();
+      const relative = path.relative(this.root.fsPath, uri.fsPath).replaceAll(path.sep, '/');
+      if (isBlocked(relative)) continue;
+      try { await safePath(this.root.fsPath, relative); allowed.push({ uri, relative }); } catch {}
+    }
+    return allowed;
+  }
+
+  signalToken() {
+    const signal = this.signal;
+    return { get isCancellationRequested() { return signal.aborted; }, onCancellationRequested: listener => {
+      signal.addEventListener('abort', listener, { once: true });
+      return { dispose: () => signal.removeEventListener('abort', listener) };
+    } };
+  }
+
+  async list(args) {
+    this.onActivity('列出專案檔案');
+    const files = await this.files(args.glob);
+    return { ok: true, files: files.map(file => file.relative), limit: 250, possibly_truncated: files.length >= 250 };
+  }
+
+  async read(args) {
+    const absolute = await safePath(this.root.fsPath, args.path);
+    this.onActivity('讀取 ' + args.path);
+    const text = await this.text(absolute);
+    const lines = numberedLines(text, args.start_line ?? 1, args.end_line, 18000);
+    const digest = hash(text);
+    let snapshot = this.snapshots.get(absolute);
+    if (!snapshot || snapshot.hash !== digest) snapshot = { hash: digest, ranges: [], totalLines: lines.total_lines };
+    if (lines.end_line >= lines.start_line) snapshot.ranges.push([lines.start_line, lines.end_line]);
+    this.snapshots.set(absolute, snapshot);
+    return { ok: true, path: args.path, ...lines,
+      ...(lines.truncated ? { hint: '內容超過本輪上限，使用行號分段 read_file 取得其餘內容。' } : {}) };
+  }
+
+  async search(args) {
+    if (typeof args.query !== 'string' || !args.query || args.query.length > 200) throw new Error('query 必須是 1–200 字的文字。');
+    this.onActivity('搜尋 ' + args.query);
+    const files = await this.files(args.glob, 120);
+    const matches = [];
+    for (const { uri, relative } of files) {
+      this.checkStopped();
+      let text;
+      try { text = await this.text(uri.fsPath); } catch { continue; }
+      const lines = text.split('\n');
+      for (let index = 0; index < lines.length; index++) {
+        if (lines[index].includes(args.query)) matches.push({ path: relative, line: index + 1, text: lines[index].slice(0, 300) });
+        if (matches.length >= 40) return { ok: true, matches, truncated: true };
+      }
+    }
+    return { ok: true, matches, searched_files: files.length, file_limit: 120 };
+  }
+
+  async write(args, internal = {}) {
+    if (typeof args.content !== 'string' || Buffer.byteLength(args.content, 'utf8') > MAX_FILE_BYTES || args.content.includes('\0')) {
+      throw new Error('content 必須是完整文字檔內容，最多 160 KB。');
+    }
+    const absolute = await safePath(this.root.fsPath, args.path);
+    let before = '', exists = true;
+    try { before = await this.text(absolute); } catch (error) { if (error.code === 'ENOENT') exists = false; else throw error; }
+    if (exists && !this.snapshots.has(absolute)) throw new Error('請先 read_file 讀取這個既有檔案，再提出修改。');
+    if (exists && this.snapshots.get(absolute).hash !== hash(before)) throw new Error('檔案已被其他操作修改，請重新 read_file 後再提出修改。');
+    if (exists && !fullyRead(this.snapshots.get(absolute)) && !internal.partialVerified) throw new Error('尚未讀完這個檔案。請以 read_file 分段讀取其餘行數，或用 edit_file 精確替換已讀取的區段。');
+    if (before === args.content && exists) return { ok: true, path: args.path, changed: false };
+    const decision = this.policy.decision(internal.partialVerified ? 'edit_file' : 'write_file', args) === 'allow' ? '套用並儲存' :
+      await this.review(this.previews.put('before/' + args.path, before), this.previews.put('after/' + args.path, args.content), args.path, internal.partialVerified ? 'edit_file' : 'write_file');
+    this.checkStopped();
+    if (decision !== '套用並儲存') return { ok: false, denied: true, path: args.path, message: '使用者未批准這次修改。' };
+    await safePath(this.root.fsPath, args.path);
+    let current = '', stillExists = true;
+    try { current = await this.text(absolute); } catch (error) { if (error.code === 'ENOENT') stillExists = false; else throw error; }
+    if (exists !== stillExists || hash(current) !== hash(before)) throw new Error('預覽期間檔案已改變，本次修改未套用。請重新讀取。');
+    const uri = vscode.Uri.file(absolute);
+    const edit = new vscode.WorkspaceEdit();
+    if (stillExists) {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      edit.replace(uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), args.content);
+    } else {
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await safePath(this.root.fsPath, args.path);
+      edit.createFile(uri, { overwrite: false });
+      edit.insert(uri, new vscode.Position(0, 0), args.content);
+    }
+    this.checkStopped();
+    if (!(await vscode.workspace.applyEdit(edit))) throw new Error('VS Code 無法套用這次修改。');
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const saved = await doc.save();
+    this.snapshots.delete(absolute);
+    this.options.onChange?.({ id: randomUUID(), path: args.path, before: exists ? before : null,
+      after: doc.getText(), afterHash: hash(doc.getText()), created: !exists, saved, binary: false });
+    this.onActivity((saved ? '已儲存 ' : '已套用但尚未儲存 ') + args.path);
+    return { ok: saved, applied: true, saved, created: !exists, path: args.path,
+      ...(saved ? {} : { error: '修改已套用到編輯器，但儲存失敗；請在編輯器確認。' }) };
+  }
+
+  async review(base, next, relative, tool = 'write_file') {
+    this.onActivity('等待確認修改 ' + relative);
+    await vscode.commands.executeCommand('vscode.diff', base, next, 'NTPU AI 修改：' + relative, { preview: true });
+    const detail = { title: '確認修改 ' + relative, detail: '查看編輯器中的 diff，再決定是否套用並儲存。', accept: '套用並儲存', tool };
+    const decision = this.onApproval ? await this.onApproval(detail, this.signal) :
+      await vscode.window.showInformationMessage(`NTPU AI 提議修改 ${relative}。請查看 diff 後選擇。`, '套用並儲存', '拒絕');
+    // Keep contents as long as their diff remains open; extension lifetime is bounded.
+    return decision;
+  }
+
+  async edit(args) {
+    if (typeof args.old_text !== 'string' || !args.old_text || typeof args.new_text !== 'string') throw new Error('edit_file 需要非空 old_text 與文字 new_text。');
+    const absolute = await safePath(this.root.fsPath, args.path);
+    const before = await this.text(absolute);
+    const snapshot = this.snapshots.get(absolute);
+    if (!snapshot || snapshot.hash !== hash(before)) throw new Error('請先 read_file 取得目前檔案内容。');
+    const first = before.indexOf(args.old_text);
+    if (first < 0 || before.indexOf(args.old_text, first + args.old_text.length) >= 0) throw new Error('old_text 必須恰好匹配一次，請補充上下文。');
+    const start = before.slice(0, first).split('\n').length;
+    const end = start + args.old_text.split('\n').length - 1;
+    for (let line = start; line <= end; line++) if (!snapshot.ranges.some(([a, b]) => line >= a && line <= b)) throw new Error('要替換的區段尚未被讀取，請先 read_file。');
+    return this.write({ path: args.path, content: before.slice(0, first) + args.new_text + before.slice(first + args.old_text.length) }, { partialVerified: true });
+  }
+
+  async plan(args) {
+    if (!Array.isArray(args.steps) || args.steps.length > 15 || args.steps.some(step => typeof step.title !== 'string' || !['pending', 'in_progress', 'completed'].includes(step.status))) throw new Error('plan 需要最多 15 個有效步驟。');
+    const steps = args.steps.map(step => ({ title: step.title.slice(0, 160), status: step.status }));
+    this.options.onPlan?.(steps); return { ok: true, steps };
+  }
+  async question(args) {
+    if (typeof args.question !== 'string' || !args.question.trim()) throw new Error('缺少問題。');
+    this.onActivity('等待你的回答');
+    const answer = await this.onApproval({ type: 'question', title: args.question.slice(0, 500),
+      detail: '選擇一個選項，或輸入自己的回答。', options: Array.isArray(args.options) ? args.options.slice(0, 5).map(String) : [], accept: '送出回覆' }, this.signal);
+    this.checkStopped(); return { ok: !!answer, answer: answer || '', ...(answer ? {} : { denied: true }) };
+  }
+  async skill(args) {
+    const skill = this.skills?.load(args.name);
+    if (!skill) throw new Error('沒有可用的 skills catalog。');
+    this.loadedSkills.set(skill.name, skill); this.options.onSkill?.(skill.name);
+    return { ok: true, name: skill.name, instructions: skill.body };
+  }
+  async webSearch(args) {
+    if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 1000) throw new Error('搜尋 query 需要 1–1000 字。');
+    if (!this.options.mcp) throw new Error('MCP 尚未初始化。');
+    return this.options.mcp.search(args.query, this.signal);
+  }
+  async webFetch(args) {
+    if (typeof args.url !== 'string') throw new Error('需要公開網址。');
+    const page = await fetchPublic(args.url, this.signal);
+    const content = page.mime.includes('html') ? pageText(page.body) : page.body;
+    return { ok: true, url: page.url, content: content.slice(0, 18000), truncated: content.length > 18000 };
+  }
+  async inspect(args) {
+    const absolute = await safePath(this.root.fsPath, args.path);
+    const stat = await fs.stat(absolute);
+    if (stat.size > 8 * 1024 * 1024) throw new Error('圖片工具上限 8 MB。');
+    const buffer = await fs.readFile(absolute);
+    const mimeType = imageMime(buffer);
+    if (!this.options.bridge) throw new Error('圖片分析需要已登入的 NTPU AI 瀏覽器。');
+    const result = await this.options.bridge.chat('請依附上的真實圖片回答：' + String(args.question || '描述圖片內容，指出可觀察到的細節。').slice(0, 2000),
+      { signal: this.signal, attachment: { name: path.basename(absolute), mimeType, buffer }, timeoutMs: 240000 });
+    return { ok: true, path: args.path, analysis: result.text.slice(0, 16000) };
+  }
+  async visual(args) {
+    if (typeof args.path !== 'string' || !args.path.toLowerCase().endsWith('.png')) throw new Error('create_visual 需要 .png 相對路徑。');
+    const absolute = await safePath(this.root.fsPath, args.path);
+    try { await fs.access(absolute); throw new Error('輸出圖片已存在，請選擇新的檔名。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const buffer = await renderSvg(args.svg, args.width || 1024, args.height || 768);
+    const artifact = await this.options.onArtifact?.({ buffer, mimeType: 'image/png', title: args.path, preview: true });
+    if (!(await this.authorize('create_visual', args, { title: '確認產生圖檔 ' + args.path,
+      detail: `PNG · ${buffer.length} bytes\n${args.width || 1024} × ${args.height || 768}`, accept: '儲存圖片', previewUri: artifact?.uri }))) return { ok: false, denied: true };
+    this.checkStopped();
+    await fs.mkdir(path.dirname(absolute), { recursive: true }); await safePath(this.root.fsPath, args.path);
+    await fs.writeFile(absolute, buffer, { flag: 'wx' });
+    this.options.onChange?.({ id: randomUUID(), path: args.path, before: null, after: null, afterHash: hash(buffer), created: true, saved: true, binary: true });
+    return { ok: true, path: args.path, bytes: buffer.length, artifact: artifact?.id };
+  }
+
+  async command(args) {
+    if (typeof args.command !== 'string' || !args.command.trim() || args.command.length > 2000) throw new Error('command 必須是 1–2000 字的完整指令。');
+    const cwd = await safePath(this.root.fsPath, args.cwd || '.');
+    if (!(await fs.stat(cwd)).isDirectory()) throw new Error('cwd 必須是工作區內的資料夾。');
+    this.onActivity('準備執行指令');
+    const approvalInfo = this.policy.commandExplanation(args.command);
+    const detail = { title: '確認執行指令', detail: args.command + `\n\n工作目錄：${cwd}\n${approvalInfo.reason}\n以你的使用者權限執行，最多 60 秒。`, accept: '執行這次指令', tool: 'run_command' };
+    const autoApproved = this.policy.decision('run_command', args) === 'allow';
+    const approved = autoApproved ? '執行這次指令' : this.onApproval ? await this.onApproval(detail, this.signal) :
+      await vscode.window.showWarningMessage('NTPU AI 要執行終端機指令：\n' + args.command,
+        { modal: true, detail: `工作目錄：${cwd}\n以你的使用者權限執行，最多 60 秒。` }, '執行這次指令');
+    this.checkStopped();
+    if (approved !== '執行這次指令') return { ok: false, denied: true, message: '使用者未批准這次指令。' };
+    await safePath(this.root.fsPath, args.cwd || '.');
+    this.onActivity('執行 ' + args.command);
+    return new Promise((resolve, reject) => {
+      const child = spawn(args.command, { shell: true, cwd, windowsHide: true, detached: process.platform !== 'win32' });
+      let output = '', total = 0, timedOut = false, lastOutput = 0;
+      const consume = data => { const text = data.toString(); total += text.length; output = (output + text).slice(-14000);
+        if (Date.now() - lastOutput > 200) { lastOutput = Date.now(); this.options.onCommandOutput?.(output); } };
+      child.stdout.on('data', consume);
+      child.stderr.on('data', consume);
+      const kill = () => {
+        try {
+          if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+          else process.kill(-child.pid, 'SIGTERM');
+        } catch {}
+        const force = setTimeout(() => { try { if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL'); } catch {} }, 1500);
+        force.unref();
+      };
+      const timer = setTimeout(() => { timedOut = true; kill(); }, 60000);
+      this.signal.addEventListener('abort', kill, { once: true });
+      const cleanup = () => { clearTimeout(timer); this.signal.removeEventListener('abort', kill); };
+      child.once('error', error => { cleanup(); reject(error); });
+      child.once('close', (exitCode, signal) => {
+        cleanup();
+        if (this.signal.aborted) return reject(new Error('已停止'));
+        resolve({ ok: exitCode === 0 && !timedOut, exit_code: exitCode, signal, timed_out: timedOut,
+          output, truncated: total > 14000, approval: !autoApproved ? '使用者核准' : this.policy.mode === 'full' && !approvalInfo.explicit ? '完整存取' : approvalInfo.reason, matched_rule: approvalInfo.rule });
+      });
+      if (this.signal.aborted) kill();
+    });
+  }
+}
+
+module.exports = { PreviewProvider, WorkspaceTools };

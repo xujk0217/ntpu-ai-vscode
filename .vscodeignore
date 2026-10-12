@@ -1,0 +1,14 @@
+.local/**
+test/**
+scripts/**
+examples/**
+.vscode/**
+node_modules/@vscode/**
+node_modules/.bin/**
+package-lock.json
+*.vsix
+*.log
+media/chat.js
+media/chat.css
+media/agent-ui.js
+src/extension.js

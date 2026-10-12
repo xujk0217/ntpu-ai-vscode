@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src %CSP% data:; style-src %CSP%; script-src 'nonce-%NONCE%';">
+  <link rel="stylesheet" href="%STYLE%"><title>NTPU AI Agent</title>
+</head>
+<body>
+<svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="m9 3 1 3h4l1-3 3 2-1 3 2 3 3 1v3l-3 1-2 3 1 3-3 1-1-3h-4l-1 3-3-1 1-3-2-3-3-1v-3l3-1 2-3-1-3Z"/><circle cx="12" cy="13" r="3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 6-5 6 5 6m10-12 5 6-5 6m-3-15-4 18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M5 3h9l5 5v13H5Z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 18 5-5 4 4 4-7 5 8"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2a2 2 0 0 1 3 3L6 15"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 6 6 6-6 6m9 0h7"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 4 3 9l5 5M3 9h11a7 7 0 0 1 0 14"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="m16 3 5 5L8 21H3v-5Zm-2 2 5 5"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6"/></symbol>
+  <symbol id="i-connect" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M5 8h14v3a7 7 0 0 1-14 0Zm7 10v4"/></symbol>
+</defs></svg>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">N</span><strong>NTPU <span>Agent</span></strong></div>
+  <div class="top-actions">
+    <button id="history" class="icon-button" title="工作階段" aria-label="工作階段"><svg><use href="#i-clock"/></svg></button>
+    <button id="new" class="icon-button" title="新工作階段" aria-label="新工作階段"><svg><use href="#i-plus"/></svg></button>
+    <button id="settings" class="icon-button" title="工具與設定" aria-label="工具與設定"><svg><use href="#i-gear"/></svg></button>
+  </div>
+</header>
+<div class="session-heading"><button id="rename" class="session-title" title="重新命名工作階段">新工作階段</button><button id="export" class="icon-button" title="匯出對話" aria-label="匯出對話"><svg><use href="#i-export"/></svg></button></div>
+<div class="scope-bar"><button id="workspace" class="scope-button" title="選擇專案"><svg><use href="#i-file"/></svg><span>專案</span></button><button id="connect" class="connection-button" title="登入或檢查連線"><i id="connectionDot"></i><span id="connectionLabel">連線 NTPU AI</span></button></div>
+<main id="messages" class="conversation" aria-live="polite"></main>
+<div id="progress" class="progress" hidden><span class="pulse"></span><span id="progressText">正在處理</span><span id="budgetLabel" class="budget-label"></span></div>
+<details id="plan" class="task-panel" hidden><summary><svg><use href="#i-check"/></svg><span>任務進度</span><span id="planCount"></span></summary><div id="planSteps"></div></details>
+<details id="changes" class="changes-panel" hidden><summary><svg><use href="#i-edit"/></svg><span id="changesTitle">檔案變更</span><span id="changeStats"></span></summary><div id="changeRows"></div></details>
+<section id="approval" class="approval-card" hidden aria-label="操作確認">
+  <div class="approval-heading"><svg><use href="#i-shield"/></svg><strong id="approvalTitle"></strong></div>
+  <pre id="approvalDetail"></pre><img id="approvalImage" hidden alt="產出預覽">
+  <div id="questionOptions"></div><textarea id="questionAnswer" hidden rows="2" placeholder="輸入你的回答" aria-label="回答問題"></textarea>
+  <label id="grantLabel" class="grant-scope" hidden><input type="checkbox" id="grantSession"><span id="grantText">本工作階段允許此工具</span></label>
+  <div class="approval-actions"><button id="deny" class="secondary-button">拒絕</button><button id="approve" class="primary-button">允許這次操作</button></div>
+</section>
+<div id="queue" class="queue" hidden></div>
+<form id="composer" class="composer">
+  <div id="contextChips" class="context-chips"></div>
+  <div id="attachment" class="attachment-card" hidden></div>
+  <textarea id="prompt" rows="3" maxlength="20000" aria-label="提問" placeholder="描述要完成的工作，或輸入 / 選擇模式"></textarea>
+  <div id="slashMenu" class="slash-menu" hidden></div>
+  <div class="composer-actions">
+    <div class="input-actions">
+      <button id="addContext" type="button" class="icon-button" title="加入專案檔案" aria-label="加入專案檔案"><svg><use href="#i-plus"/></svg></button>
+      <button id="attach" type="button" class="icon-button" title="附加圖片或 PDF" aria-label="附加圖片或 PDF"><svg><use href="#i-clip"/></svg></button>
+      <button id="web" type="button" class="icon-button toggle-button" title="網路搜尋：使用外部 MCP" aria-label="網路搜尋"><svg><use href="#i-globe"/></svg></button>
+      <button id="skills" type="button" class="skill-button" title="選擇 skills"><svg><use href="#i-spark"/></svg><span>Skills</span><span id="skillsCount"></span></button>
+    </div>
+    <div class="send-actions"><span id="sendHint" class="send-hint">⌘ ↵</span><button id="stop" type="button" class="icon-button stop-button" aria-label="停止" title="停止並清除佇列" hidden><svg><use href="#i-stop"/></svg></button><button id="send" type="submit" class="send-button" aria-label="送出" title="送出"><svg><use href="#i-arrow"/></svg></button></div>
+  </div>
+  <div class="control-row"><select id="agent" aria-label="Agent 模式" title="Build 可實作；Plan／Review／Research／Ask 為唯讀"><option value="build">Build · 實作</option><option value="plan">Plan · 規劃</option><option value="review">Review · 審查</option><option value="research">Research · 研究</option><option value="ask">Ask · 問答</option></select>
+    <button id="model" type="button" class="model-button" title="NTPU AI 由伺服器自動選擇模型">NTPU AI · 自動</button>
+    <select id="depth" aria-label="分析深度" title="調整 agent 的規劃與驗證策略；NTPU AI 不提供原生 thinking 設定"><option value="quick">快速</option><option value="standard">標準</option><option value="deep">深入</option></select>
+  </div>
+</form>
+<footer class="permissions-footer"><svg><use href="#i-shield"/></svg><select id="permission" aria-label="權限模式"><option value="ask">要求核准</option><option value="assisted">協助核准</option><option value="full">完整存取</option></select><span id="permissionDescription">修改與外部操作先確認</span></footer>
+<aside id="drawer" class="drawer" hidden aria-label="工作階段與工具設定">
+  <div class="drawer-header"><strong id="drawerTitle">工作階段</strong><button id="closeDrawer" class="icon-button" aria-label="關閉面板"><svg><use href="#i-close"/></svg></button></div>
+  <nav class="drawer-tabs"><button data-tab="sessions" class="active">工作階段</button><button data-tab="skills">Skills</button><button data-tab="tools">工具 / MCP</button></nav>
+  <div id="drawerContent" class="drawer-content"></div>
+</aside>
+<script nonce="%NONCE%" src="%SCRIPT%"></script>
+</body></html>
