@@ -6,7 +6,7 @@
 
 **版本：0.3.1 · 狀態：實驗版 · 已實際使用的平台：macOS Apple Silicon**
 
-本專案為非官方整合，由 [許君愷（xujk0217）](https://github.com/xujk0217) 維護。與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
+本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
 ## 目錄
 
