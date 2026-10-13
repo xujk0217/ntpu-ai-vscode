@@ -159,7 +159,7 @@ Agent 執行或等待核准時，聊天管理操作會暫停，避免修改正�
 
 `.env.example`／sample／template 允許讀取，但真實格式的秘密仍會遮蔽。共用 guard 覆蓋 Editor、檔案、搜尋、Terminal、MCP、模型請求、歷史、Project／Task、Checkpoint、diff 與匯出。辨識已知 API key、私鑰、Bearer、JWT、密碼／secret 欄位、資料庫字串、URL 帳密和敏感 query，保留其他程式結構。外部查詢含已知秘密會拒絕，文字結果在送模型及寫入磁碟前遮蔽。
 
-含秘密的既有檔案會拒絕 Agent 改寫；含遮蔽值的舊快照也不允許直接回復，避免把 `[REDACTED]` 覆蓋到憑證。圖片與 PDF 無法用文字 guard 辨識其中的秘密，上傳必須再次確認目的地與內容。使用者附件預覽不保存為 Session 的永久圖片；輸出圖片快取仍是私人本機資料。
+含秘密的既有檔案會拒絕 Agent 改寫；含遮蔽值的舊快照也不允許直接回復，避免把 `[REDACTED]` 覆蓋到憑證。圖片／PDF 會在本機逐格／逐頁 OCR 並檢查 PDF 嵌入文字；檢查失敗或識別到已知秘密即拒絕上傳，仍需人工確認目的地與內容。使用者附件預覽不保存為 Session 的永久圖片；輸出圖片快取仍是私人本機資料。
 
 ## 瀏覽器與平台
 
@@ -194,7 +194,7 @@ Extension 優先在本機 UI Host 執行。Remote SSH／Dev Container／WSL 不�
 
 核准卡支援單次核准，或在此工作階段允許同一工具。資料確認與自訂 MCP 僅授權單次呼叫。重新載入擴充功能恢復「要求核准」。完整存取切換時會說明範圍並確認。
 
-檔案工具限制於選定工作區，檢查符號連結、秘密檔案及修改衝突。Shell 與 stdio MCP 以你的 OS 帳號權限執行，**沒有 OS 隔離沙箱**。
+檔案工具限制於選定工作區，檢查符號連結、秘密檔案及修改衝突。Shell 與 stdio MCP 必須在 OS 沙箱中執行，禁止網路與一般使用者資料存取；隔離不可用即停止。目前 macOS 使用 Seatbelt，Linux 使用 bubblewrap（待桌面驗收），Windows 暫時阻止 Shell／stdio。需要 Node 22.12 以上；完整存取也不會繞過隔離。
 
 ### 自動核准指令
 
@@ -267,7 +267,7 @@ NTPU 模型本身不必具備搜尋工具。地球按鈕啟用本地 `web_search
 ## 圖片與分析深度
 
 - 圖片／PDF 附件透過 NTPU 正常上傳介面送出，模型能力依網站路由決定。
-- `inspect_image` 實際讀取專案圖片並交由 NTPU 分析；支援 PNG、JPEG、WebP、GIF，最大 8 MB。
+- `inspect_image` 實際讀取專案圖片並交由 NTPU 分析；支援 PNG、JPEG、WebP、GIF、PDF，最大 8 MB；傳送前先執行本機附件檢查。
 - `create_visual` 由模型編寫 SVG，在本地轉成 PNG，適合圖解、圖示與簡單插畫。
 - 照片風格或專用影像生成需要自行接上影像 MCP；可顯示、開啟及另存 MCP 回傳的圖片資料。
 
@@ -281,7 +281,7 @@ NTPU 模型本身不必具備搜尋工具。地球按鈕啟用本地 `web_search
 
 每個使用者任務建立一個暫時 NTPU AI 對話，同一任務多輪沿用；後續任務由本機脈絡接續，不依賴前次網站對話。未自行呼叫遠端刪除 API，也不聲稱刪除本機資料能清除校方留存。
 
-限制包括：網站改版、登入過期、限流、模型未遵守 JSON 協定、指令 60 秒限制及工具輪數限制。失敗或逾時不自動重送網站請求。超大 JSON Session 的 snapshot 寫入成本、學校 SSO／驗證網站變動、全部 PDF 模型路由及第三方 MCP 行為未全面驗證。文字秘密偵測是已知格式／上下文規則，無法保證辨識任意私人資訊或圖片憑證。Shell／stdio MCP 具有使用者 OS 權限，可自行讀取檔案或連網；Host guard 不能取代完整 OS sandbox。
+限制包括：網站改版、登入過期、限流、模型未遵守 JSON 協定、指令 60 秒限制及工具輪數限制。失敗或逾時不自動重送網站請求。超大 JSON Session 的 snapshot 寫入成本、學校 SSO／驗證網站變動、全部 PDF 模型路由及第三方 MCP 行為未全面驗證。文字秘密偵測是已知格式／上下文規則，無法保證辨識任意私人資訊或圖片憑證。Shell／stdio MCP 使用必要執行期唯讀目錄與工作區隔離，禁止網路；不能執行需要網路安裝的指令。依賴稽核、OCR 漏辨與未驗證的平台限制見下列文件。
 
 ## 開發與測試
 
@@ -337,3 +337,9 @@ npm run package
 - [VS Code 原始碼](https://github.com/microsoft/vscode)、[Copilot Chat 原始碼](https://github.com/microsoft/vscode-copilot-chat)：工具時間軸與指令核准互動。
 - [OpenCode permissions](https://opencode.ai/docs/permissions/)、[skills](https://opencode.ai/docs/skills/)：模式、權限與技能目錄。
 - [NTPU AI](https://ai.ntpu.edu.tw/)：實際模型服務。
+
+## 側欄小瀏覽器與附件防護
+
+點右下角「瀏覽器」可直接操作專用網站頁面。連線設定可切換背景引擎；收起面板仍保留引擎與登入，關閉引擎則需要重新連線。設定分成連線、工具、安全，進階路徑預設收起。
+
+完整依賴安裝、隔離範圍、OCR 保障及驗收限制見 [側欄瀏覽器與本機執行隔離](docs/BROWSER_SURFACE_AND_SECURITY.md)。

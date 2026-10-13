@@ -19,6 +19,9 @@ const { SkillCatalog } = require('./skills');
 const { McpManager, EXA, BUILTINS, validateServer } = require('./mcp');
 const { imageMime, thumbnail } = require('./visuals');
 const { sanitize, redact, classifyPath, classifyContent } = require('./security/guard');
+const { scanner } = require('./security/attachments');
+const { BrowserPreview } = require('./browser/preview');
+const { SandboxExecutor } = require('./security/sandbox');
 
 class AgentApp {
   constructor(context) {
@@ -35,7 +38,9 @@ class AgentApp {
       this.state();
     });
     this.skills = new SkillCatalog(path.join(context.extensionPath, 'skills'), vscode.workspace.getConfiguration('ntpuAI').get('skillDirectories', []));
-    this.mcp = new McpManager({ secrets: context.secrets, onState: () => this.capabilities(), onContent: content => this.mcpContent(content) });
+    this.browserPreview = new BrowserPreview({ bridge: () => this.getBridge(), busy: () => this.busy(), emit: message => { void this.view?.webview.postMessage(message); } });
+    this.sandbox = new SandboxExecutor();
+    this.mcp = new McpManager({ secrets: context.secrets, sandbox: this.sandbox, workspace: () => this.workspace()?.uri.scheme === 'file' ? this.workspace().uri.fsPath : null, onState: () => this.capabilities(), onContent: content => this.mcpContent(content) });
     this.servers = context.globalState.get('ntpuAI.mcpServers', []);
     this.poller = setInterval(() => { if (this.bridge && !this.bridge.opening) void this.checkConnection().catch(() => {}); }, 4000);
     this.poller.unref();
@@ -68,6 +73,8 @@ class AgentApp {
 
   resolveWebviewView(view) {
     this.view = view;
+    view.onDidChangeVisibility?.(() => { if (!view.visible) this.browserPreview.stop(); });
+    view.onDidDispose?.(() => this.browserPreview.stop());
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media'), this.context.globalStorageUri] };
     const nonce = randomBytes(18).toString('base64');
     view.webview.html = fsSync.readFileSync(path.join(this.context.extensionPath, 'media', 'index.html'), 'utf8')
@@ -129,7 +136,7 @@ class AgentApp {
       const config = vscode.workspace.getConfiguration('ntpuAI');
       this.bridge = new BrowserBridge({ browser: config.get('browser', 'auto') === 'auto' && config.get('chromePath') ? 'custom' : config.get('browser', 'auto'),
         customPath: config.get('customBrowserPath') || config.get('chromePath') || '', profile: config.get('browserProfilePath') || undefined,
-        storageRoot: this.context.globalStorageUri.fsPath, workspaces: vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath) || [],
+        headless: config.get('browserHeadless', false), storageRoot: this.context.globalStorageUri.fsPath, workspaces: vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath) || [],
         remote: this.context.globalStorageUri.scheme === 'vscode-remote' || this.context.extension?.extensionKind === 2 && !!vscode.env?.remoteName });
     }
     return this.bridge;
@@ -142,7 +149,7 @@ class AgentApp {
   }
   async reconnectBrowser(open = true) {
     await this.ready; if (this.busy()) throw new Error('請先停止任務再更換瀏覽器。');
-    await this.save(); await this.bridge?.close(); this.bridge = null;
+    await this.save(); this.browserPreview.stop(); await this.bridge?.close(); this.bridge = null;
     this.connection = { ready: false, message: '瀏覽器設定已更新，請重新連線。' }; this.state(); this.capabilities();
     if (open) await this.login();
   }
@@ -155,6 +162,7 @@ class AgentApp {
       await config.update('browser', message.browser, vscode.ConfigurationTarget.Global);
       await config.update('customBrowserPath', message.customPath, vscode.ConfigurationTarget.Global);
       await config.update('browserProfilePath', message.profileLocation, vscode.ConfigurationTarget.Global);
+      if (typeof message.headless === 'boolean') await config.update('browserHeadless', message.headless, vscode.ConfigurationTarget.Global);
       await config.update('chromePath', '', vscode.ConfigurationTarget.Global);
     } finally { this.browserUpdating = false; }
     await this.reconnectBrowser(true);
@@ -181,7 +189,7 @@ class AgentApp {
   capabilities() {
     const connected = this.mcp.states();
     const config = vscode.workspace.getConfiguration('ntpuAI');
-    this.post({ kind: 'capabilities', browser: { selection: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''),
+    this.post({ kind: 'capabilities', sandbox: this.sandbox.state, browser: { headless: config.get('browserHeadless', false), selection: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''),
       profileLocation: config.get('browserProfilePath', ''), info: this.bridge?.manager.info, host: process.platform + ' ' + process.arch, remoteName: vscode.env?.remoteName || '' }, skills: this.skills.list(), skillErrors: this.skills.errors,
       servers: [...BUILTINS, ...this.servers.filter(server => !BUILTINS.some(item => item.name === server.name))].map(server => ({ name: server.name, label: server.label, type: server.type,
         target: server.url || [server.command, ...(server.args || [])].join(' '), builtin: !!server.builtin,
@@ -221,6 +229,9 @@ class AgentApp {
       case 'openFile': await this.openFile(message.path); break;
       case 'addContext': await this.addContext(); break;
       case 'removeContext': this.contextFiles = this.contextFiles.filter(file => file.relative !== message.path); this.state(); break;
+      case 'browserPreview': if (message.visible) await this.browserPreview.start(); else this.browserPreview.stop(); break;
+      case 'browserInput': try { await this.browserPreview.input(message); } catch { throw new Error('小瀏覽器操作未完成，請確認連線後再試。'); } break;
+      case 'browserExternal': if (this.busy()) throw new Error('請先停止任務再切換瀏覽器視窗。'); if (this.getBridge().options.headless) { this.getBridge().options.headless = false; await this.bridge.close(); } await this.getBridge().open(); await this.bridge.page?.bringToFront(); break;
       case 'attach': await this.attach(); break;
       case 'removeAttachment': this.attachment = null; this.state(); break;
       case 'change': await this.showChange(message.id); break;
@@ -328,8 +339,9 @@ class AgentApp {
       const config = vscode.workspace.getConfiguration('ntpuAI');
       policy.terminal = { enabled: config.get('terminal.enableAutoApprove', true), rules: config.get('terminal.autoApprove', {}) };
       this.activePolicy = policy;
-      const tools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); },
-        (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills,
+      this.configureScanner();
+      const tools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); this.capabilities(); },
+        (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox,
           selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, bridge,
           reviewPaths: config.get('privacy.reviewPaths', []),
           onPlan: steps => { this.session.plan = steps; this.post({ kind: 'plan', steps }); this.persist(); },
@@ -353,7 +365,7 @@ class AgentApp {
       const result = await runAgent({ bridge, tools, request: taskRequest, initialRecords, context, workspace: root.name, signal,
         attachment: item.attachment, profile: this.session.options, maxSteps: Math.min(config.get('maxSteps', 50), depthSteps[this.session.options.depth]),
         budget: config.get('contextCharacters', 64000), timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
-        onActivity: text => { this.progress = text; this.state(); }, onBudget: budget => { this.budget = budget; this.state(); },
+        onActivity: text => { this.progress = text; this.state(); this.capabilities(); }, onBudget: budget => { this.budget = budget; this.state(); },
         onJudge: event => { this.model = event.model || ''; this.state(); },
         onStream: text => { if (!this.streamId) this.streamId = this.add('stream', '').id; this.patch(this.streamId, { text }); },
         onFinal: text => { answer = text; if (this.streamId) { this.patch(this.streamId, { role: 'assistant', text }); this.streamId = null; } else this.add('assistant', text); },
@@ -426,6 +438,7 @@ class AgentApp {
     if (!this.contextFiles.some(file => file.relative === relative)) this.contextFiles.push({ relative });
     this.contextFiles = this.contextFiles.slice(-3); this.state();
   }
+  configureScanner() { const config = vscode.workspace.getConfiguration('ntpuAI'); scanner.options = { ...config.get('attachments.ocr', {}) }; }
   async attach() {
     const files = await vscode.window.showOpenDialog({ canSelectMany: false, title: '附加圖片或 PDF（會隨提問送給 NTPU AI）',
       filters: { '圖片或 PDF': ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'] } });
@@ -434,9 +447,11 @@ class AgentApp {
     await this.approveData(await fs.realpath(file.fsPath), true);
     if (stat.size > 20 * 1024 * 1024) throw new Error('附件上限 20 MB。');
     const buffer = await fs.readFile(file.fsPath);
+    this.configureScanner();
     let mimeType, preview;
     if (buffer.subarray(0, 5).toString() === '%PDF-') mimeType = 'application/pdf';
     else { mimeType = imageMime(buffer); preview = 'data:image/png;base64,' + (await thumbnail(buffer)).toString('base64'); }
+    await scanner.scan(buffer, mimeType);
     this.attachment = { name: path.basename(file.fsPath), mimeType, buffer, preview, approved: true }; this.state();
   }
   async addSkillDirectory() {
@@ -450,7 +465,7 @@ class AgentApp {
   }
   async artifact({ buffer, mimeType, title }) {
     if (buffer.length > 8 * 1024 * 1024) throw new Error('圖片產出超過 8 MB。');
-    const actualMime = imageMime(buffer); const extension = actualMime === 'image/jpeg' ? 'jpg' : actualMime.split('/')[1];
+    const actualMime = imageMime(buffer); this.configureScanner(); await scanner.scan(buffer, actualMime); const extension = actualMime === 'image/jpeg' ? 'jpg' : actualMime.split('/')[1];
     const directory = path.join(this.context.globalStorageUri.fsPath, 'artifacts');
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     const id = randomUUID(), file = path.join(directory, id + '.' + extension);
@@ -569,7 +584,7 @@ class AgentApp {
     const server = BUILTINS.find(server => server.name === name) || this.servers.find(server => server.name === name);
     if (!server) throw new Error('找不到這個 MCP 設定。');
     if (!server.builtin) {
-      const detail = server.type === 'stdio' ? '將以你的使用者權限啟動：\n' + [server.command, ...(server.args || [])].join(' ') : '將連線至：\n' + server.url;
+      const detail = server.type === 'stdio' ? '將在 OS 沙箱中啟動，工作區唯讀、禁止網路；無法啟動時停止：\n' + [server.command, ...(server.args || [])].join(' ') : '將連線至：\n' + server.url;
       const answer = await this.gate.request({ title: '連線 MCP：' + server.name, detail, accept: '連線' }, new AbortController().signal);
       if (answer !== '連線') return;
     }
@@ -630,7 +645,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { await this.ready; this.stop(); clearInterval(this.poller); clearTimeout(this.saveTimer); await this.save(); await this.bridge?.close(); await this.mcp.close(); }
+  async dispose() { await this.ready; this.stop(); this.browserPreview.stop(); clearInterval(this.poller); clearTimeout(this.saveTimer); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

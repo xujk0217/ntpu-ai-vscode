@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
+const { BrowserPreview } = require('../src/browser/preview');
 const { BrowserBridge } = require('../src/browser');
 const { assets, testUI } = require('./ui-fixture');
 
@@ -41,7 +42,7 @@ async function main() {
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
-  const options = { origin, storageRoot: directory, headless: process.env.NTPU_FIXTURE_HEADED !== '1', browser: process.env.NTPU_FIXTURE_BROWSER || 'auto' };
+  const options = { attachmentGuard: async attachment => { if (!attachment.approved) throw new Error("Fixture requires approval"); }, origin, storageRoot: directory, headless: process.env.NTPU_FIXTURE_HEADED !== '1', browser: process.env.NTPU_FIXTURE_BROWSER || 'auto' };
   let bridge = new BrowserBridge(options);
   try {
     await bridge.open(); assert.equal((await bridge.status()).ready, true);
@@ -58,6 +59,13 @@ async function main() {
     const selected = bridge.manager.info.label;
     await bridge.close(); bridge = new BrowserBridge(options); await bridge.open();
     assert.equal(await bridge.page.evaluate(() => document.cookie.includes('fixture_state=synthetic')), true);
+    let frames = 0; const preview = new BrowserPreview({ bridge: () => bridge, emit: message => { if (message.image) frames++; } });
+    try {
+      await preview.start(); const size = bridge.page.viewportSize() || await bridge.page.evaluate(() => ({ width: innerWidth, height: innerHeight })); const bounds = await bridge.page.locator('#input').boundingBox();
+      await preview.input({ action: 'click', x: (bounds.x + bounds.width / 2) / size.width, y: (bounds.y + bounds.height / 2) / size.height });
+      await preview.input({ action: 'text', text: 'PREVIEW_INPUT' });
+      assert.match(await bridge.page.locator('#input').inputValue(), /PREVIEW_INPUT/); assert.ok(frames > 0);
+    } finally { preview.stop(); }
     await testUI(bridge.page, origin);
     console.log('Local mock website passed: ' + selected + '; streaming, task reuse, upload, cancel, persistent profile, memory/settings UI. No NTPU AI requests.');
   } finally {

@@ -27,7 +27,19 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --include=optional
+      - name: Install OCR and Linux isolation dependencies
+        if: runner.os == 'Linux' && matrix.node == '22'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap socat ripgrep tesseract-ocr poppler-utils
+      - name: Install macOS OCR dependencies
+        if: runner.os == 'macOS' && matrix.node == '22'
+        run: brew install tesseract poppler ripgrep
       - run: npm test
+      - name: Native OS sandbox acceptance (Windows pending manual validation)
+        if: runner.os != 'Windows' && matrix.node == '22'
+        run: npm run sandbox:fixture
+      - name: Real local OCR acceptance
+        if: runner.os != 'Windows' && matrix.node == '22'
+        run: npm run ocr:fixture
       - run: npm run build
       - name: Install Chromium for local website fixture (Linux)
         if: runner.os == 'Linux'

@@ -8,11 +8,14 @@ const path = require('node:path');
 const Module = require('node:module');
 const { PermissionPolicy } = require('../src/permissions');
 
+const testSandbox = { prepare: async (root, cwd, command) => ({ executable: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh', args: process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-c', command], cwd, env: process.env, cleanup: async () => {}, info: { backend: 'explicit test adapter' } }) };
 function loadTools(mock) {
   const filename = path.join(__dirname, '..', 'src', 'tools.js');
   const module = new Module(filename); module.filename = filename; module.paths = Module._nodeModulePaths(path.dirname(filename));
   module.require = name => name === 'vscode' ? mock : Module.prototype.require.call(module, name);
-  module._compile(fsSync.readFileSync(filename, 'utf8'), filename); return module.exports;
+  module._compile(fsSync.readFileSync(filename, 'utf8'), filename); const Original = module.exports.WorkspaceTools;
+  module.exports.WorkspaceTools = class extends Original { constructor(...args) { args[5] = { ...args[5], sandbox: testSandbox }; super(...args); } };
+  return module.exports;
 }
 function mockVscode() {
   class Edit {

@@ -11,6 +11,8 @@ const { fetchPublic, pageText } = require('./network');
 const { imageMime, renderSvg } = require('./visuals');
 const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
+const { scanner } = require('./security/attachments');
+const { SandboxExecutor } = require('./security/sandbox');
 
 class PreviewProvider {
   constructor() { this.documents = new Map(); }
@@ -38,6 +40,7 @@ class WorkspaceTools {
       try { this.loadedSkills.set(name, this.skills.load(name)); } catch {}
     }
     this.snapshots = new Map();
+    this.sandbox = options.sandbox || new SandboxExecutor(); this.approvedData = new Set();
   }
 
   catalog() {
@@ -260,9 +263,10 @@ class WorkspaceTools {
     await this.reviewData(args.path, true);
     const absolute = await safePath(this.root.fsPath, args.path);
     const stat = await fs.stat(absolute);
-    if (stat.size > 8 * 1024 * 1024) throw new Error('圖片工具上限 8 MB。');
+    if (stat.size > 8 * 1024 * 1024) throw new Error('圖片／PDF 工具上限 8 MB。');
     const buffer = await fs.readFile(absolute);
-    const mimeType = imageMime(buffer);
+    const mimeType = buffer.subarray(0, 5).toString() === '%PDF-' ? 'application/pdf' : imageMime(buffer);
+    await scanner.scan(buffer, mimeType);
     if (!this.options.bridge) throw new Error('圖片分析需要已登入的 NTPU AI 瀏覽器。');
     const result = await this.options.bridge.chat('請依附上的真實圖片回答：' + String(args.question || '描述圖片內容，指出可觀察到的細節。').slice(0, 2000),
       { signal: this.signal, newConversation: false, attachment: { name: path.basename(absolute), mimeType, buffer, approved: true }, timeoutMs: 240000 });
@@ -290,17 +294,18 @@ class WorkspaceTools {
     if (!(await fs.stat(cwd)).isDirectory()) throw new Error('cwd 必須是工作區內的資料夾。');
     this.onActivity('準備執行指令');
     const approvalInfo = this.policy.commandExplanation(args.command);
-    const detail = { title: '確認執行指令', detail: args.command + `\n\n工作目錄：${cwd}\n${approvalInfo.reason}\n以你的使用者權限執行，最多 60 秒。指令可能讀取工作區外檔案或透過網路傳送資料；此終端機沒有 OS sandbox。`, accept: '執行這次指令', tool: 'run_command' };
+    const detail = { title: '確認執行指令', detail: args.command + `\n\n工作目錄：${cwd}\n${approvalInfo.reason}\nOS 沙箱限制工作區與執行期資料，禁止網路與憑證存取，最多 60 秒；無法啟動隔離時停止執行。`, accept: '執行這次指令', tool: 'run_command' };
     const autoApproved = this.policy.decision('run_command', args) === 'allow';
     const approved = autoApproved ? '執行這次指令' : this.onApproval ? await this.onApproval(detail, this.signal) :
       await vscode.window.showWarningMessage('NTPU AI 要執行終端機指令：\n' + args.command,
-        { modal: true, detail: `工作目錄：${cwd}\n以你的使用者權限執行，最多 60 秒。` }, '執行這次指令');
+        { modal: true, detail: `工作目錄：${cwd}\n在 OS 沙箱執行，禁止網路，最多 60 秒；隔離失敗即停止。` }, '執行這次指令');
     this.checkStopped();
     if (approved !== '執行這次指令') return { ok: false, denied: true, message: '使用者未批准這次指令。' };
     await safePath(this.root.fsPath, args.cwd || '.');
+    const launch = await this.sandbox.prepare(this.root.fsPath, cwd, args.command, this.signal, { reviewPaths: this.options.reviewPaths, approved: this.approvedData, readOnly: this.policy.agent !== 'build' });
     this.onActivity('執行 ' + args.command);
     return new Promise((resolve, reject) => {
-      const child = spawn(args.command, { shell: true, cwd, windowsHide: true, detached: process.platform !== 'win32' });
+      const child = spawn(launch.executable, launch.args, { shell: false, cwd: launch.cwd, env: launch.env, windowsHide: true, detached: process.platform !== 'win32' });
       let output = '', total = 0, timedOut = false, lastOutput = 0;
       const consume = data => { const text = data.toString(); total += text.length; output = (output + text).slice(0, 1024 * 1024);
         if (Date.now() - lastOutput > 200) { lastOutput = Date.now(); const lastLine = output.lastIndexOf('\n'); if (lastLine >= 0) this.options.onCommandOutput?.(redact(output.slice(0, lastLine + 1)).slice(-14000)); } };
@@ -317,12 +322,13 @@ class WorkspaceTools {
       const timer = setTimeout(() => { timedOut = true; kill(); }, 60000);
       this.signal.addEventListener('abort', kill, { once: true });
       const cleanup = () => { clearTimeout(timer); this.signal.removeEventListener('abort', kill); };
-      child.once('error', error => { cleanup(); reject(error); });
-      child.once('close', (exitCode, signal) => {
+      child.once('error', error => { cleanup(); void launch.cleanup(); reject(error); });
+      child.once('close', async (exitCode, signal) => {
         cleanup();
+        await launch.cleanup().catch(() => {});
         if (this.signal.aborted) return reject(new Error('已停止'));
         resolve({ ok: exitCode === 0 && !timedOut, exit_code: exitCode, signal, timed_out: timedOut,
-          output: redact(output).slice(0, 14000), truncated: total > 14000, approval: !autoApproved ? '使用者核准' : this.policy.mode === 'full' && !approvalInfo.explicit ? '完整存取' : approvalInfo.reason, matched_rule: approvalInfo.rule });
+          output: redact(output).slice(0, 14000), truncated: total > 14000, sandbox: launch.info, approval: !autoApproved ? '使用者核准' : this.policy.mode === 'full' && !approvalInfo.explicit ? '完整存取' : approvalInfo.reason, matched_rule: approvalInfo.rule });
       });
       if (this.signal.aborted) kill();
     });
@@ -334,9 +340,10 @@ class WorkspaceTools {
     if (classification.level !== 'review' && !attachment) return;
     const accept = '傳送遮蔽後的資料';
     const result = await this.onApproval?.({ title: '確認資料傳送：' + relative,
-      detail: '資料將交給 NTPU AI。文字憑證會遮蔽；圖片中的憑證無法由文字防護辨識，請先確認圖片內容。', accept }, this.signal);
+      detail: '資料將交給 NTPU AI。文字憑證會遮蔽；圖片／PDF 會先在本機檢查已知秘密，但 OCR 可能漏辨，請確認內容適合傳送。', accept }, this.signal);
     this.checkStopped();
     if (result !== accept) throw new Error('未批准敏感資料傳送。');
+    if (!attachment) this.approvedData.add(relative);
   }
 }
 

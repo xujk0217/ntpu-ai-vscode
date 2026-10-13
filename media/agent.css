@@ -24,3 +24,18 @@
 .account-card{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--raised);margin-bottom:14px}.account-heading{display:flex;align-items:center;gap:7px;font-size:11px}.account-heading strong{font-weight:600}.account-card .panel-description{margin:9px 0 12px;overflow-wrap:anywhere}.account-card .secondary-button{width:100%}.account-card .account-logout{color:var(--vscode-errorForeground,#f48771)}
 .history-more{display:block;width:100%;margin-bottom:12px}.history-search,.browser-path{width:100%;border:1px solid var(--line);border-radius:5px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);padding:7px;margin-bottom:10px}.session-actions{display:flex;gap:14px;padding:0 10px 8px}.privacy-option{display:flex;align-items:center;gap:7px;font-size:11px;margin:10px 0}.memory-card{border:1px solid var(--line);border-radius:7px;padding:10px;margin:8px 0}.memory-card strong{font-size:11px}.memory-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.7}.memory-source{font-size:9px;overflow-wrap:anywhere;color:var(--muted)}.drawer-tabs{gap:10px}.drawer-tabs button{white-space:nowrap}
 .history-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:8px 0 12px;border-bottom:1px solid var(--line);margin-bottom:8px}.history-count{color:var(--muted);font-size:10px}.session-card-header{display:flex;align-items:center;gap:6px}.session-card-header .session-row{flex:1;min-width:0}.session-row strong{overflow-wrap:anywhere}.session-select{flex:none}.session-menu{position:relative;flex:none}.session-menu>summary{list-style:none;cursor:pointer;padding:6px 8px;border-radius:4px;font-size:18px;color:var(--muted)}.session-menu>summary::-webkit-details-marker{display:none}.session-menu>summary:hover,.session-menu[open]>summary{background:var(--raised);color:var(--vscode-foreground)}.session-menu-actions{position:absolute;right:0;top:100%;z-index:12;min-width:140px;display:flex;flex-direction:column;align-items:stretch;background:var(--raised);border:1px solid var(--line);border-radius:6px;padding:5px;box-shadow:0 5px 15px #0004}.session-menu-actions button{text-align:left;padding:7px 9px}.session-menu-actions button:hover:not(:disabled){background:var(--vscode-list-hoverBackground)}.danger-text{color:var(--vscode-errorForeground,#f48771)}
+
+/* Compact connection surface; conversation remains the primary view. */
+.mini-browser { position: fixed; right: 12px; bottom: 180px; width: min(520px, calc(100% - 24px)); max-height: 55vh; overflow: auto; z-index: 15; background: var(--vscode-editor-background); border: 1px solid var(--vscode-widget-border); border-radius: 10px; box-shadow: 0 6px 24px #0005; resize: both; }
+.mini-browser header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+.mini-browser header strong { flex: 1; font-size: 12px; }
+.mini-browser img { display: block; width: 100%; cursor: pointer; }
+.mini-browser img:focus { outline: 1px solid var(--vscode-focusBorder); }
+.mini-browser p { margin: 8px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+.browser-toggle { position: fixed; right: 12px; bottom: 155px; font-size: 11px; z-index: 14; }
+.settings-advanced { margin: 12px 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+.settings-advanced summary { cursor: pointer; padding: 6px 0; }
+.drawer-tabs { flex-wrap: wrap; }
+[hidden] { display: none !important; }
+
+.mini-browser.zoom img { width: 1000px; max-width: none; }

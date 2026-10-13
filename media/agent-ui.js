@@ -149,7 +149,7 @@ function renderState(value) {
   $('stop').hidden = !state.busy; $('send').title = state.busy ? '排入佇列' : '送出'; $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
   $('sendHint').textContent = state.busy ? '排入佇列' : '⌘ ↵';
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
-  if (!$('drawer').hidden && tab === 'tools' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
+  if (!$('drawer').hidden && ['tools', 'connection', 'security'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
   if (!$('drawer').hidden && tab === 'sessions' && busyChanged) renderDrawer();
   $('skillsCount').textContent = state.options.skills?.length ? state.options.skills.length : '';
   $('new').disabled = state.busy || !!approval;
@@ -186,7 +186,7 @@ function renderApproval(value) {
 
 function openDrawer(nextTab) { tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
 function renderDrawer() {
-  $('drawerTitle').textContent = { sessions: '聊天紀錄', skills: 'Skills', tools: '工具與設定', memory: '記憶與隱私' }[tab];
+  $('drawerTitle').textContent = { sessions: '聊天紀錄', skills: 'Skills', connection: '連線', security: '安全與權限', tools: '工具', memory: '記憶與隱私' }[tab];
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === tab));
   const content = $('drawerContent'); content.replaceChildren();
   if (tab === 'sessions') {
@@ -274,7 +274,13 @@ function renderDrawer() {
     content.append(element('p', 'panel-footnote', '儲存位置：' + (memory.storage || '載入中') + '\n最近更新：' + (memory.project?.updatedAt ? new Date(memory.project.updatedAt).toLocaleString('zh-TW') : '尚無') + '\n刪除本機記憶不等於刪除校方伺服器資料。'));
     for (const [text, kind] of [['重新整理記憶', 'refreshMemory'], ['匯出完整 Session', 'export'], ['備份全部本機記憶', 'backupMemory'], ['還原備份', 'restoreMemory'], ['清空此專案記憶', 'clearMemory']]) content.append(button(text, 'secondary-button full-width', () => send(kind)));
     if (memory.error) content.append(element('p', 'warning-text', memory.error));
-  } else {
+  } else if (tab === 'security') {
+    content.append(element('h3', '', '執行隔離'), element('p', 'panel-description', (capabilities.sandbox?.label || '待檢查') + ' · 禁止 Shell／stdio MCP 網路'));
+    if (capabilities.sandbox?.error) content.append(element('p', 'warning-text', capabilities.sandbox.error));
+    content.append(element('h3', '', '附件隱私'), element('p', 'panel-description', '圖片逐格、PDF 逐頁在本機 OCR 並檢查嵌入文字。辨識到已知憑證或檢查失敗即阻止上傳。需要 Tesseract 與 Poppler；OCR 仍可能漏辨，傳送前請自行確認。'));
+    content.append(element('h3', '', '指令核准'), element('p', 'panel-description', '核准模式由聊天底部切換。自動核准規則只影響是否詢問，所有指令仍需 OS 隔離。'), button('設定指令自動核准', 'secondary-button full-width', () => send('terminalSettings'), 'terminal'));
+    content.append(button('開啟安全設定', 'secondary-button', () => send('settings'), 'gear'));
+  } else if (tab === 'connection') {
     const account = element('section', 'account-card');
     const accountHeader = element('div', 'account-heading');
     const needsLogin = ['required', 'signed_out'].includes(state.connection?.authentication);
@@ -286,23 +292,26 @@ function renderDrawer() {
     }, state.connection?.ready ? 'close' : 'connect'));
     account.lastChild.disabled = state.busy;
     content.append(account);
+    content.append(button('開啟側欄小瀏覽器', 'secondary-button full-width', () => { $('drawer').hidden = true; toggleBrowser(true); }, 'globe'));
     const browser = capabilities.browser || {};
     content.append(element('h3', '', '瀏覽器'));
     const browserChoice = element('select', 'history-search'); browserChoice.setAttribute('aria-label', 'Browser');
     for (const [value, label] of [['auto', 'Auto · 自動偵測'], ['chrome', 'Google Chrome'], ['edge', 'Microsoft Edge'], ['chromium', 'Chromium'], ['custom', 'Custom · 自訂 Chromium']]) { const option = element('option', '', label); option.value = value; browserChoice.append(option); }
     browserChoice.value = browser.selection || 'auto'; browserChoice.disabled = state.busy; content.append(browserChoice);
-    const customPath = element('input', 'browser-path'); customPath.placeholder = 'Custom Browser Path'; customPath.setAttribute('aria-label', 'Custom Browser Path'); customPath.value = browser.customPath || ''; customPath.disabled = state.busy; content.append(customPath);
-    const profileLocation = element('input', 'browser-path'); profileLocation.placeholder = 'Browser Profile Location · 預設使用私有儲存區'; profileLocation.setAttribute('aria-label', 'Browser Profile Location'); profileLocation.value = browser.profileLocation || ''; profileLocation.disabled = state.busy; content.append(profileLocation);
-    const apply = button('更換瀏覽器並連線', 'secondary-button full-width', () => send('browserUpdate', { browser: browserChoice.value, customPath: customPath.value, profileLocation: profileLocation.value })); apply.disabled = state.busy; content.append(apply);
+    const advanced = element('details', 'settings-advanced'); advanced.append(element('summary', '', '進階：執行檔與專用 Profile')); content.append(advanced);
+    const customPath = element('input', 'browser-path'); customPath.placeholder = 'Custom Browser Path'; customPath.setAttribute('aria-label', 'Custom Browser Path'); customPath.value = browser.customPath || ''; customPath.disabled = state.busy; advanced.append(customPath);
+    const profileLocation = element('input', 'browser-path'); profileLocation.placeholder = 'Browser Profile Location · 預設使用私有儲存區'; profileLocation.setAttribute('aria-label', 'Browser Profile Location'); profileLocation.value = browser.profileLocation || ''; profileLocation.disabled = state.busy; advanced.append(profileLocation);
+    const background = element('label', 'privacy-option'); const headless = element('input'); headless.type = 'checkbox'; headless.checked = !!browser.headless; headless.disabled = state.busy; background.append(headless, element('span', '', '背景瀏覽器 · 透過側欄操作')); content.append(background);
+    const apply = button('更換瀏覽器並連線', 'secondary-button full-width', () => send('browserUpdate', { browser: browserChoice.value, customPath: customPath.value, profileLocation: profileLocation.value, headless: headless.checked })); apply.disabled = state.busy; content.append(apply);
     const reconnect = button('重新連線', 'secondary-button full-width', () => send('reconnectBrowser')); reconnect.disabled = state.busy; content.append(reconnect);
     content.append(element('p', 'panel-description', (browser.info?.message || '尚未啟動可控制的瀏覽器') + '\nExtension Host：' + (browser.host || '') + (browser.remoteName ? ' · 工作區連線：' + browser.remoteName : '') + (browser.info?.profile ? '\n專用 Profile：' + browser.info.profile : '')));
-    content.append(element('h3', '', '終端機核准規則'), element('p', 'panel-description', '基本唯讀指令可自動執行。可在使用者設定加入指令開頭或正規表示式；false 規則優先要求核准。'), button('設定指令自動核准', 'secondary-button full-width', () => send('terminalSettings'), 'terminal'));
+  } else {
     content.append(element('h3', '', '外部能力'));
     content.append(element('p', 'panel-description', '搜尋、網頁讀取與擴充工具由本地 agent 執行。NTPU AI 負責理解需求和決定下一步。'));
     for (const server of capabilities.servers) {
       const card = element('div', 'server-card'); const heading = element('div', 'server-heading');
       heading.append(icon('connect'), element('strong', '', server.label || server.name), element('span', 'badge' + (server.connected ? ' connected' : ''), server.connecting ? '連線中…' : server.connected ? server.tools + ' 個工具' : server.builtin ? '免金鑰 · 唯讀' : '未連線'));
-      card.append(heading, element('p', 'server-target', server.target));
+      card.append(heading); const details = element('details', 'settings-advanced'); details.append(element('summary', '', '連線詳情'), element('p', 'server-target', server.target)); card.append(details);
       if (server.error) card.append(element('p', 'warning-text', server.error));
       const connect = button(server.connecting ? '連線中…' : server.connected ? '中斷連線' : '連線', 'secondary-button', event => { event.currentTarget.disabled = true; event.currentTarget.textContent = '處理中…'; send(server.connected ? 'disconnectMcp' : 'connectMcp', { name: server.name }); }, server.connected ? 'close' : 'connect');
       connect.disabled = state.busy || server.connecting; card.append(connect);
@@ -322,6 +331,10 @@ window.addEventListener('message', event => {
   const message = event.data;
   if (message.kind === 'session') renderSession(message.session);
   else if (message.kind === 'historyPage' && message.sessionId === session.id) { renderSession({ ...session, messages: [...message.messages, ...session.messages], before: message.before, hasMore: message.hasMore }); $('messages').scrollTop = 0; }
+  else if (message.kind === 'browserFrame') {
+    const image = $('browserImage'); $('browserHint').textContent = message.error || (message.locked ? 'Agent 執行中 · 暫停操作' : '點選畫面後可輸入 · 登入資料不進入聊天紀錄');
+    image.hidden = !message.image; if (message.image) image.src = message.image; image.dataset.locked = String(!!message.locked);
+  }
   else if (message.kind === 'memory') { memory = message; if (!$('drawer').hidden && tab === 'memory') renderDrawer(); }
   else if (message.kind === 'message') { session.messages.push(message.message); addMessage(message.message); }
   else if (message.kind === 'patch') { const index = session.messages.findIndex(item => item.id === message.message.id); if (index >= 0) session.messages[index] = message.message; addMessage(message.message, true); }
@@ -330,7 +343,7 @@ window.addEventListener('message', event => {
   else if (message.kind === 'plan') renderPlan(message.steps);
   else if (message.kind === 'changes') { session.changes = message.changes; renderChanges(message.changes); }
   else if (message.kind === 'sessions') { sessions = message.sessions; if (!$('drawer').hidden && tab === 'sessions') renderDrawer(); }
-  else if (message.kind === 'capabilities') { capabilities = message; if (!$('drawer').hidden && ['skills', 'tools'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer(); }
+  else if (message.kind === 'capabilities') { capabilities = message; if (!$('drawer').hidden && ['skills', 'tools', 'connection', 'security'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer(); }
   else if (message.kind === 'prefill') { $('prompt').value = message.text; includeEditor = true; $('prompt').focus(); renderState(state); }
 });
 
@@ -343,7 +356,7 @@ $('prompt').addEventListener('input', () => {
 });
 for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('change', event => send('option', { key, value: event.target.value }));
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));
-$('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('tools')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
+$('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('connection')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
 $('closeDrawer').addEventListener('click', () => { $('drawer').hidden = true; });
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
@@ -354,3 +367,25 @@ $('approve').addEventListener('click', () => { if (!approval) return; $('approve
   else send('approval', { id: approval.id, approved: true, scope: $('grantSession').checked ? 'session' : 'once' });
 });
 send('ready');
+
+function toggleBrowser(visible) {
+  $('miniBrowser').hidden = !visible; send('browserPreview', { visible });
+  if (!visible) { $('browserImage').removeAttribute('src'); $('browserHint').textContent = ''; }
+}
+$('browserToggle').addEventListener('click', () => toggleBrowser($('miniBrowser').hidden));
+$('browserClose').addEventListener('click', () => toggleBrowser(false));
+$('browserExternal').addEventListener('click', () => send('browserExternal'));
+$('browserImage').addEventListener('click', event => {
+  event.currentTarget.focus(); const rect = event.currentTarget.getBoundingClientRect();
+  send('browserInput', { action: 'click', x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height });
+});
+$('browserImage').addEventListener('keydown', event => {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key.length === 1) { event.preventDefault(); send('browserInput', { action: 'text', text: event.key }); }
+  else if (['Enter', 'Tab', 'Backspace', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); send('browserInput', { action: 'key', key: event.key }); }
+});
+$('browserImage').addEventListener('paste', event => { event.preventDefault(); send('browserInput', { action: 'text', text: event.clipboardData.getData('text').slice(0, 2000) }); });
+$('browserImage').addEventListener('wheel', event => { event.preventDefault(); send('browserInput', { action: 'scroll', delta: event.deltaY }); }, { passive: false });
+window.addEventListener('pagehide', () => send('browserPreview', { visible: false }));
+
+$('browserZoom').addEventListener('click', event => { const zoom = $('miniBrowser').classList.toggle('zoom'); event.currentTarget.textContent = zoom ? '符合面板' : '放大'; });

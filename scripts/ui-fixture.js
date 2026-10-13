@@ -19,9 +19,16 @@ async function testUI(page, origin) {
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [], browser: { selection: 'auto', host: 'Fixture host' }, thinking: 'Fixture', image: 'Fixture' });
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
   await page.locator('.history-more').click();
+  await page.locator('#browserToggle').click();
+  await send({ kind: 'browserFrame', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3YkAAAAASUVORK5CYII=', width: 1, height: 1 });
+  await page.locator('#browserImage').click();
+  await page.locator('#browserImage').press('a');
+  assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'browserInput' && message.action === 'text')), true);
+  await page.locator('#browserClose').click();
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /已登入/);
+  await page.locator('.settings-advanced > summary').first().click();
   const input = page.getByRole('textbox', { name: 'Custom Browser Path', exact: true }); await input.fill('/fixture/draft');
   await send(state); assert.equal(await input.inputValue(), '/fixture/draft');
   await page.locator('[data-tab="memory"]').click();

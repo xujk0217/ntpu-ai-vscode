@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { McpManager, validateServer } = require('../src/mcp');
 test('MCP stdio integration discovers and invokes a real local server', async () => {
-  const manager = new McpManager();
+  const manager = new McpManager({ sandbox: { stdio: async config => ({ executable: config.command, args: config.args, env: process.env, cwd: __dirname, cleanup: async () => {} }) } });
   try {
     await manager.connect({ name: 'fixture', type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'fixtures', 'mcp-stdio.js')], readOnly: true });
     const [tool] = manager.catalog(); assert.match(tool.name, /^mcp_fixture_echo_/);

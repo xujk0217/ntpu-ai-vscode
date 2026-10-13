@@ -186,6 +186,38 @@
           "default": "",
           "scope": "application",
           "description": "Custom 模式的 Chromium 瀏覽器執行檔絕對路徑。"
+        },
+        "ntpuAI.attachments.ocr": {
+          "type": "object",
+          "scope": "application",
+          "default": {
+            "language": "eng"
+          },
+          "description": "本機附件 OCR。可指定 language、tesseract、pdfinfo、pdftotext、pdftoppm 執行檔；不存入辨識文字。",
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string"
+            },
+            "tesseract": {
+              "type": "string"
+            },
+            "pdfinfo": {
+              "type": "string"
+            },
+            "pdftotext": {
+              "type": "string"
+            },
+            "pdftoppm": {
+              "type": "string"
+            }
+          }
+        },
+        "ntpuAI.browserHeadless": {
+          "type": "boolean",
+          "scope": "application",
+          "default": false,
+          "description": "以背景 Chromium 引擎配合側欄小瀏覽器。真人驗證不支援時可切到原生視窗；切換保留專用 Profile。"
         }
       }
     }
@@ -196,7 +228,9 @@
     "package": "npm run build && node scripts/package.js",
     "build": "node scripts/build-ui.js",
     "mcp:smoke": "node scripts/mcp-smoke.js",
-    "browser:fixture": "node scripts/browser-fixture.js"
+    "browser:fixture": "node scripts/browser-fixture.js",
+    "sandbox:fixture": "node scripts/sandbox-fixture.js",
+    "ocr:fixture": "node scripts/ocr-fixture.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
@@ -224,5 +258,8 @@
   },
   "extensionKind": [
     "ui"
-  ]
+  ],
+  "optionalDependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.79"
+  }
 }

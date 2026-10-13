@@ -3,6 +3,7 @@
 const { BrowserManager, dataDirectory } = require('./browser/manager');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { ensureAttachment } = require('./security/attachments');
 const { inspectOutboundPayload } = require('./security/guard');
 
 const ORIGIN = 'https://ai.ntpu.edu.tw';
@@ -101,7 +102,7 @@ class BrowserBridge {
   }
 
   async open() {
-    if (this.page && !this.page.isClosed()) { await this.page.bringToFront(); return; }
+    if (this.page && !this.page.isClosed()) return;
     if (this.opening) return this.opening;
     this.opening = this._open();
     try { await this.opening; } finally { this.opening = null; }
@@ -159,7 +160,7 @@ class BrowserBridge {
 
   async chat(prompt, options = {}) {
     prompt = inspectOutboundPayload(prompt);
-    if (options.attachment && !options.attachment.approved) throw new Error('附件需要先確認目的地與敏感資料風險。');
+    if (options.attachment) await (this.options.attachmentGuard || ensureAttachment)(options.attachment);
     if (this.pending) throw new Error('已有一個 NTPU AI 請求執行中。');
     if (!this.page || this.page.isClosed()) await this.open();
     const status = await this.status();

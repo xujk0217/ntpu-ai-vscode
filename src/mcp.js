@@ -5,6 +5,7 @@ const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio
 const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');
 const { createHash } = require('node:crypto');
 const { inspectOutboundPayload, sanitize, redact } = require('./security/guard');
+const { SandboxExecutor } = require('./security/sandbox');
 
 const EXA = { name: 'exa', type: 'http', url: 'https://mcp.exa.ai/mcp', builtin: true, readOnly: true };
 const AI4X = { name: 'ntpu_ai4x', label: 'NTPU AI4X · 官方研究資料', type: 'http', url: 'https://ai4x.mcp.ntpu.ai/mcp', builtin: true, readOnly: true };
@@ -31,9 +32,10 @@ function alias(server, name) {
 }
 
 class McpManager {
-  constructor({ secrets, onState = () => {}, onContent = async content => content } = {}) {
+  constructor({ secrets, onState = () => {}, onContent = async content => content, sandbox, workspace = () => null } = {}) {
     this.secrets = secrets; this.onState = onState; this.onContent = onContent;
     this.connections = new Map(); this.connecting = new Map(); this.tools = new Map(); this.failures = new Map();
+    this.ownsSandbox = !sandbox; this.sandbox = sandbox || new SandboxExecutor(); this.workspace = workspace;
   }
   async connect(config) {
     validateServer(config);
@@ -46,7 +48,7 @@ class McpManager {
   }
   async _connect(config) {
     const client = new Client({ name: 'ntpu-ai-coder', version: require('../package.json').version }, { capabilities: {} });
-    let transport;
+    let transport, isolated;
     try {
       const headers = {};
       const secret = config.secretKey && await this.secrets?.get(config.secretKey);
@@ -60,7 +62,8 @@ class McpManager {
         for (const [key, reference] of Object.entries(config.envSecrets || {})) {
           const value = await this.secrets?.get(reference); if (value) env[key] = value;
         }
-        transport = new StdioClientTransport({ command: config.command, args: config.args || [], env, stderr: 'pipe' });
+        isolated = await this.sandbox.stdio(config, this.workspace(), env);
+        transport = new StdioClientTransport({ command: isolated.executable, args: isolated.args, cwd: isolated.cwd, env: isolated.env, stderr: 'pipe' });
         transport.stderr?.on('data', () => {});
       } else {
         const Transport = config.type === 'sse' ? SSEClientTransport : StreamableHTTPClientTransport;
@@ -68,7 +71,7 @@ class McpManager {
       }
       await client.connect(transport, { timeout: 20000 });
       const response = await client.listTools({}, { timeout: 20000 });
-      const connection = { client, transport, config, tools: response.tools || [] };
+      const connection = { client, transport, config, isolated, tools: response.tools || [] };
       this.connections.set(config.name, connection); this.failures.delete(config.name);
       for (const tool of connection.tools) {
         const name = alias(config.name, tool.name);
@@ -79,6 +82,7 @@ class McpManager {
       this.onState(); return connection;
     } catch (error) {
       await client.close().catch(() => {});
+      await isolated?.cleanup().catch(() => {});
       this.failures.set(config.name, redact(error.message)); this.onState(); throw new Error(redact(error.message));
     }
   }
@@ -115,10 +119,11 @@ class McpManager {
   async disconnect(name) {
     const connection = this.connections.get(name);
     if (connection) await connection.client.close().catch(() => {});
+    await connection?.isolated?.cleanup().catch(() => {});
     this.connections.delete(name); this.failures.delete(name);
     for (const [key, tool] of this.tools) if (tool.server === name) this.tools.delete(key);
     this.onState();
   }
-  async close() { for (const name of [...this.connections.keys()]) await this.disconnect(name); }
+  async close() { for (const name of [...this.connections.keys()]) await this.disconnect(name); if (this.ownsSandbox) await this.sandbox.close(); }
 }
 module.exports = { McpManager, EXA, AI4X, BUILTINS, validateServer, alias };
