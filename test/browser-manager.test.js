@@ -43,6 +43,15 @@ test('remote hosts fail clearly without launching a desktop browser', async () =
   const { instance, launches } = manager('linux', ['google-chrome'], 'google-chrome.desktop'); instance.options.remote = true;
   await assert.rejects(instance.launch(), /遠端/); assert.equal(launches.length, 0);
 });
+
+test('profile checks resolve workspace aliases and keep agent memory isolated', async () => {
+  const { instance } = manager('darwin', ['Google Chrome'], 'Safari');
+  instance.options.workspaces = ['/workspace-link']; instance.options.profileRoot = '/physical/project/profiles';
+  instance.resolve = async value => value === '/workspace-link' ? '/physical/project' : value;
+  await assert.rejects(instance.launch(), /Profile/);
+  instance.options.workspaces = []; instance.options.profileRoot = '/agent-data/agent-memory';
+  await assert.rejects(instance.launch(), /Profile/);
+});
 test('custom Chromium paths and application data locations remain isolated across platforms', async () => {
   const { instance } = manager('linux', ['/opt/custom'], 'Firefox');
   const a = await instance.launch({ selection: 'custom', customPath: '/opt/custom-one' });
