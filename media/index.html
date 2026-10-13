@@ -40,6 +40,7 @@
 </header>
 <div class="session-heading"><button id="rename" class="session-title" title="重新命名工作階段">新工作階段</button><button id="export" class="icon-button" title="匯出對話" aria-label="匯出對話"><svg><use href="#i-export"/></svg></button></div>
 <div class="scope-bar"><button id="workspace" class="scope-button" title="選擇專案"><svg><use href="#i-file"/></svg><span>專案</span></button><div id="connectionActions" class="connection-actions"><button id="connect" class="connection-button" title="登入 NTPU AI"><i id="connectionDot"></i><span id="connectionLabel">登入</span></button></div></div>
+<aside id="loginNotice" class="login-notice" hidden aria-live="polite"><svg><use href="#i-connect"/></svg><div><strong id="loginNoticeTitle">請在瀏覽器完成登入</strong><p id="loginNoticeText">完成後會自動回到背景連線，你可以關閉登入視窗。</p></div></aside>
 <main id="messages" class="conversation" aria-live="polite"></main>
 <div id="progress" class="progress" hidden><span class="pulse"></span><span id="progressText">正在處理</span><span id="budgetLabel" class="budget-label"></span></div>
 <details id="plan" class="task-panel" hidden><summary><svg><use href="#i-check"/></svg><span>任務進度</span><span id="planCount"></span></summary><div id="planSteps"></div></details>
@@ -72,11 +73,6 @@
   </div>
 </form>
 <footer class="permissions-footer"><svg><use href="#i-shield"/></svg><select id="permission" aria-label="權限模式"><option value="ask">要求核准</option><option value="assisted">協助核准</option><option value="full">完整存取</option></select><span id="permissionDescription">修改與外部操作先確認</span></footer>
-<section id="loginView" class="login-view" hidden aria-label="NTPU AI 登入驗證">
-  <header><div><strong>在 VS Code 完成登入</strong><span>請使用學校提供的登入方式；登入後會自動切回背景連線。</span></div><button id="browserClose" type="button" aria-label="稍後再登入">稍後</button></header>
-  <img id="browserImage" tabindex="0" alt="NTPU AI 登入畫面，輸入內容不會記錄在聊天中" hidden>
-  <p id="browserHint">正在載入學校登入畫面…</p>
-</section>
 <aside id="drawer" class="drawer" hidden aria-label="工作階段與工具設定">
   <div class="drawer-header"><strong id="drawerTitle">工作階段</strong><button id="closeDrawer" class="icon-button" aria-label="關閉面板"><svg><use href="#i-close"/></svg></button></div>
   <nav class="drawer-tabs"><button data-tab="sessions" class="active">聊天紀錄</button><button data-tab="skills">Skills</button><button data-tab="memory">記憶</button><button data-tab="connection">連線</button><button data-tab="tools">工具</button><button data-tab="security">安全</button></nav>

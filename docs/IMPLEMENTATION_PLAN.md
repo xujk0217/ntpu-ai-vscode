@@ -1,5 +1,13 @@
 # Local-first Memory、資料防護與跨平台重構
 
+## 0.5.4 獨立登入視窗與背景接續（2026-10-14）
+
+- 使用者更新需求：移除難用的側欄縮圖，真人登入改用獨立瀏覽器；登入後可關閉視窗，VS Code 繼續連線。
+- 登入視窗採正常桌面尺寸，成功後顯示「可以關閉此視窗」與「返回 VS Code」按鈕；8 秒後自動接續背景連線。
+- 初次開啟只做背景還原，不自行彈窗。按「登入」才開啟視窗；輪詢確認登入就緒後，自動關閉並以相同瀏覽器／專用 Profile 啟動背景連線。手動關窗同樣回到背景，未登入時不誤報成功或循環彈窗。
+- Chromium 使用原生 session 還原；不匯出 Cookie／Token，不複製 Profile。瀏覽器模式切換先完整釋放 Profile 鎖，保持 Session／Checkpoint／Project Memory。
+- 驗收：localhost mock 的 HttpOnly session Cookie、視窗關閉後背景串流、取消與 UI；Windows／macOS／Linux CI。真實校方新 SSO 仍須人工驗收。
+
 ## 0.5.3 未登入狀態文案（2026-10-13）
 
 - 側欄頂部未登入／已登出時顯示「登入」；只有登入狀態未知且瀏覽器連線中斷時顯示「重新連線 NTPU AI」。UI fixture 分別驗證兩種狀態。

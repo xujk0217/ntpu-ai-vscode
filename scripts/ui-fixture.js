@@ -17,17 +17,10 @@ async function testUI(page, origin) {
   const send = data => page.evaluate(value => window.postMessage(value, '*'), data);
   await send({ kind: 'session', session: { id: 'fixture', title: 'Fixture', messages: [{ id: 'm1', role: 'assistant', text: '本機歷史' }], hasMore: true, before: 1, changes: [], plan: [] } });
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [], browser: { selection: 'auto', host: 'Fixture host' }, thinking: 'Fixture', image: 'Fixture' });
-  assert.equal(await page.locator('#loginView').isHidden(), true, 'login surface is hidden during ordinary use');
+  assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
+  assert.equal(await page.locator('#loginNotice').isHidden(), true);
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
   await page.locator('.history-more').click();
-  await send({ kind: 'loginView', visible: true }); await page.waitForFunction(() => !document.getElementById('loginView').hidden);
-  await send({ kind: 'browserFrame', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3YkAAAAASUVORK5CYII=', width: 1, height: 1 });
-  await page.locator('#browserImage').click();
-  await page.locator('#browserImage').press('a');
-  assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'browserInput' && message.action === 'text')), true);
-  await page.locator('#browserClose').click();
-  assert.equal(await page.locator('#loginView').isHidden(), true);
-  assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), 'loginViewClose');
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /已登入/);
@@ -71,6 +64,17 @@ async function testUI(page, origin) {
   await send({ ...state, connection: { ready: false, authentication: 'required', message: '網站要求登入' } });
   assert.equal(await page.locator('#connectionLabel').textContent(), '登入');
   assert.match(await page.locator('.account-card').textContent(), /未登入/);
+  await page.locator('#closeDrawer').click();
+  await send({ ...state, connection: { ready: false, authentication: 'required', loginWindow: true } });
+  await page.waitForFunction(() => !document.getElementById('loginNotice').hidden);
+  assert.equal(await page.locator('#loginNotice').isVisible(), true);
+  await page.locator('#connect').click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'login' });
+  await send(state); await page.waitForFunction(() => document.getElementById('loginNotice').hidden);
+  assert.equal(await page.locator('#loginNotice').isHidden(), true);
+  await send({ ...state, connection: { ready: false, connecting: true } });
+  await page.waitForFunction(() => document.getElementById('connect').disabled);
+  assert.equal(await page.locator('#connect').isDisabled(), true);
   assert.deepEqual(errors, []);
 }
 module.exports = { assets, testUI };

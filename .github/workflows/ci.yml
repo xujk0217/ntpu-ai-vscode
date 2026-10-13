@@ -44,7 +44,13 @@ jobs:
       - name: Install Chromium for local website fixture (Linux)
         if: runner.os == 'Linux'
         run: npx playwright-core install --with-deps chromium
-      - name: Exercise BrowserBridge against localhost (no school account)
+      - name: Exercise login window and background handoff on Linux (no school account)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run browser:fixture
+        env:
+          NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}
+      - name: Exercise login window and background handoff (no school account)
+        if: runner.os != 'Linux'
         run: npm run browser:fixture
         env:
           NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}

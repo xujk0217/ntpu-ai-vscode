@@ -11,10 +11,11 @@ const bridge = new BrowserBridge();
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
   await bridge.open();
+  if (!(await bridge.status()).ready) await bridge.openLogin();
   console.log('LOGIN_REQUIRED: 請在專用 Chrome 完成學校登入，或正常訪客驗證。');
   const deadline = Date.now() + 15 * 60 * 1000;
   while (!stopped && Date.now() < deadline) {
-    const status = await bridge.status();
+    const status = await bridge.finishLogin();
     if (status.ready) {
       console.log('READY: 網站可用（不記錄帳號識別資訊）');
       const result = await bridge.chat('請只輸出 JavaScript 程式碼，不要說明：建立函式 add(a, b)，回傳 a + b。', {

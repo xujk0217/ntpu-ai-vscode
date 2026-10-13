@@ -58,5 +58,14 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   const markdown = await fs.readFile(exported.fsPath, 'utf8');
   assert.match(markdown, /另一筆聊天/); assert.match(markdown, /指定的完整內容/); assert.equal(markdown.includes('only-test-export'), false);
   assert.equal(markdown.includes('mock result'), false); assert.equal(reopened.session.id, activeId);
+  let loginWindows = 0;
+  bridge.mode = 'background';
+  bridge.status = async () => ({ ready: false, authentication: 'required', loginWindow: bridge.mode === 'login', message: 'Mock requires login' });
+  bridge.openLogin = async () => { loginWindows++; bridge.mode = 'login'; };
+  await reopened.login(false);
+  assert.equal(loginWindows, 0, 'automatic background connection never opens a login window');
+  await reopened.login();
+  assert.equal(loginWindows, 1, 'explicit login opens the native login window');
+  assert.equal(reopened.connection.loginWindow, true);
   await reopened.dispose();
 });

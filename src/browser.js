@@ -88,6 +88,27 @@ function installStreamObserver(bindingName) {
   };
 }
 
+function showLoginComplete({ binding, duration }) {
+  const host = document.createElement('div'); host.id = '__ntpu_login_complete';
+  host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;background:#111827cc;backdrop-filter:blur(6px)';
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = `<style>
+    *{box-sizing:border-box}section{width:min(440px,calc(100vw - 40px));max-height:calc(100vh - 40px);overflow:auto;padding:36px;border-radius:20px;background:#fff;color:#17212f;box-shadow:0 24px 80px #0004;text-align:center;font-family:system-ui,sans-serif}
+    .brand{color:#6b7280;font-size:12px;letter-spacing:.08em}.check{display:grid;place-items:center;width:60px;height:60px;margin:24px auto 20px;border-radius:50%;background:#e9f8ef;color:#23814b;font-size:30px}
+    h1{margin:0 0 12px;font-size:25px}p{margin:0;line-height:1.7;font-size:15px;color:#526070}button{width:100%;margin-top:26px;padding:13px;border:0;border-radius:10px;background:#2456a6;color:white;font:600 15px system-ui;cursor:pointer}button:hover{background:#1d478d}button:disabled{opacity:.65}small{display:block;margin-top:15px;color:#7a8595;font-size:12px}
+    @media(prefers-color-scheme:dark){section{background:#202631;color:#edf2f8}p{color:#b9c3d0}.brand,small{color:#94a1b3}.check{background:#173c2a;color:#8bddab}}
+  </style><section aria-label="NTPU AI Agent 登入完成"><div class="brand">NTPU AI AGENT</div><div class="check" aria-hidden="true">✓</div><h1>登入成功</h1><p>可以關閉此視窗，回到 VS Code。<br>Agent 會在背景保持連線。</p><button type="button">返回 VS Code</button><small></small></section>`;
+  const button = root.querySelector('button'), countdown = root.querySelector('small');
+  button.onclick = () => {
+    button.disabled = true; button.textContent = '正在返回 VS Code…';
+    void window[binding]({ kind: 'loginComplete' }).catch(() => {});
+  };
+  const deadline = Date.now() + duration;
+  const update = () => { countdown.textContent = `${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))} 秒後自動關閉登入視窗`; };
+  document.documentElement.append(host); update(); button.focus();
+  const timer = setInterval(() => { if (!host.isConnected) clearInterval(timer); else update(); }, 1000);
+}
+
 class BrowserBridge {
   constructor(options = {}) {
     this.options = options;
@@ -97,31 +118,61 @@ class BrowserBridge {
     this.page = null;
     this.pending = null;
     this.opening = null;
+    this.mode = null;
+    this.selectedBrowser = null;
+    this.loginWindowClosed = false;
+    this.loginNoticeAt = 0;
+    this.loginAcknowledged = false;
     this.binding = 'ntpuLocal_' + randomUUID().replaceAll('-', '');
     this.profile = options.profile || PROFILE;
   }
 
   async open() {
-    if (this.page && !this.page.isClosed()) return;
-    if (this.opening) return this.opening;
-    this.opening = this._open();
+    return this._switch(true);
+  }
+
+  async openLogin() {
+    if (this.pending) throw new Error('請先停止目前任務，再開啟登入視窗。');
+    await this._switch(false);
+    await this.page.bringToFront();
+  }
+
+  async _switch(headless) {
+    // A single profile can only be owned by one Chromium process at a time.
+    while (this.opening) await this.opening;
+    const mode = headless ? 'background' : 'login';
+    if (this.context && this.page && !this.page.isClosed() && this.mode === mode && !this.loginWindowClosed) return;
+    if (this.pending) throw new Error('回答期間不能切換瀏覽器。');
+    this.opening = this._open(headless);
     try { await this.opening; } finally { this.opening = null; }
   }
 
-  async _open() {
-    if (this.context) await this.context.close().catch(() => {});
-    // Browser is a hidden transport. Human login is relayed through the VS Code
-    // webview; never create a separate desktop browser window.
-    const launched = await this.manager.launch({ selection: this.options.browser || (this.options.chromePath ? 'custom' : 'auto'),
-      customPath: this.options.customPath || this.options.chromePath || '', headless: true });
+  async _open(headless = true) {
+    const previous = this.context;
+    this.context = null; this.page = null;
+    if (previous) await previous.close();
+    // Pin the selected browser on handoff: an Auto fallback must not silently
+    // switch profiles after the user has just authenticated.
+    const launched = await this.manager.launch({ selection: this.selectedBrowser || this.options.browser || (this.options.chromePath ? 'custom' : 'auto'),
+      customPath: this.options.customPath || this.options.chromePath || '', headless });
     this.context = launched.context; this.page = launched.page; this.profile = launched.info.profile;
+    this.selectedBrowser = launched.info.browser;
+    this.mode = headless ? 'background' : 'login'; this.loginWindowClosed = false;
+    this.loginNoticeAt = 0; this.loginAcknowledged = false;
+    const context = this.context;
+    context.on('close', () => { if (this.context === context && !headless) this.loginWindowClosed = true; });
     await this.context.exposeBinding(this.binding, (source, payload) => {
       if (source.page !== this.page || !source.frame.url().startsWith(this.origin + '/')) return;
+      if (payload?.kind === 'loginComplete' && this.mode === 'login' && this.loginNoticeAt) { this.loginAcknowledged = true; return; }
       this._receive(payload);
     });
     await this.context.addInitScript(installStreamObserver, this.binding);
     this.page = this.context.pages()[0] || await this.context.newPage();
-    this.page.on('close', () => this._fail(new Error('背景瀏覽器已中斷。請重新連線 NTPU AI。')));
+    this.page.on('close', () => {
+      if (this.context !== context) return;
+      if (!headless && !context.pages().some(page => !page.isClosed())) this.loginWindowClosed = true;
+      this._fail(new Error('瀏覽器已中斷。請重新連線 NTPU AI。'));
+    });
     this.page.on('framenavigated', frame => {
       if (frame === this.page?.mainFrame() && this.pending) this._fail(new Error('回答期間網頁已離開，請重新確認登入狀態。'));
     });
@@ -129,23 +180,53 @@ class BrowserBridge {
     // The page restores its existing session asynchronously after DOMContentLoaded.
     // Wait for that bootstrap before reporting a false login failure. This only
     // observes normal UI state and never completes a login or CAPTCHA.
-    if (this.page.url().startsWith(this.origin + '/')) await this.page.waitForFunction(() => {
+    if (headless && this.page.url().startsWith(this.origin + '/')) await this.page.waitForFunction(() => {
       const overlay = document.getElementById('auth-overlay');
       return overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none') && document.getElementById('input');
-    }, null, { timeout: 12000 }).catch(() => {});
+    }, null, { timeout: this.options.bootstrapTimeoutMs || 12000 }).catch(() => {});
+  }
+
+  async finishLogin() {
+    if (this.loginFinishing) return this.loginFinishing;
+    this.loginFinishing = this._finishLogin();
+    try { return await this.loginFinishing; } finally { this.loginFinishing = null; }
+  }
+
+  async _finishLogin() {
+    if (this.opening) await this.opening;
+    if (this.mode !== 'login') return this.status();
+    const status = await this.status();
+    if (!status.ready && !this.loginWindowClosed && this.page && !this.page.isClosed())
+      return { ...status, loginWindow: true, message: '請在開啟的瀏覽器視窗完成學校登入或安全驗證。登入成功後會自動切回背景連線。' };
+    if (status.ready && !this.loginWindowClosed && !this.page.isClosed()) {
+      const duration = this.options.loginNoticeDurationMs ?? 8000;
+      if (!this.loginNoticeAt) {
+        const shownAt = Date.now();
+        await this.page.evaluate(showLoginComplete, { binding: this.binding, duration });
+        this.loginNoticeAt = shownAt;
+      }
+      if (!this.loginAcknowledged && Date.now() - this.loginNoticeAt < duration)
+        return { ready: false, authentication: 'authenticated', loginWindow: true, loginComplete: true, message: '登入成功，可以關閉登入視窗或按「返回 VS Code」。正在準備背景連線。' };
+    }
+    await this.open();
+    // Confirm the background browser really restored authentication before
+    // showing success. A school session may expire or refuse headless access.
+    const background = await this.status();
+    return { ...background, loginWindow: false, message: background.ready ? background.message :
+      '背景連線尚未取得有效登入。請按「登入」重試；學校端可能已使工作階段失效或要求再次驗證。' };
   }
 
   async status() {
     if (!this.page || this.page.isClosed()) return { ready: false, authentication: 'unknown', message: '瀏覽器未連線。重新連線後會確認既有登入狀態；關閉瀏覽器不會清除登入資料。' };
     const url = this.page.url();
-    if (!url.startsWith(this.origin + '/')) return { ready: false, authentication: 'required', message: '請在 VS Code 登入頁面完成學校登入，完成後會自動切回背景連線。' };
+    if (!url.startsWith(this.origin + '/')) return { ready: false, authentication: 'required', message: '請按「登入」，在瀏覽器視窗完成學校登入或安全驗證。' };
     return this.page.evaluate(() => {
       const overlay = document.getElementById('auth-overlay');
       const input = document.getElementById('input');
       const hidden = overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none');
       const ready = !!(hidden && input && document.getElementById('sendBtn'));
       return { ready, authentication: ready ? 'authenticated' : overlay && !hidden ? 'required' : 'unknown', message: ready ? `已連線：${document.getElementById('user-email')?.textContent || 'NTPU AI'}` :
-        '請在 VS Code 登入頁面使用學校帳號登入或完成安全驗證。' };
+        '請按「登入」，在瀏覽器視窗使用學校帳號登入或完成安全驗證。' };
     }).catch(() => ({ ready: false, authentication: 'unknown', message: '登入頁面正在切換，請稍候再檢查。' }));
   }
 
@@ -157,12 +238,14 @@ class BrowserBridge {
       await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await this.page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); }).catch(() => {});
     await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    if (this.mode === 'login') await this.open();
   }
 
   async chat(prompt, options = {}) {
     prompt = inspectOutboundPayload(prompt);
     if (options.attachment) await (this.options.attachmentGuard || ensureAttachment)(options.attachment);
     if (this.pending) throw new Error('已有一個 NTPU AI 請求執行中。');
+    if (this.mode === 'login') await this.finishLogin();
     if (!this.page || this.page.isClosed()) await this.open();
     const status = await this.status();
     if (!status.ready) throw new Error(status.message);
@@ -268,11 +351,14 @@ class BrowserBridge {
   }
 
   async close() {
+    if (this.opening) await this.opening.catch(() => {});
     this._fail(new Error('已停止'));
     await this._abortPage();
-    await this.context?.close().catch(() => {});
+    const context = this.context;
     this.context = null;
     this.page = null;
+    this.mode = null; this.loginWindowClosed = false;
+    await context?.close().catch(() => {});
     if (this.manager.info) this.manager.info.controlled = false;
   }
 }

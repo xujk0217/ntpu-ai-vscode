@@ -1,5 +1,16 @@
 # 本地使用驗證
 
+## 0.5.4 登入視窗與背景接續（2026-10-14）
+
+- macOS Apple Silicon／Google Chrome：80 個單元測試通過；正常尺寸的原生登入視窗、成功提示與返回按鈕可見。
+- localhost 真實瀏覽器 mock：HttpOnly session Cookie 沒有到期時間，完成登入後可由相同 Profile 還原；按返回按鈕、直接關窗、倒數自動關窗後皆能以背景瀏覽器繼續串流回覆。
+- 登入前關窗不誤報成功、不反覆彈窗；自動背景還原不自行開視窗；人工按「登入」才開啟正常瀏覽器。
+- UI、聊天記錄、附件、停止及任務內對話重用回歸；Profile 與本機 Session／Project Memory 維持原儲存路徑。
+- GitHub Actions 涵蓋四平台／Node 20 與 22。Linux 使用 Xvfb 驗證登入視窗；各版本結果可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 核對。
+- 本版未重新人工驗收校方 SSO／CAPTCHA，也未呼叫真實 NTPU AI 模型；上述 mock 證據不等同校方登入相容性。
+
+以下為前版歷史驗證紀錄。
+
 日期：2026-10-13（Asia/Taipei）。環境：macOS Apple Silicon、Chrome、VS Code、已登入的 NTPU 學校帳號。工作區：`examples/local-demo`。
 
 ## 實際功能

@@ -1,18 +1,18 @@
-# 側欄瀏覽器與本機執行隔離
+# 登入視窗、背景連線與本機執行隔離
 
 ## 瀏覽器介面
 
-瀏覽器平時以 headless 模式在 VS Code Extension Host 背景執行，不建立桌面視窗，也不顯示網頁。只有網站要求使用者登入／完成驗證時，才在 VS Code 側欄顯示登入操作面板。點選畫面後可輸入文字、貼上、按 Enter／Tab、捲動。它操作同一個 Playwright BrowserContext 與專用 Profile，登入和模型串流共用連線；認證就緒後自動收起面板，但背景引擎繼續執行。使用者可按「稍後」暫時收起；Agent 執行中暫停手動網頁操作，避免干擾工具迴圈。
+0.5.4 起，瀏覽器平時以 headless 模式在 VS Code Extension Host 背景執行，不顯示網頁。開啟側欄只還原既有登入，不自行彈窗。使用者按「登入」才開啟正常的獨立瀏覽器視窗，可使用完整的原生鍵盤、輸入法、貼上與捲動，完成學校 SSO／安全驗證。側欄只顯示簡短狀態提示，聊天紀錄仍可操作。
 
-「連線」設定可選擇背景瀏覽器並重新連線。一般登入和 HTTPS SSO 頁面可在 VS Code 登入操作面板中操作。登入畫面不能使用時，會顯示連線錯誤；此版本不會切換到桌面視窗。背景模式與 SSO 的相容性依學校服務而異，不能保證全部驗證流程適用。使用者仍須自行完成學校規定的 CAPTCHA／SSO，不會以程式代答或繞過。
+認證就緒後，登入視窗顯示「登入成功，可以關閉此視窗」及「返回 VS Code」按鈕。按按鈕、直接關窗或等待 8 秒，擴充功能會先完整關閉登入 BrowserContext，再以同一個瀏覽器執行檔與專用 Profile 啟動背景 BrowserContext。Chromium 的 `--restore-last-session` 原生還原登入 Cookie，不擷取、序列化、複製或匯出認證資料。此切換尚未確認背景認證前，介面顯示「正在接續」，背景網站真正就緒後才顯示「已登入」。關窗前尚未完成登入時不誤報成功，也不反覆彈出視窗。
 
-畫面是記憶體中的 JPEG 串流，輸入是使用者直接發起的鍵鼠事件，沒有提供給模型的螢幕讀取或登入工具。畫面、輸入與密碼不寫入 Session、Project Memory 或檔案。關閉側欄／面板即停止畫面更新。瀏覽器本身依正常網站行為保留登入資料。無 Cookie、Token 匯出或遠端預設 Profile 連線。
+「連線」設定可選擇瀏覽器並重新連線。登入視窗使用專用 Profile，沒有連接日常瀏覽器預設 Profile；以原生視窗尺寸約 1100 × 800 開啟，依螢幕可用範圍縮小。輸入直接留在瀏覽器，不會經過 Webview 訊息或 Agent 工具；已移除畫面串流及鍵鼠轉送。登入過程不寫入 Session／Project Memory，不提供模型登入工具。使用者自行完成 CAPTCHA／SSO。若學校工作階段過期或拒絕背景連線，顯示實際錯誤並要求重新登入。
 
-參考 [codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web) 的獨立 Profile／瀏覽器宿主概念。該專案實際使用 Electron Launcher 的 WebContentsView，並非 VS Code iframe。此擴充自行實作受控畫面介面，未複製該專案的 Electron Launcher 程式碼；不宣稱使用 VS Code 未公開的原生 BrowserView API。
+沿用獨立 Profile 的設計，透過 [Playwright launchPersistentContext](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context) 控制瀏覽器。沒有使用 VS Code iframe 或未公開的 BrowserView API。
 
 ## 設定分區
 
-- **連線**：帳號、瀏覽器、重新連線。瀏覽器固定在背景 headless 執行；執行檔與 Profile 路徑放在進階項目。
+- **連線**：帳號、瀏覽器、重新連線。平時背景執行，按「登入」才開啟獨立視窗；執行檔與 Profile 路徑放在進階項目。
 - **工具**：MCP、官方校務入口、圖像能力和模型深度說明。連線位址預設收起。
 - **安全**：OS 沙箱狀態、附件檢查說明、指令核准規則。
 - **記憶**：本機記憶、備份、還原與資料傳送政策。
@@ -46,9 +46,9 @@ Shell 可讀寫選定工作區及私人暫存區；唯讀 Agent 與 stdio MCP �
 ## 驗收
 
 - `npm test`：確定性單元與整合測試；指令及 stdio 測試明確注入測試執行器，不能冒充 OS 沙箱驗收。
-- `npm run browser:fixture`：localhost 真實 Chromium，確認 BrowserBridge 固定 headless、登入鍵鼠轉送、串流、上傳、取消、Profile 保留及登入 UI 預設隱藏。
+- `npm run browser:fixture`：localhost 真實 Chromium，驗證正常背景連線、登入成功提示／返回按鈕／倒數、HttpOnly session Cookie 還原、手動關窗、取消、串流、上傳及 Profile 保存。Linux CI 透過 Xvfb 執行可見登入視窗測試。
 - `npm run sandbox:fixture`：真實 OS 隔離，工作區外讀取／憑證／網路阻擋及工作區寫入。
 - `npm run ocr:fixture`：真實本機 Tesseract／Poppler，乾淨圖片／PDF 通過、合成秘密拒絕。
-- 真實 NTPU SSO：依 `docs/BROWSER_PLATFORM_REQUIREMENTS.md` 人工登入流程驗收；不得自動完成 CAPTCHA 或提取憑證。此次 UI／背景模式回歸只用 localhost mock；Mac 舊 Profile/headless SSO、全新學校 SSO／CAPTCHA 均尚未重新驗收。
+- 真實 NTPU SSO：依 `docs/BROWSER_PLATFORM_REQUIREMENTS.md` 人工登入流程驗收；不得自動完成 CAPTCHA 或提取憑證。0.5.4 登入／背景切換只用 localhost mock 回歸，學校 SSO／CAPTCHA 尚未重新人工驗收。
 
 Windows、Linux 桌面與 Intel Mac SSO 尚未實測。CI 是 Mock 網站及原生工具測試，不代表學校 SSO 驗收。

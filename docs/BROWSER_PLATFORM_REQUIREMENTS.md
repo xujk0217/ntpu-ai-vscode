@@ -56,3 +56,17 @@ VSIX 按原生依賴的平台產生；只有證明安全且相容才可 Universa
 四平台 Node 20／22 Unit、Build、Mock Browser 與原生 VSIX 已通過 CI。Node 22 的 macOS arm64／x64、Linux 增加真實 OS 沙箱／stdio MCP 與 Tesseract／Poppler 驗收。Windows OS 沙箱尚待人工實機測試，因此 Shell／stdio 拒絕執行是預期行為，不能要求關閉隔離後通過。Windows OCR 可用使用者設定指定 CLI 路徑，尚待實機驗收。
 
 所有平台的新 SSO／CAPTCHA 都需人工操作；Mac 已驗證既有 Profile 還原與背景畫面，本輪真正模型完整任務遇 HTTP 502，未完成。側欄、背景模式、依賴與風險見 [瀏覽器及安全說明](BROWSER_SURFACE_AND_SECURITY.md)。
+
+### 0.5.4 真人登入驗收流程
+
+各平台在正常桌面 VS Code 安裝對應 VSIX；Linux 需有 DISPLAY／WAYLAND_DISPLAY。使用現有 Profile 的驗收不應先刪除或匯出登入資料。
+
+1. 重新載入 VS Code，開啟 NTPU AI。既有登入有效時應直接背景連線，沒有桌面視窗。
+2. 首次使用或由「設定 → 連線」登出後，按「登入」。確認 Chrome／Edge／Chromium 以正常視窗大小開啟，側欄沒有縮圖畫面。Windows 優先 Edge；Mac 優先 Chrome；Linux 使用 Chromium。
+3. 人工完成學校登入、SSO 和 CAPTCHA。等待「登入成功，可以關閉此視窗」提示。
+4. 分別驗收「返回 VS Code」、手動關閉登入視窗及等待 8 秒自動切換；確認設定顯示已登入，而且沒有保留桌面瀏覽器視窗。
+5. 在 VS Code 送出一個簡短任務，確認模型真實回覆和工具迴圈。若學校服務回 HTTP 502／429，記錄未完成的驗收項，不自動反覆重試。
+6. 登出後再開啟登入視窗，在未登入前關閉。確認介面沒有誤報成功、沒有反覆開視窗，再按「登入」可重試。
+7. 重新載入 VS Code，確認相同 Profile 的登入仍可還原，且聊天記錄、未完成檢查點及 Project Memory 保留。
+
+驗收只記錄平台、瀏覽器、版本、時間、成功／失敗及去識別化錯誤；不保存帳號、Cookie、Token、登入頁截圖或密碼。真實校方 0.5.4 SSO 驗收待使用者人工操作；mock browser 通過不能代替此驗收。

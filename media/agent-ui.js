@@ -141,7 +141,11 @@ function renderState(value) {
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
   $('workspace').querySelector('span').textContent = state.workspace;
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
-  $('connectionLabel').textContent = state.connection?.ready ? '已連線' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '登入';
+  $('connectionLabel').textContent = state.connection?.connecting ? '正在連線…' : state.connection?.ready ? '已連線' : state.connection?.loginWindow ? '返回登入視窗' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '登入';
+  $('connect').disabled = state.busy || !!state.connection?.connecting;
+  $('loginNotice').hidden = !state.connection?.loginWindow;
+  $('loginNoticeTitle').textContent = state.connection?.loginComplete ? '登入成功' : '請在瀏覽器完成登入';
+  $('loginNoticeText').textContent = state.connection?.loginComplete ? '正在接續背景連線，可以關閉登入視窗。' : '完成後會自動回到背景連線，你可以關閉登入視窗。';
   $('connectionActions').hidden = !!state.connection?.ready;
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
@@ -284,12 +288,13 @@ function renderDrawer() {
     const account = element('section', 'account-card');
     const accountHeader = element('div', 'account-heading');
     const needsLogin = ['required', 'signed_out'].includes(state.connection?.authentication);
-    accountHeader.append(element('strong', '', 'NTPU AI 帳號'), element('span', 'badge' + (state.connection?.ready ? ' connected' : ''), state.connection?.ready ? '已登入' : needsLogin ? '未登入' : '未連線'));
+    accountHeader.append(element('strong', '', 'NTPU AI 帳號'), element('span', 'badge' + (state.connection?.ready ? ' connected' : ''), state.connection?.ready ? '已登入' : state.connection?.loginComplete ? '正在接續' : state.connection?.loginWindow ? '等待登入' : needsLogin ? '未登入' : '未連線'));
     account.append(accountHeader, element('p', 'panel-description', state.connection?.message || '登入後即可使用 NTPU AI 模型。'));
-    if (!state.connection?.ready && !needsLogin) account.append(element('p', 'panel-description', '登入或安全驗證需要人工操作時，會在 VS Code 顯示登入頁；一般連線在背景執行。'));
-    account.append(button(state.connection?.ready ? '登出' : needsLogin ? '登入 NTPU AI' : '重新連線 NTPU AI', state.connection?.ready ? 'secondary-button account-logout' : 'secondary-button', () => {
+    account.append(element('p', 'panel-description', state.connection?.ready ? '背景連線運作中，無須保持登入視窗開啟。' : '按「登入」開啟專用瀏覽器，完成學校登入後自動切回背景連線。'));
+    const accountAction = button(state.connection?.ready ? '登出' : state.connection?.loginWindow ? '返回登入視窗' : needsLogin ? '登入 NTPU AI' : '重新連線 NTPU AI', state.connection?.ready ? 'secondary-button account-logout' : 'secondary-button', () => {
       send(state.connection?.ready ? 'logout' : 'login');
-    }, state.connection?.ready ? 'close' : 'connect'));
+    }, state.connection?.ready ? 'close' : 'connect');
+    accountAction.disabled = state.busy || !!state.connection?.connecting; account.append(accountAction);
     account.lastChild.disabled = state.busy;
     content.append(account);
     const browser = capabilities.browser || {};
@@ -329,11 +334,6 @@ window.addEventListener('message', event => {
   const message = event.data;
   if (message.kind === 'session') renderSession(message.session);
   else if (message.kind === 'historyPage' && message.sessionId === session.id) { renderSession({ ...session, messages: [...message.messages, ...session.messages], before: message.before, hasMore: message.hasMore }); $('messages').scrollTop = 0; }
-  else if (message.kind === 'loginView') toggleLoginView(message.visible);
-  else if (message.kind === 'browserFrame') {
-    const image = $('browserImage'); $('browserHint').textContent = message.error || (message.locked ? 'Agent 執行中 · 暫停操作' : '請在此完成學校登入；登入資料不會進入聊天紀錄');
-    image.hidden = !message.image; if (message.image) image.src = message.image; image.dataset.locked = String(!!message.locked);
-  }
   else if (message.kind === 'memory') { memory = message; if (!$('drawer').hidden && tab === 'memory') renderDrawer(); }
   else if (message.kind === 'message') { session.messages.push(message.message); addMessage(message.message); }
   else if (message.kind === 'patch') { const index = session.messages.findIndex(item => item.id === message.message.id); if (index >= 0) session.messages[index] = message.message; addMessage(message.message, true); }
@@ -366,20 +366,3 @@ $('approve').addEventListener('click', () => { if (!approval) return; $('approve
   else send('approval', { id: approval.id, approved: true, scope: $('grantSession').checked ? 'session' : 'once' });
 });
 send('ready');
-
-function toggleLoginView(visible) {
-  $('loginView').hidden = !visible;
-  if (!visible) { $('browserImage').removeAttribute('src'); $('browserImage').hidden = true; $('browserHint').textContent = ''; }
-}
-$('browserClose').addEventListener('click', () => { toggleLoginView(false); send('loginViewClose'); });
-$('browserImage').addEventListener('click', event => {
-  event.currentTarget.focus(); const rect = event.currentTarget.getBoundingClientRect();
-  send('browserInput', { action: 'click', x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height });
-});
-$('browserImage').addEventListener('keydown', event => {
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.key.length === 1) { event.preventDefault(); send('browserInput', { action: 'text', text: event.key }); }
-  else if (['Enter', 'Tab', 'Backspace', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); send('browserInput', { action: 'key', key: event.key }); }
-});
-$('browserImage').addEventListener('paste', event => { event.preventDefault(); send('browserInput', { action: 'text', text: event.clipboardData.getData('text').slice(0, 2000) }); });
-$('browserImage').addEventListener('wheel', event => { event.preventDefault(); send('browserInput', { action: 'scroll', delta: event.deltaY }); }, { passive: false });

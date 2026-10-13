@@ -12,8 +12,10 @@ function manager(platform, installed, preferred, failures = []) {
     prepareProfile: async () => {}, run: async () => ({ stdout: platform === 'darwin' ? JSON.stringify({ LSHandlers: [{ LSHandlerURLScheme: 'https', LSHandlerRoleAll: preferred }] }) : preferred }),
     engine: { executablePath: () => '/not-installed', launchPersistentContext: async (profile, options) => {
       launches.push({ profile, options }); if (failures.some(value => options.executablePath.includes(value))) throw new Error('mock launch failure');
-      const page = { evaluate: async () => 'Chromium mock controlled' };
-      return { pages: () => [page], close: async () => {} };
+      const page = { evaluate: async fn => fn.toString().includes('navigator.userAgent') ? 'Chromium mock controlled' : { width: 1024, height: 768 } };
+      return { pages: () => [page], close: async () => {}, newCDPSession: async () => ({
+        send: async (method, params) => { launches.at(-1).windowCalls ||= []; launches.at(-1).windowCalls.push({ method, params }); return { windowId: 1 }; }, detach: async () => {}
+      }) };
     } } });
   return { instance, launches };
 }
@@ -33,6 +35,13 @@ test('Linux Chromium works and manual selection overrides system default', async
   assert.equal((await instance.launch()).info.browser, 'chromium');
   assert.equal(instance.info.headless, true);
   assert.equal((await instance.launch({ selection: 'chrome' })).info.browser, 'chrome');
+});
+test('login uses normal native window bounds clamped to the available screen', async () => {
+  const { instance, launches } = manager('darwin', ['Google Chrome'], 'com.google.chrome');
+  await instance.launch({ headless: false });
+  assert.equal(launches[0].options.viewport, null);
+  assert.deepEqual(launches[0].windowCalls.at(-1).params.bounds, { width: 1024, height: 768 });
+  assert.ok(launches[0].options.args.includes('--restore-last-session'));
 });
 test('profile policy rejects daily browser profiles, workspaces and parent directories', async () => {
   const { instance } = manager('darwin', ['Google Chrome'], 'com.google.chrome');

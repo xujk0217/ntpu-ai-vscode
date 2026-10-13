@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.5.3 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.5.4 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.5.0 安裝檔 |
+| 系統 | 0.5.4 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.0/ntpu-ai-coder-win32-x64-0.5.0.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.0/ntpu-ai-coder-darwin-arm64-0.5.0.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.0/ntpu-ai-coder-darwin-x64-0.5.0.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.0/ntpu-ai-coder-linux-x64-0.5.0.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-win32-x64-0.5.4.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-darwin-arm64-0.5.4.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-darwin-x64-0.5.4.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-linux-x64-0.5.4.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -63,19 +63,19 @@
 ### 登入
 
 1. 開啟專案資料夾，點 Activity Bar 的 **NTPU AI**，或執行 **NTPU AI: 開啟程式助理**。
-2. 開啟 Agent 後會自動在背景連線；若網站要求驗證，於 VS Code 側欄登入面板完成學校 SSO 與機器人辨識。
-3. 回到側欄，連線狀態應顯示 **已連線**。
+2. 開啟 Agent 後自動在背景還原既有登入。首次使用或登入過期時，按 **登入**，在開啟的專用瀏覽器視窗完成學校 SSO 與機器人辨識。
+3. 瀏覽器顯示 **登入成功，可以關閉此視窗**。按 **返回 VS Code**、直接關窗或等待 8 秒，即會以相同 Profile 接續背景連線。確認連線成功後，設定內顯示 **已登入**；無須保持瀏覽器視窗開啟。
 4. 以 Build 模式輸入任務，按送出或 `Cmd+Enter`／`Ctrl+Enter`。
 
-登入保留在獨立 browser profile。VS Code 預設路徑為 `globalStorageUri/browser-profiles/<browser>`，不同瀏覽器與不同 Custom 執行檔互相隔離。這不是 VS Code 帳號登入；工作階段過期時，會在 VS Code 側欄顯示可互動的登入頁，讓使用者自行完成學校 SSO／安全驗證。0.3.x 舊 Chrome profile 仍保留在原路徑，不複製 Cookie；升級後的新隔離位置需要重新登入一次。
+登入保留在獨立 browser profile。VS Code 預設路徑為 `globalStorageUri/browser-profiles/<browser>`，不同瀏覽器與不同 Custom 執行檔互相隔離。這不是 VS Code 帳號登入。登入視窗與背景瀏覽器依序使用同一個 Profile；Chromium 自己還原 session Cookie，擴充功能不讀取或匯出認證資料。0.3.x 舊 Chrome profile 仍保留在原路徑，不複製 Cookie；升級後的新隔離位置需要重新登入一次。0.5.x 的相同 Profile 持續沿用。
 
-開啟 Agent 側欄時，擴充套件會自動以背景瀏覽器連線。只有網站要求真人登入／驗證時，才會顯示 **在 VS Code 完成登入**；登入成功後該畫面自動收起，BrowserContext 留在背景供 Agent 使用。使用者可按「稍後」收起登入頁，再從主介面的 **連線 NTPU AI** 重新開啟。到右上角 **設定 → 工具／設定** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
+開啟側欄會自動連線，且不自行彈出登入視窗。需要登入時，由使用者按 **登入** 開啟視窗；側欄只顯示簡短提示，可繼續瀏覽聊天紀錄。按 **返回登入視窗** 可將該視窗移到前景。你也可以手動關閉視窗，擴充功能會在下一次狀態檢查時回到背景連線；未完成登入時則繼續顯示 **登入**，不會反覆開視窗。到右上角 **設定 → 連線** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
 
 每個 VS Code 使用者任務會建立一個 NTPU AI 網頁對話；同一任務的 agent 後續輪次會沿用該對話，下一個 VS Code 任務才建立新的 NTPU AI 對話。
 
-不需要開啟桌面瀏覽器，也不需要保持任何外部視窗。隱藏的 Playwright 瀏覽器會在 Extension Host 執行期間保持連線；VS Code 關閉後，下一次開啟會用相同 Profile 還原網站登入狀態。同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
+正常使用 Agent 時不需要外部瀏覽器視窗。隱藏的 Playwright 瀏覽器在 Extension Host 執行期間保持連線；VS Code 關閉後，下一次開啟使用相同 Profile 還原網站登入狀態。同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
 
-瀏覽器程序意外關閉只會中斷連線，Agent 會在狀態檢查時提示並可重新連線；關閉操作不清除登入資料。只有網站要求登入或你按下登出，介面才顯示 **未登入**。學校端登入過期、切換瀏覽器或改用另一個 Profile 時，仍可能需要重新登入。無頭瀏覽器是否能載入每一種學校 IdP／安全驗證頁，取決於學校服務；若服務拒絕此登入方式，擴充套件會顯示錯誤，不會改開桌面瀏覽器或繞過驗證。
+背景瀏覽器程序意外關閉會中斷連線，可按 **重新連線 NTPU AI** 還原；關閉操作不清除登入資料。只有網站要求登入或你按下登出，介面才顯示 **未登入**。學校端登入過期、切換瀏覽器或改用另一個 Profile 時，仍可能需要重新登入。登入成功後仍會確認背景頁面是否可用；若學校端拒絕背景連線或使工作階段失效，會顯示錯誤並要求重新登入，不會略過學校驗證。
 
 ## 完整任務流程
 

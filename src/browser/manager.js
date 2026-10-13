@@ -118,16 +118,32 @@ class BrowserManager {
         const profile = await this.profile(candidate);
         await this.prepareProfile(profile);
         context = await this.engine.launchPersistentContext(profile, { executablePath: candidate.executablePath, headless, chromiumSandbox: true, viewport: null,
-          args: ['--no-first-run', '--no-default-browser-check'] });
+          // Restore session cookies through Chromium's own profile/session store.
+          // Never serialize credentials when switching between login and transport.
+          args: ['--no-first-run', '--no-default-browser-check', '--restore-last-session', ...(!headless ? ['--window-size=1100,800'] : [])] });
         const page = context.pages()[0] || await context.newPage();
         const agent = await page.evaluate(() => navigator.userAgent);
         if (!/Chrome|Chromium|Edg/.test(agent)) throw new Error('瀏覽器不是可支援的 Chromium 引擎。');
+        if (!headless) await this.normalLoginWindow(context, page);
         this.info = { browser: candidate.id, label: candidate.label, profile, controlled: true, headless,
           selection, message: selection === 'auto' ? (candidate.preferred ? '已控制受支援的系統預設瀏覽器：' : '預設瀏覽器不支援或不可用，已選擇：') + candidate.label : '已由 Playwright 控制：' + candidate.label };
         return { context, page, info: this.info };
       } catch (error) { await context?.close().catch(() => {}); failures.push(candidate.label + '：' + redact(error.message).split('\n')[0].slice(0, 450)); }
     }
     throw new Error('瀏覽器自動化啟動失敗。請關閉其他使用相同專用 profile 的視窗，或改選另一個已安裝瀏覽器。\n' + failures.join('\n'));
+  }
+
+  async normalLoginWindow(context, page) {
+    // Session restoration can otherwise reopen the last headless window's tiny
+    // bounds. Resize the dedicated login window, retaining native responsive UI.
+    const screen = await page.evaluate(() => ({ width: window.screen.availWidth, height: window.screen.availHeight }));
+    const width = Math.min(1100, screen.width || 1100), height = Math.min(800, screen.height || 800);
+    const session = await context.newCDPSession(page);
+    try {
+      const { windowId } = await session.send('Browser.getWindowForTarget');
+      await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+      await session.send('Browser.setWindowBounds', { windowId, bounds: { width, height } });
+    } finally { await session.detach(); }
   }
 }
 module.exports = { BrowserManager, dataDirectory, executablePaths, defaultId, realLocation, LABELS };

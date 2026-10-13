@@ -5,7 +5,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
-const { BrowserPreview } = require('../src/browser/preview');
 const { BrowserBridge } = require('../src/browser');
 const { assets, testUI } = require('./ui-fixture');
 
@@ -25,7 +24,11 @@ async function main() {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ntpu-browser-fixture-'));
   const sockets = new Set();
   const ui = await assets();
+  let requiresLogin = false;
+  const loginHtml = '<!doctype html><html><body><div id="auth-overlay">Fixture login</div><form action="/fixture-login" method="post"><input id="fixture-user" name="user"><button id="fixture-submit">Login</button></form></body></html>';
   const server = http.createServer((request, response) => {
+    if (request.url === '/fixture-login') { response.writeHead(303, { location: '/', 'set-cookie': 'fixture_session=synthetic; HttpOnly; SameSite=Lax; Path=/' }); response.end(); return; }
+    if (requiresLogin && !request.headers.cookie?.includes('fixture_session=synthetic')) { response.writeHead(200, { 'content-type': 'text/html' }); response.end(loginHtml); return; }
     if (ui.has(request.url)) { const [type, body] = ui.get(request.url); response.writeHead(200, { 'content-type': type }); response.end(body); return; }
     if (request.url === '/upload') { response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}'); return; }
     if (request.url !== '/chat/stream') { response.writeHead(200, { 'content-type': 'text/html' }); response.end(html); return; }
@@ -42,10 +45,10 @@ async function main() {
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
-  const options = { attachmentGuard: async attachment => { if (!attachment.approved) throw new Error("Fixture requires approval"); }, origin, storageRoot: directory, headless: false, browser: process.env.NTPU_FIXTURE_BROWSER || 'auto' };
+  const options = { attachmentGuard: async attachment => { if (!attachment.approved) throw new Error("Fixture requires approval"); }, origin, storageRoot: directory, bootstrapTimeoutMs: 500, loginNoticeDurationMs: 2000, browser: process.env.NTPU_FIXTURE_BROWSER || 'auto' };
   let bridge = new BrowserBridge(options);
   try {
-    await bridge.open(); assert.equal((await bridge.status()).ready, true); assert.equal(bridge.manager.info.headless, true, 'VS Code bridge always uses a hidden browser');
+    await bridge.open(); assert.equal((await bridge.status()).ready, true); assert.equal(bridge.manager.info.headless, true, 'ordinary connection uses a hidden browser');
     await bridge.page.evaluate(() => { document.cookie = 'fixture_state=synthetic; max-age=3600; path=/'; });
     assert.equal((await bridge.chat('first', { newConversation: true })).text, 'mock-response');
     assert.equal((await bridge.chat('second', { newConversation: false })).text, 'mock-response');
@@ -59,15 +62,44 @@ async function main() {
     const selected = bridge.manager.info.label;
     await bridge.close(); bridge = new BrowserBridge(options); await bridge.open();
     assert.equal(await bridge.page.evaluate(() => document.cookie.includes('fixture_state=synthetic')), true);
-    let frames = 0; const preview = new BrowserPreview({ bridge: () => bridge, emit: message => { if (message.image) frames++; } });
-    try {
-      await preview.start(); const size = bridge.page.viewportSize() || await bridge.page.evaluate(() => ({ width: innerWidth, height: innerHeight })); const bounds = await bridge.page.locator('#input').boundingBox();
-      await preview.input({ action: 'click', x: (bounds.x + bounds.width / 2) / size.width, y: (bounds.y + bounds.height / 2) / size.height });
-      await preview.input({ action: 'text', text: 'PREVIEW_INPUT' });
-      assert.match(await bridge.page.locator('#input').inputValue(), /PREVIEW_INPUT/); assert.ok(frames > 0);
-    } finally { preview.stop(); }
+    // Real Chromium handoff with an HttpOnly session cookie (no expiry). The
+    // mock server gates the entire app, so ready/streaming prove restoration.
+    requiresLogin = true; await bridge.page.goto(origin);
+    assert.equal((await bridge.status()).authentication, 'required');
+    const profile = bridge.profile;
+    await bridge.openLogin(); assert.equal(bridge.manager.info.headless, false);
+    assert.equal((await bridge.finishLogin()).loginWindow, true);
+    await bridge.page.locator('#fixture-user').fill('synthetic');
+    await bridge.page.locator('#fixture-submit').click();
+    await bridge.page.waitForSelector('#sendBtn');
+    assert.equal((await bridge.finishLogin()).loginComplete, true);
+    assert.equal(await bridge.page.getByRole('heading', { name: '登入成功' }).count(), 1);
+    assert.equal(await bridge.page.getByText('可以關閉此視窗，回到 VS Code。', { exact: false }).isVisible(), true);
+    await fs.mkdir(path.join(__dirname, '..', '.local'), { recursive: true });
+    await bridge.page.screenshot({ path: path.join(__dirname, '..', '.local', 'login-success.png') });
+    await bridge.page.getByRole('button', { name: '返回 VS Code', exact: true }).click();
+    assert.equal((await bridge.finishLogin()).ready, true, 'login automatically hands off to a verified background connection');
+    assert.equal(bridge.manager.info.headless, true); assert.equal(bridge.profile, profile);
+    assert.equal((await bridge.chat('after-login', { newConversation: true })).text, 'mock-response');
+    // A user closing the visible login window also returns to the background.
+    await bridge.context.clearCookies(); await bridge.page.goto(origin);
+    await bridge.openLogin(); await bridge.page.locator('#fixture-submit').click(); await bridge.page.waitForSelector('#sendBtn');
+    assert.equal((await bridge.finishLogin()).loginComplete, true);
+    await bridge.page.close();
+    assert.equal((await bridge.finishLogin()).ready, true, 'closing login window preserves session-cookie authentication');
+    assert.equal((await bridge.chat('after-window-close', { newConversation: true })).text, 'mock-response');
+    // Without user action, the completion notice closes itself after its delay.
+    await bridge.openLogin(); assert.equal((await bridge.finishLogin()).loginComplete, true);
+    await bridge.page.waitForFunction(() => document.getElementById('__ntpu_login_complete').shadowRoot.querySelector('small').textContent.startsWith('0 秒'));
+    assert.equal((await bridge.finishLogin()).ready, true);
+    // Closing before login must not report success or open another window.
+    await bridge.context.clearCookies(); await bridge.page.goto(origin);
+    await bridge.openLogin(); await bridge.page.close();
+    assert.equal((await bridge.finishLogin()).ready, false);
+    assert.equal(bridge.mode, 'background');
+    requiresLogin = false; await bridge.page.goto(origin);
     await testUI(bridge.page, origin);
-    console.log('Local mock website passed: ' + selected + '; streaming, task reuse, upload, cancel, persistent profile, memory/settings UI. No NTPU AI requests.');
+    console.log('Local mock website passed: ' + selected + '; login window, session-cookie background handoff, manual close/cancel, streaming, task reuse, upload, persistent profile, memory/settings UI. No NTPU AI requests.');
   } finally {
     await bridge.close(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve));
     await fs.rm(directory, { recursive: true, force: true });

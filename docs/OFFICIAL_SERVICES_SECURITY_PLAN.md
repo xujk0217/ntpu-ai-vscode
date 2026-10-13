@@ -35,4 +35,4 @@ Mac arm64 的專用 Chrome 於 2026-10-13 真正呼叫 NTPU AI，回覆包含指
 
 ## 本輪進度
 
-已完成 VS Code 側欄真人登入畫面與背景 headless BrowserBridge、設定分區、macOS／Linux OS 沙箱後端與附件 OCR。登入畫面與 BrowserBridge 共用 Playwright BrowserContext，不開桌面視窗、不匯出 Cookie。Mac 真實沙箱讀寫／網路與 stdio MCP、真實 OCR 已通過。Windows 沙箱仍阻止執行；Linux／Intel Mac 待 CI 及人工桌面驗收。真實 NTPU Agent 最近在背景與 headed 比較測試皆收到 HTTP 502，因此完整模型任務仍未驗收。詳見 [實作與限制](BROWSER_SURFACE_AND_SECURITY.md)。
+0.5.4 已依使用者需求改用正常的獨立登入視窗；成功提示後切回相同專用 Profile 的背景 headless BrowserBridge。登入與背景模式依序持有 Profile，沒有 Cookie 匯出。設定分區、macOS／Linux OS 沙箱後端與附件 OCR 延用既有實作。Mac 真實沙箱讀寫／網路與 stdio MCP、真實 OCR 已通過。Windows 沙箱仍阻止執行；Windows／Linux／Intel Mac 校方桌面 SSO 待人工驗收。真實 NTPU Agent 先前在背景與 headed 比較測試皆收到 HTTP 502，完整模型任務仍未驗收。0.5.4 的登入視窗、背景 session 保留與串流使用 localhost mock 驗證，校方新 SSO 尚待使用者人工操作。詳見 [實作與限制](BROWSER_SURFACE_AND_SECURITY.md)。
