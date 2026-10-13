@@ -1,5 +1,12 @@
 # Local-first Memory、資料防護與跨平台重構
 
+## 0.5.1 VS Code 內真人登入與背景連線（2026-10-13）
+
+- 使用者指定登入過程由 VS Code 內操作，不開啟桌面瀏覽器視窗；平時隱藏 Browser UI，由 NTPU AI 專用 Playwright Profile 在 Extension Host 背景連線。
+- BrowserManager／BrowserBridge 強制 headless，即使舊設定明確為 false 也不會開桌面視窗。開啟 Agent 側欄會自動連線；網站需要真人登入／驗證時，僅顯示同一 BrowserContext 的即時登入畫面與鍵鼠轉送；Ready 後自動收起。沒有 iframe、Cookie 匯出或 CAPTCHA 自動化。
+- `npm test` 78／78 通過；`npm run browser:fixture` 本機真實 Chrome headless 通過串流、task 內對話重用、附件、取消、持久 Profile 和 Webview 真人登入輸入測試；全程僅用 localhost mock，未連學校模型服務。
+- NTPU SSO／CAPTCHA 在這次修改後尚未重新人工驗收；舊登入 Profile 的 headless 狀態探測及模型請求也未重跑。需要在使用者 VS Code 實際確認學校 IdP 接受此方式；不相容時如實顯示錯誤。
+
 ## 需求來源
 
 完整記憶與防護規格見 [LOCAL_FIRST_REQUIREMENTS.md](LOCAL_FIRST_REQUIREMENTS.md)，追加瀏覽器與平台要求見 [BROWSER_PLATFORM_REQUIREMENTS.md](BROWSER_PLATFORM_REQUIREMENTS.md)。本文件追蹤實作與驗證，不能將尚未執行的 CI 或網站測試記為成功。

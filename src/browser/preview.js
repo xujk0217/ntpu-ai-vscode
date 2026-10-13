@@ -17,7 +17,7 @@ class BrowserPreview {
     try {
       const page = this.page();
       if (!page || page.isClosed()) return this.emit({ kind: 'browserFrame', error: '瀏覽器未連線，請重新連線。' });
-      if (!this.allowed(page)) return this.emit({ kind: 'browserFrame', error: '此頁面無法安全顯示；請開啟原生視窗。' });
+      if (!this.allowed(page)) return this.emit({ kind: 'browserFrame', error: '此登入頁面無法安全顯示在 VS Code，請檢查學校登入網址是否為 HTTPS。' });
       const size = page.viewportSize() || await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
       const buffer = await page.screenshot({ type: 'jpeg', quality: 55, timeout: 5000 });
       if (this.active) this.emit({ kind: 'browserFrame', image: 'data:image/jpeg;base64,' + buffer.toString('base64'), width: size.width, height: size.height, locked: this.busy() });

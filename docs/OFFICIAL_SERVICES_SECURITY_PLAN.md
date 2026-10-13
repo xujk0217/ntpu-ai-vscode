@@ -35,4 +35,4 @@ Mac arm64 的專用 Chrome 於 2026-10-13 真正呼叫 NTPU AI，回覆包含指
 
 ## 本輪進度
 
-已完成側欄瀏覽器、設定分區、macOS／Linux OS 沙箱後端與附件 OCR。Mac 真實沙箱讀寫／網路與 stdio MCP、真實 OCR 已通過。Windows 沙箱仍阻止執行；Linux／Intel Mac 待 CI 及人工桌面驗收。真實 NTPU Agent 在背景與原生視窗皆收到 HTTP 502，因此本輪完整任務仍未驗收；既有登入還原與背景畫面已可用。詳見 [實作與限制](BROWSER_SURFACE_AND_SECURITY.md)。
+已完成 VS Code 側欄真人登入畫面與背景 headless BrowserBridge、設定分區、macOS／Linux OS 沙箱後端與附件 OCR。登入畫面與 BrowserBridge 共用 Playwright BrowserContext，不開桌面視窗、不匯出 Cookie。Mac 真實沙箱讀寫／網路與 stdio MCP、真實 OCR 已通過。Windows 沙箱仍阻止執行；Linux／Intel Mac 待 CI 及人工桌面驗收。真實 NTPU Agent 最近在背景與 headed 比較測試皆收到 HTTP 502，因此完整模型任務仍未驗收。詳見 [實作與限制](BROWSER_SURFACE_AND_SECURITY.md)。

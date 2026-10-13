@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -30,7 +30,7 @@
       },
       {
         "command": "ntpuAI.login",
-        "title": "NTPU AI: 開啟登入瀏覽器"
+        "title": "NTPU AI: 連線（VS Code 背景）"
       },
       {
         "command": "ntpuAI.logout",
@@ -212,12 +212,6 @@
               "type": "string"
             }
           }
-        },
-        "ntpuAI.browserHeadless": {
-          "type": "boolean",
-          "scope": "application",
-          "default": false,
-          "description": "以背景 Chromium 引擎配合側欄小瀏覽器。真人驗證不支援時可切到原生視窗；切換保留專用 Profile。"
         }
       }
     }

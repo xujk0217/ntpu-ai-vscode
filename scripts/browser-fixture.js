@@ -42,10 +42,10 @@ async function main() {
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
-  const options = { attachmentGuard: async attachment => { if (!attachment.approved) throw new Error("Fixture requires approval"); }, origin, storageRoot: directory, headless: process.env.NTPU_FIXTURE_HEADED !== '1', browser: process.env.NTPU_FIXTURE_BROWSER || 'auto' };
+  const options = { attachmentGuard: async attachment => { if (!attachment.approved) throw new Error("Fixture requires approval"); }, origin, storageRoot: directory, headless: false, browser: process.env.NTPU_FIXTURE_BROWSER || 'auto' };
   let bridge = new BrowserBridge(options);
   try {
-    await bridge.open(); assert.equal((await bridge.status()).ready, true);
+    await bridge.open(); assert.equal((await bridge.status()).ready, true); assert.equal(bridge.manager.info.headless, true, 'VS Code bridge always uses a hidden browser');
     await bridge.page.evaluate(() => { document.cookie = 'fixture_state=synthetic; max-age=3600; path=/'; });
     assert.equal((await bridge.chat('first', { newConversation: true })).text, 'mock-response');
     assert.equal((await bridge.chat('second', { newConversation: false })).text, 'mock-response');
@@ -73,4 +73,4 @@ async function main() {
     await fs.rm(directory, { recursive: true, force: true });
   }
 }
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+main().catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });

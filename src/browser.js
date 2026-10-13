@@ -110,8 +110,10 @@ class BrowserBridge {
 
   async _open() {
     if (this.context) await this.context.close().catch(() => {});
+    // Browser is a hidden transport. Human login is relayed through the VS Code
+    // webview; never create a separate desktop browser window.
     const launched = await this.manager.launch({ selection: this.options.browser || (this.options.chromePath ? 'custom' : 'auto'),
-      customPath: this.options.customPath || this.options.chromePath || '', headless: !!this.options.headless });
+      customPath: this.options.customPath || this.options.chromePath || '', headless: true });
     this.context = launched.context; this.page = launched.page; this.profile = launched.info.profile;
     await this.context.exposeBinding(this.binding, (source, payload) => {
       if (source.page !== this.page || !source.frame.url().startsWith(this.origin + '/')) return;
@@ -119,7 +121,7 @@ class BrowserBridge {
     });
     await this.context.addInitScript(installStreamObserver, this.binding);
     this.page = this.context.pages()[0] || await this.context.newPage();
-    this.page.on('close', () => this._fail(new Error('專用瀏覽器已關閉。請重新開啟登入瀏覽器。')));
+    this.page.on('close', () => this._fail(new Error('背景瀏覽器已中斷。請重新連線 NTPU AI。')));
     this.page.on('framenavigated', frame => {
       if (frame === this.page?.mainFrame() && this.pending) this._fail(new Error('回答期間網頁已離開，請重新確認登入狀態。'));
     });
@@ -127,24 +129,23 @@ class BrowserBridge {
     // The page restores its existing session asynchronously after DOMContentLoaded.
     // Wait for that bootstrap before reporting a false login failure. This only
     // observes normal UI state and never completes a login or CAPTCHA.
-    await this.page.waitForFunction(() => {
+    if (this.page.url().startsWith(this.origin + '/')) await this.page.waitForFunction(() => {
       const overlay = document.getElementById('auth-overlay');
       return overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none') && document.getElementById('input');
     }, null, { timeout: 12000 }).catch(() => {});
-    await this.page.bringToFront();
   }
 
   async status() {
     if (!this.page || this.page.isClosed()) return { ready: false, authentication: 'unknown', message: '瀏覽器未連線。重新連線後會確認既有登入狀態；關閉瀏覽器不會清除登入資料。' };
     const url = this.page.url();
-    if (!url.startsWith(this.origin + '/')) return { ready: false, authentication: 'unknown', message: '登入頁面正在切換，請完成學校登入並返回 NTPU AI。' };
+    if (!url.startsWith(this.origin + '/')) return { ready: false, authentication: 'required', message: '請在 VS Code 登入頁面完成學校登入，完成後會自動切回背景連線。' };
     return this.page.evaluate(() => {
       const overlay = document.getElementById('auth-overlay');
       const input = document.getElementById('input');
       const hidden = overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none');
       const ready = !!(hidden && input && document.getElementById('sendBtn'));
       return { ready, authentication: ready ? 'authenticated' : overlay && !hidden ? 'required' : 'unknown', message: ready ? `已連線：${document.getElementById('user-email')?.textContent || 'NTPU AI'}` :
-        '請在專用 Chrome 使用學校帳號登入，或完成安全驗證後按「以訪客身分試用」。' };
+        '請在 VS Code 登入頁面使用學校帳號登入或完成安全驗證。' };
     }).catch(() => ({ ready: false, authentication: 'unknown', message: '登入頁面正在切換，請稍候再檢查。' }));
   }
 

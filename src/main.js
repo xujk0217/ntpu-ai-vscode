@@ -9,7 +9,11 @@ function activate(context) {
     try { await handler(); } catch (error) { vscode.window.showErrorMessage('NTPU AI: ' + error.message); }
   }));
   command('ntpuAI.open', () => vscode.commands.executeCommand('workbench.view.extension.ntpuAI'));
-  command('ntpuAI.login', () => app.login());
+  command('ntpuAI.login', async () => {
+    await vscode.commands.executeCommand('workbench.view.extension.ntpuAI');
+    await vscode.commands.executeCommand('ntpuAI.chat.focus');
+    await app.login();
+  });
   command('ntpuAI.logout', () => app.logout());
   command('ntpuAI.status', () => app.checkConnection());
   command('ntpuAI.stop', () => app.stop());

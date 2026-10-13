@@ -105,7 +105,7 @@ class BrowserManager {
       throw new Error('Profile 必須是獨立的私人資料夾，不能使用日常瀏覽器 Profile、家目錄或專案目錄。');
     return full;
   }
-  async launch({ selection = 'auto', customPath = '', headless = false } = {}) {
+  async launch({ selection = 'auto', customPath = '', headless = true } = {}) {
     if (!['win32', 'darwin', 'linux'].includes(this.platform) || !(['x64'].includes(this.arch) || this.platform === 'darwin' && this.arch === 'arm64')) throw new Error('目前支援 Windows x64、macOS x64／arm64、Linux x64。');
     if (this.options.remote || this.env.WSL_DISTRO_NAME) throw new Error('Extension Host 位於遠端／WSL，無法假設可啟動使用者桌面瀏覽器。請在本機 VS Code 使用本機工作區；歷史仍可離線瀏覽。');
     if (this.platform === 'linux' && !headless && !this.env.DISPLAY && !this.env.WAYLAND_DISPLAY) throw new Error('Linux 沒有圖形顯示環境（DISPLAY／WAYLAND_DISPLAY）。請使用本機桌面 VS Code。');
@@ -122,7 +122,7 @@ class BrowserManager {
         const page = context.pages()[0] || await context.newPage();
         const agent = await page.evaluate(() => navigator.userAgent);
         if (!/Chrome|Chromium|Edg/.test(agent)) throw new Error('瀏覽器不是可支援的 Chromium 引擎。');
-        this.info = { browser: candidate.id, label: candidate.label, profile, controlled: true,
+        this.info = { browser: candidate.id, label: candidate.label, profile, controlled: true, headless,
           selection, message: selection === 'auto' ? (candidate.preferred ? '已控制受支援的系統預設瀏覽器：' : '預設瀏覽器不支援或不可用，已選擇：') + candidate.label : '已由 Playwright 控制：' + candidate.label };
         return { context, page, info: this.info };
       } catch (error) { await context?.close().catch(() => {}); failures.push(candidate.label + '：' + redact(error.message).split('\n')[0].slice(0, 450)); }

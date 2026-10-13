@@ -72,12 +72,11 @@
   </div>
 </form>
 <footer class="permissions-footer"><svg><use href="#i-shield"/></svg><select id="permission" aria-label="權限模式"><option value="ask">要求核准</option><option value="assisted">協助核准</option><option value="full">完整存取</option></select><span id="permissionDescription">修改與外部操作先確認</span></footer>
-<section id="miniBrowser" class="mini-browser" hidden aria-label="NTPU AI 小瀏覽器">
-  <header><strong>NTPU AI · 瀏覽器</strong><button id="browserZoom" type="button">放大</button><button id="browserExternal" type="button">原生視窗</button><button id="browserClose" type="button" aria-label="收起小瀏覽器">×</button></header>
-  <img id="browserImage" tabindex="0" alt="可互動的 NTPU AI 瀏覽器畫面" hidden>
-  <p id="browserHint">正在連線…</p>
+<section id="loginView" class="login-view" hidden aria-label="NTPU AI 登入驗證">
+  <header><div><strong>在 VS Code 完成登入</strong><span>請使用學校提供的登入方式；登入後會自動切回背景連線。</span></div><button id="browserClose" type="button" aria-label="稍後再登入">稍後</button></header>
+  <img id="browserImage" tabindex="0" alt="NTPU AI 登入畫面，輸入內容不會記錄在聊天中" hidden>
+  <p id="browserHint">正在載入學校登入畫面…</p>
 </section>
-<button id="browserToggle" class="browser-toggle" type="button" title="顯示／收起小瀏覽器">瀏覽器</button>
 <aside id="drawer" class="drawer" hidden aria-label="工作階段與工具設定">
   <div class="drawer-header"><strong id="drawerTitle">工作階段</strong><button id="closeDrawer" class="icon-button" aria-label="關閉面板"><svg><use href="#i-close"/></svg></button></div>
   <nav class="drawer-tabs"><button data-tab="sessions" class="active">聊天紀錄</button><button data-tab="skills">Skills</button><button data-tab="memory">記憶</button><button data-tab="connection">連線</button><button data-tab="tools">工具</button><button data-tab="security">安全</button></nav>

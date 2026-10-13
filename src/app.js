@@ -38,7 +38,8 @@ class AgentApp {
       this.state();
     });
     this.skills = new SkillCatalog(path.join(context.extensionPath, 'skills'), vscode.workspace.getConfiguration('ntpuAI').get('skillDirectories', []));
-    this.browserPreview = new BrowserPreview({ bridge: () => this.getBridge(), busy: () => this.busy(), emit: message => { void this.view?.webview.postMessage(message); } });
+    this.browserLoginView = new BrowserPreview({ bridge: () => this.getBridge(), busy: () => this.busy(), emit: message => { void this.view?.webview.postMessage(message); } });
+    this.loginSurfaceDismissed = false; this.initialAutoConnect = false;
     this.sandbox = new SandboxExecutor();
     this.mcp = new McpManager({ secrets: context.secrets, sandbox: this.sandbox, workspace: () => this.workspace()?.uri.scheme === 'file' ? this.workspace().uri.fsPath : null, onState: () => this.capabilities(), onContent: content => this.mcpContent(content) });
     this.servers = context.globalState.get('ntpuAI.mcpServers', []);
@@ -73,8 +74,11 @@ class AgentApp {
 
   resolveWebviewView(view) {
     this.view = view;
-    view.onDidChangeVisibility?.(() => { if (!view.visible) this.browserPreview.stop(); });
-    view.onDidDispose?.(() => this.browserPreview.stop());
+    view.onDidChangeVisibility?.(() => {
+      if (!view.visible) this.browserLoginView.stop();
+      else if (this.connection.authentication === 'required' && !this.loginSurfaceDismissed) void this.showLoginSurface();
+    });
+    view.onDidDispose?.(() => this.browserLoginView.stop());
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media'), this.context.globalStorageUri] };
     const nonce = randomBytes(18).toString('base64');
     view.webview.html = fsSync.readFileSync(path.join(this.context.extensionPath, 'media', 'index.html'), 'utf8')
@@ -82,6 +86,13 @@ class AgentApp {
       .replaceAll('%STYLE%', view.webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'agent.css')).toString())
       .replaceAll('%SCRIPT%', view.webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'chat.bundle.js')).toString());
     view.webview.onDidReceiveMessage(message => { void this.handle(message).catch(error => this.notice(error.message, 'error')); }, null, this.context.subscriptions);
+    if (!this.initialAutoConnect) {
+      this.initialAutoConnect = true;
+      void this.ready.then(() => this.login()).catch(error => {
+        this.connection = { ready: false, authentication: 'unknown', message: '背景連線失敗：' + redact(error.message) };
+        this.state();
+      });
+    }
   }
   post(message) { void this.view?.webview.postMessage(sanitize(message)); }
   busy() { return !!this.controller; }
@@ -136,20 +147,20 @@ class AgentApp {
       const config = vscode.workspace.getConfiguration('ntpuAI');
       this.bridge = new BrowserBridge({ browser: config.get('browser', 'auto') === 'auto' && config.get('chromePath') ? 'custom' : config.get('browser', 'auto'),
         customPath: config.get('customBrowserPath') || config.get('chromePath') || '', profile: config.get('browserProfilePath') || undefined,
-        headless: config.get('browserHeadless', false), storageRoot: this.context.globalStorageUri.fsPath, workspaces: vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath) || [],
+        headless: true, storageRoot: this.context.globalStorageUri.fsPath, workspaces: vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath) || [],
         remote: this.context.globalStorageUri.scheme === 'vscode-remote' || this.context.extension?.extensionKind === 2 && !!vscode.env?.remoteName });
     }
     return this.bridge;
   }
   async login() {
     if (this.busy()) return;
-    this.progress = '正在開啟登入瀏覽器'; this.state();
-    await this.getBridge().open(); await this.checkConnection();
+    this.progress = '正在 VS Code 背景連線至 NTPU AI'; this.state();
+    await this.getBridge().open(); await this.checkConnection(true);
     this.progress = '就緒'; this.state(); this.capabilities();
   }
   async reconnectBrowser(open = true) {
     await this.ready; if (this.busy()) throw new Error('請先停止任務再更換瀏覽器。');
-    await this.save(); this.browserPreview.stop(); await this.bridge?.close(); this.bridge = null;
+    await this.save(); this.browserLoginView.stop(); await this.bridge?.close(); this.bridge = null;
     this.connection = { ready: false, message: '瀏覽器設定已更新，請重新連線。' }; this.state(); this.capabilities();
     if (open) await this.login();
   }
@@ -162,7 +173,6 @@ class AgentApp {
       await config.update('browser', message.browser, vscode.ConfigurationTarget.Global);
       await config.update('customBrowserPath', message.customPath, vscode.ConfigurationTarget.Global);
       await config.update('browserProfilePath', message.profileLocation, vscode.ConfigurationTarget.Global);
-      if (typeof message.headless === 'boolean') await config.update('browserHeadless', message.headless, vscode.ConfigurationTarget.Global);
       await config.update('chromePath', '', vscode.ConfigurationTarget.Global);
     } finally { this.browserUpdating = false; }
     await this.reconnectBrowser(true);
@@ -178,8 +188,23 @@ class AgentApp {
     this.post({ kind: 'connection', connection: this.connection });
     this.state();
   }
-  async checkConnection() {
-    this.connection = await this.getBridge().status(); this.state(); return this.connection;
+  async showLoginSurface() {
+    if (!this.view?.visible || this.loginSurfaceDismissed || this.connection.authentication !== 'required') return;
+    this.post({ kind: 'loginView', visible: true });
+    await this.browserLoginView.start();
+  }
+  hideLoginSurface(dismissed = false) {
+    if (dismissed) this.loginSurfaceDismissed = true;
+    this.browserLoginView.stop(); this.post({ kind: 'loginView', visible: false });
+  }
+  async checkConnection(forceLoginView = false) {
+    const previous = this.connection;
+    this.connection = await this.getBridge().status();
+    if (this.connection.ready) { this.loginSurfaceDismissed = false; this.hideLoginSurface(); }
+    else if (this.connection.authentication === 'required' && (forceLoginView || previous.authentication !== 'required')) {
+      this.loginSurfaceDismissed = false; await this.showLoginSurface();
+    }
+    this.state(); return this.connection;
   }
   async refreshSkills() {
     const root = this.workspace();
@@ -189,7 +214,7 @@ class AgentApp {
   capabilities() {
     const connected = this.mcp.states();
     const config = vscode.workspace.getConfiguration('ntpuAI');
-    this.post({ kind: 'capabilities', sandbox: this.sandbox.state, browser: { headless: config.get('browserHeadless', false), selection: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''),
+    this.post({ kind: 'capabilities', sandbox: this.sandbox.state, browser: { headless: true, selection: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''),
       profileLocation: config.get('browserProfilePath', ''), info: this.bridge?.manager.info, host: process.platform + ' ' + process.arch, remoteName: vscode.env?.remoteName || '' }, skills: this.skills.list(), skillErrors: this.skills.errors,
       servers: [...BUILTINS, ...this.servers.filter(server => !BUILTINS.some(item => item.name === server.name))].map(server => ({ name: server.name, label: server.label, type: server.type,
         target: server.url || [server.command, ...(server.args || [])].join(' '), builtin: !!server.builtin,
@@ -202,7 +227,7 @@ class AgentApp {
   async handle(message) {
     if (!message || typeof message !== 'object' || typeof message.kind !== 'string') return;
     switch (message.kind) {
-      case 'ready': await this.ready; this.render(); break;
+      case 'ready': await this.ready; this.render(); if (!this.initialAutoConnect) { this.initialAutoConnect = true; await this.login(); } break;
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
       case 'memory': case 'resumeTask': case 'renameSession': case 'exportSession': case 'sessionsAction': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
       case 'login': await this.login(); break;
@@ -229,9 +254,8 @@ class AgentApp {
       case 'openFile': await this.openFile(message.path); break;
       case 'addContext': await this.addContext(); break;
       case 'removeContext': this.contextFiles = this.contextFiles.filter(file => file.relative !== message.path); this.state(); break;
-      case 'browserPreview': if (message.visible) await this.browserPreview.start(); else this.browserPreview.stop(); break;
-      case 'browserInput': try { await this.browserPreview.input(message); } catch { throw new Error('小瀏覽器操作未完成，請確認連線後再試。'); } break;
-      case 'browserExternal': if (this.busy()) throw new Error('請先停止任務再切換瀏覽器視窗。'); if (this.getBridge().options.headless) { this.getBridge().options.headless = false; await this.bridge.close(); } await this.getBridge().open(); await this.bridge.page?.bringToFront(); break;
+      case 'loginViewClose': this.hideLoginSurface(true); break;
+      case 'browserInput': try { await this.browserLoginView.input(message); } catch { throw new Error('VS Code 登入頁面操作未完成，請確認連線後再試。'); } break;
       case 'attach': await this.attach(); break;
       case 'removeAttachment': this.attachment = null; this.state(); break;
       case 'change': await this.showChange(message.id); break;
@@ -323,7 +347,7 @@ class AgentApp {
     try {
       await this.save();
       const bridge = this.getBridge();
-      if (!bridge.page || bridge.page.isClosed()) { this.progress = '正在開啟登入瀏覽器'; this.state(); await bridge.open(); }
+      if (!bridge.page || bridge.page.isClosed()) { this.progress = '正在 VS Code 背景連線'; this.state(); await bridge.open(); }
       this.connection = await bridge.status();
       if (!this.connection.ready) throw new Error(this.connection.message);
       if (signal.aborted) throw new Error('已停止');
@@ -645,7 +669,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { await this.ready; this.stop(); this.browserPreview.stop(); clearInterval(this.poller); clearTimeout(this.saveTimer); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { await this.ready; this.stop(); this.browserLoginView.stop(); clearInterval(this.poller); clearTimeout(this.saveTimer); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

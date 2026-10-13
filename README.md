@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.5.0 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.5.1 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -63,19 +63,19 @@
 ### 登入
 
 1. 開啟專案資料夾，點 Activity Bar 的 **NTPU AI**，或執行 **NTPU AI: 開啟程式助理**。
-2. 點 **連線 NTPU AI**，在擴充功能開啟的專用瀏覽器內完成學校 SSO 與機器人辨識。
+2. 開啟 Agent 後會自動在背景連線；若網站要求驗證，於 VS Code 側欄登入面板完成學校 SSO 與機器人辨識。
 3. 回到側欄，連線狀態應顯示 **已連線**。
 4. 以 Build 模式輸入任務，按送出或 `Cmd+Enter`／`Ctrl+Enter`。
 
-登入保留在獨立 browser profile。VS Code 預設路徑為 `globalStorageUri/browser-profiles/<browser>`，不同瀏覽器與不同 Custom 執行檔互相隔離。這不是 VS Code 帳號登入；工作階段過期時，在專用瀏覽器重新登入並完成機器人辨識。0.3.x 舊 Chrome profile 仍保留在原路徑，不複製 Cookie；升級後的新隔離位置需要重新登入一次。
+登入保留在獨立 browser profile。VS Code 預設路徑為 `globalStorageUri/browser-profiles/<browser>`，不同瀏覽器與不同 Custom 執行檔互相隔離。這不是 VS Code 帳號登入；工作階段過期時，會在 VS Code 側欄顯示可互動的登入頁，讓使用者自行完成學校 SSO／安全驗證。0.3.x 舊 Chrome profile 仍保留在原路徑，不複製 Cookie；升級後的新隔離位置需要重新登入一次。
 
-未登入時，主介面會顯示 **連線 NTPU AI**。登入後，主介面會收起連線狀態；到右上角 **設定 → 工具／設定** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
+開啟 Agent 側欄時，擴充套件會自動以背景瀏覽器連線。只有網站要求真人登入／驗證時，才會顯示 **在 VS Code 完成登入**；登入成功後該畫面自動收起，BrowserContext 留在背景供 Agent 使用。使用者可按「稍後」收起登入頁，再從主介面的 **連線 NTPU AI** 重新開啟。到右上角 **設定 → 工具／設定** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
 
 每個 VS Code 使用者任務會建立一個 NTPU AI 網頁對話；同一任務的 agent 後續輪次會沿用該對話，下一個 VS Code 任務才建立新的 NTPU AI 對話。
 
-專用瀏覽器需保持開啟；同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
+不需要開啟桌面瀏覽器，也不需要保持任何外部視窗。隱藏的 Playwright 瀏覽器會在 Extension Host 執行期間保持連線；VS Code 關閉後，下一次開啟會用相同 Profile 還原網站登入狀態。同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
 
-關閉專用瀏覽器只會中斷連線，設定頁會顯示 **未連線**；重新連線後才確認網站是否仍登入。關閉操作不清除登入資料。只有網站要求登入或你按下登出，介面才顯示 **未登入**。學校端登入過期、切換瀏覽器或改用另一個 Profile 時，仍可能需要重新登入。
+瀏覽器程序意外關閉只會中斷連線，Agent 會在狀態檢查時提示並可重新連線；關閉操作不清除登入資料。只有網站要求登入或你按下登出，介面才顯示 **未登入**。學校端登入過期、切換瀏覽器或改用另一個 Profile 時，仍可能需要重新登入。無頭瀏覽器是否能載入每一種學校 IdP／安全驗證頁，取決於學校服務；若服務拒絕此登入方式，擴充套件會顯示錯誤，不會改開桌面瀏覽器或繞過驗證。
 
 ## 完整任務流程
 
@@ -163,16 +163,16 @@ Agent 執行或等待核准時，聊天管理操作會暫停，避免修改正�
 
 ## 瀏覽器與平台
 
-齒輪 → **工具／設定** 提供 Browser、Custom Browser Path、Browser Profile Location、連線結果及重新連線。Auto 先嘗試受支援的系統預設瀏覽器；預設為 Safari／Firefox 或不可用時，選擇已安裝的 Chrome、Edge、Chromium。只有 Playwright 成功啟動並能操作 Chromium 頁面，才顯示可控制。明確失敗時會顯示原因與替代選項，不會僅開 URL 就宣稱成功。
+齒輪 → **工具／設定** 提供 Browser、Custom Browser Path、Browser Profile Location、連線結果及重新連線。Auto 先嘗試受支援的系統預設瀏覽器；預設為 Safari／Firefox 或不可用時，選擇已安裝的 Chrome、Edge、Chromium。Playwright 一律以 headless 啟動，不建立桌面視窗；只有 VS Code 內登入面板會在真人驗證期間傳送同一頁的即時畫面與使用者直接輸入。明確失敗時會顯示原因，不會僅開 URL 就宣稱成功。
 
-可手動選擇 Chrome／Edge／Chromium，或設定 Custom 的執行檔絕對路徑。程式不自動下載日常瀏覽器。Chromium 也可由開發者執行 `npx playwright-core install chromium` 安裝後偵測；登入驗證仍由使用者完成。所有啟動保留 Chromium sandbox，不使用 remote debugging attach 或一般瀏覽器 Profile。
+可手動選擇 Chrome／Edge／Chromium，或設定 Custom 的執行檔絕對路徑。程式不自動下載日常瀏覽器。Chromium 也可由開發者執行 `npx playwright-core install chromium` 安裝後偵測；登入驗證仍由使用者完成。所有啟動保留 Chromium sandbox，不使用 remote debugging attach 或一般瀏覽器 Profile。登入面板是同一個 BrowserContext 的畫面操作轉送，不是 iframe；不讀取、複製或匯出 Cookie／Token。
 
 Extension 使用 VS Code 本機私有儲存；獨立 BrowserManager 的預設資料根目錄則依平台選擇：
 
 | 系統 | 資料目錄與驗證狀態 |
 | --- | --- |
 | Windows x64 | `%LOCALAPPDATA%/NTPU AI Agent`；Windows Server 2022 CI 真實 Edge headless、測試與 VSIX 通過 |
-| macOS arm64 | `~/Library/Application Support/NTPU AI Agent`；本機真實 Chrome headed／headless，macOS 15 CI 測試與 VSIX 通過 |
+| macOS arm64 | `~/Library/Application Support/NTPU AI Agent`；本機真實 Chrome headless，macOS 15 CI 測試與 VSIX 通過 |
 | macOS x64 | 同 macOS 路徑；macOS 15 Intel CI 真實 Chrome headless、測試與 VSIX 通過 |
 | Linux x64 | `$XDG_DATA_HOME/ntpu-ai-agent` 或 `~/.local/share/ntpu-ai-agent`；Ubuntu 22.04 CI 真實 Chromium headless、測試與 VSIX 通過 |
 
@@ -180,7 +180,7 @@ Extension 使用 VS Code 本機私有儲存；獨立 BrowserManager 的預設資
 
 Unix 目錄／檔案用 0700／0600；Windows 依私有應用資料目錄的使用者 ACL。拒絕 Profile 指向日常 Chrome／Edge／Chromium 資料、家目錄、專案或其 symlink 別名。瀏覽器原生 profile lock 衝突會明確報錯；不刪除瀏覽器的鎖來強制取得日常 profile。
 
-Extension 優先在本機 UI Host 執行。Remote SSH／Dev Container／WSL 不等同使用者桌面：本機歷史可讀，但此版本不支援對遠端工作區執行檔案／終端機任務；遠端 Host／WSL 不會假裝已連上本機圖形瀏覽器。Linux 無 DISPLAY／WAYLAND 顯示環境也會清楚報錯。其他 ARM64 平台、Alpine／musl 與 Attach Existing Browser 尚未支援。
+Extension 優先在本機 UI Host 執行。Remote SSH／Dev Container／WSL 不等同使用者桌面：本機歷史可讀，但此版本不支援對遠端工作區執行檔案／終端機任務；遠端 Host／WSL 不會假裝已連上本機瀏覽器。背景 headless 瀏覽器不需要 Linux DISPLAY／WAYLAND。其他 ARM64 平台、Alpine／musl 與 Attach Existing Browser 尚未支援。
 
 ## 權限與終端機規則
 
@@ -338,8 +338,8 @@ npm run package
 - [OpenCode permissions](https://opencode.ai/docs/permissions/)、[skills](https://opencode.ai/docs/skills/)：模式、權限與技能目錄。
 - [NTPU AI](https://ai.ntpu.edu.tw/)：實際模型服務。
 
-## 側欄小瀏覽器與附件防護
+## VS Code 內真人登入與附件防護
 
-點右下角「瀏覽器」可直接操作專用網站頁面。連線設定可切換背景引擎；收起面板仍保留引擎與登入，關閉引擎則需要重新連線。設定分成連線、工具、安全，進階路徑預設收起。
+只有 NTPU AI 網站或學校登入頁需要真人輸入時，VS Code 側欄才會顯示登入操作面板。成功登入後，畫面自動隱藏，背景 BrowserContext 與登入 Profile 繼續保留供 Agent 使用；不會開啟桌面瀏覽器視窗。登入頁、操作輸入及畫面不存入 Session 或 Project Memory。設定分成連線、工具、安全，進階路徑預設收起。
 
 完整依賴安裝、隔離範圍、OCR 保障及驗收限制見 [側欄瀏覽器與本機執行隔離](docs/BROWSER_SURFACE_AND_SECURITY.md)。

@@ -1,5 +1,13 @@
 # 更新紀錄
 
+## 0.5.1
+
+- 瀏覽器預設在 VS Code 背景 headless 連線，不再開啟或帶出桌面瀏覽器視窗。
+- 只有 NTPU AI／學校 SSO 要求真人登入或驗證時，才在 VS Code 側欄顯示可操作的登入畫面；認證成功後自動收起。
+- 登入操作沿用隔離的 Playwright BrowserContext／Profile；不匯出 Cookie、Token，不提供 iframe 或外部瀏覽器切換。
+- 開啟 Agent 側欄後自動嘗試連線；保留手動重新連線與瀏覽器選擇設定。
+- 加入背景啟動、登入畫面預設隱藏、真人操作輸入與隱藏式 BrowserBridge 的回歸驗收。
+
 ## 0.5.0
 
 - 側欄可互動小瀏覽器，共用專用登入 Profile，提供背景模式與原生視窗。

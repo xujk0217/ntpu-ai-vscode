@@ -17,14 +17,17 @@ async function testUI(page, origin) {
   const send = data => page.evaluate(value => window.postMessage(value, '*'), data);
   await send({ kind: 'session', session: { id: 'fixture', title: 'Fixture', messages: [{ id: 'm1', role: 'assistant', text: '本機歷史' }], hasMore: true, before: 1, changes: [], plan: [] } });
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [], browser: { selection: 'auto', host: 'Fixture host' }, thinking: 'Fixture', image: 'Fixture' });
+  assert.equal(await page.locator('#loginView').isHidden(), true, 'login surface is hidden during ordinary use');
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
   await page.locator('.history-more').click();
-  await page.locator('#browserToggle').click();
+  await send({ kind: 'loginView', visible: true }); await page.waitForFunction(() => !document.getElementById('loginView').hidden);
   await send({ kind: 'browserFrame', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3YkAAAAASUVORK5CYII=', width: 1, height: 1 });
   await page.locator('#browserImage').click();
   await page.locator('#browserImage').press('a');
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'browserInput' && message.action === 'text')), true);
   await page.locator('#browserClose').click();
+  assert.equal(await page.locator('#loginView').isHidden(), true);
+  assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), 'loginViewClose');
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /已登入/);

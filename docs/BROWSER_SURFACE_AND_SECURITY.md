@@ -2,9 +2,9 @@
 
 ## 瀏覽器介面
 
-側欄右下角的「瀏覽器」按鈕開啟可互動的 NTPU AI 網頁畫面。點選畫面後可輸入文字、貼上、按 Enter／Tab、捲動。它操作同一個 Playwright Chromium 與專用 Profile，登入和模型串流共用連線；收起面板不會登出或停止引擎。Agent 執行中暫停手動網頁操作，避免干擾工具迴圈。
+瀏覽器平時以 headless 模式在 VS Code Extension Host 背景執行，不建立桌面視窗，也不顯示網頁。只有網站要求使用者登入／完成驗證時，才在 VS Code 側欄顯示登入操作面板。點選畫面後可輸入文字、貼上、按 Enter／Tab、捲動。它操作同一個 Playwright BrowserContext 與專用 Profile，登入和模型串流共用連線；認證就緒後自動收起面板，但背景引擎繼續執行。使用者可按「稍後」暫時收起；Agent 執行中暫停手動網頁操作，避免干擾工具迴圈。
 
-「連線」設定可選擇背景瀏覽器並套用。此時 Chromium 引擎仍在執行，但不顯示獨立視窗。一般登入和 HTTPS SSO 頁面可在面板操作；若驗證碼、SSO 或瀏覽器安全政策要求原生視窗，使用「原生視窗」。此操作保留同一 Profile，可能需要重新載入網站；執行中的任務禁止切換模式。背景模式與 SSO 的相容性依學校服務而異，不能保證全部驗證流程適用。
+「連線」設定可選擇背景瀏覽器並重新連線。一般登入和 HTTPS SSO 頁面可在 VS Code 登入操作面板中操作。登入畫面不能使用時，會顯示連線錯誤；此版本不會切換到桌面視窗。背景模式與 SSO 的相容性依學校服務而異，不能保證全部驗證流程適用。使用者仍須自行完成學校規定的 CAPTCHA／SSO，不會以程式代答或繞過。
 
 畫面是記憶體中的 JPEG 串流，輸入是使用者直接發起的鍵鼠事件，沒有提供給模型的螢幕讀取或登入工具。畫面、輸入與密碼不寫入 Session、Project Memory 或檔案。關閉側欄／面板即停止畫面更新。瀏覽器本身依正常網站行為保留登入資料。無 Cookie、Token 匯出或遠端預設 Profile 連線。
 
@@ -12,7 +12,7 @@
 
 ## 設定分區
 
-- **連線**：帳號、瀏覽器、背景模式、重新連線。執行檔與 Profile 路徑放在進階項目。
+- **連線**：帳號、瀏覽器、重新連線。瀏覽器固定在背景 headless 執行；執行檔與 Profile 路徑放在進階項目。
 - **工具**：MCP、官方校務入口、圖像能力和模型深度說明。連線位址預設收起。
 - **安全**：OS 沙箱狀態、附件檢查說明、指令核准規則。
 - **記憶**：本機記憶、備份、還原與資料傳送政策。
@@ -46,9 +46,9 @@ Shell 可讀寫選定工作區及私人暫存區；唯讀 Agent 與 stdio MCP �
 ## 驗收
 
 - `npm test`：確定性單元與整合測試；指令及 stdio 測試明確注入測試執行器，不能冒充 OS 沙箱驗收。
-- `npm run browser:fixture`：localhost 真實 Chromium，包含設定、小瀏覽器鍵鼠、串流、上傳、取消、Profile 保留。
+- `npm run browser:fixture`：localhost 真實 Chromium，確認 BrowserBridge 固定 headless、登入鍵鼠轉送、串流、上傳、取消、Profile 保留及登入 UI 預設隱藏。
 - `npm run sandbox:fixture`：真實 OS 隔離，工作區外讀取／憑證／網路阻擋及工作區寫入。
 - `npm run ocr:fixture`：真實本機 Tesseract／Poppler，乾淨圖片／PDF 通過、合成秘密拒絕。
-- 真實 NTPU SSO：依 `docs/BROWSER_PLATFORM_REQUIREMENTS.md` 人工登入流程驗收；不得自動完成 CAPTCHA 或提取憑證。Mac 可用既有登入測試重啟，但這不代表全新 SSO／CAPTCHA 已驗收。
+- 真實 NTPU SSO：依 `docs/BROWSER_PLATFORM_REQUIREMENTS.md` 人工登入流程驗收；不得自動完成 CAPTCHA 或提取憑證。此次 UI／背景模式回歸只用 localhost mock；Mac 舊 Profile/headless SSO、全新學校 SSO／CAPTCHA 均尚未重新驗收。
 
 Windows、Linux 桌面與 Intel Mac SSO 尚未實測。CI 是 Mock 網站及原生工具測試，不代表學校 SSO 驗收。

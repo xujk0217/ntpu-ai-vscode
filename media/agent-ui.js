@@ -331,8 +331,9 @@ window.addEventListener('message', event => {
   const message = event.data;
   if (message.kind === 'session') renderSession(message.session);
   else if (message.kind === 'historyPage' && message.sessionId === session.id) { renderSession({ ...session, messages: [...message.messages, ...session.messages], before: message.before, hasMore: message.hasMore }); $('messages').scrollTop = 0; }
+  else if (message.kind === 'loginView') toggleLoginView(message.visible);
   else if (message.kind === 'browserFrame') {
-    const image = $('browserImage'); $('browserHint').textContent = message.error || (message.locked ? 'Agent 執行中 · 暫停操作' : '點選畫面後可輸入 · 登入資料不進入聊天紀錄');
+    const image = $('browserImage'); $('browserHint').textContent = message.error || (message.locked ? 'Agent 執行中 · 暫停操作' : '請在此完成學校登入；登入資料不會進入聊天紀錄');
     image.hidden = !message.image; if (message.image) image.src = message.image; image.dataset.locked = String(!!message.locked);
   }
   else if (message.kind === 'memory') { memory = message; if (!$('drawer').hidden && tab === 'memory') renderDrawer(); }
@@ -368,13 +369,11 @@ $('approve').addEventListener('click', () => { if (!approval) return; $('approve
 });
 send('ready');
 
-function toggleBrowser(visible) {
-  $('miniBrowser').hidden = !visible; send('browserPreview', { visible });
-  if (!visible) { $('browserImage').removeAttribute('src'); $('browserHint').textContent = ''; }
+function toggleLoginView(visible) {
+  $('loginView').hidden = !visible;
+  if (!visible) { $('browserImage').removeAttribute('src'); $('browserImage').hidden = true; $('browserHint').textContent = ''; }
 }
-$('browserToggle').addEventListener('click', () => toggleBrowser($('miniBrowser').hidden));
-$('browserClose').addEventListener('click', () => toggleBrowser(false));
-$('browserExternal').addEventListener('click', () => send('browserExternal'));
+$('browserClose').addEventListener('click', () => { toggleLoginView(false); send('loginViewClose'); });
 $('browserImage').addEventListener('click', event => {
   event.currentTarget.focus(); const rect = event.currentTarget.getBoundingClientRect();
   send('browserInput', { action: 'click', x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height });
@@ -386,6 +385,3 @@ $('browserImage').addEventListener('keydown', event => {
 });
 $('browserImage').addEventListener('paste', event => { event.preventDefault(); send('browserInput', { action: 'text', text: event.clipboardData.getData('text').slice(0, 2000) }); });
 $('browserImage').addEventListener('wheel', event => { event.preventDefault(); send('browserInput', { action: 'scroll', delta: event.deltaY }); }, { passive: false });
-window.addEventListener('pagehide', () => send('browserPreview', { visible: false }));
-
-$('browserZoom').addEventListener('click', event => { const zoom = $('miniBrowser').classList.toggle('zoom'); event.currentTarget.textContent = zoom ? '符合面板' : '放大'; });

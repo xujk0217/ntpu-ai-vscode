@@ -20,6 +20,7 @@ function manager(platform, installed, preferred, failures = []) {
 test('Windows Auto detects and controls Edge when it is the supported default', async () => {
   const { instance, launches } = manager('win32', ['msedge.exe', 'chrome.exe'], 'MSEdgeHTM');
   const result = await instance.launch(); assert.equal(result.info.browser, 'edge'); assert.equal(result.info.controlled, true);
+  assert.equal(launches[0].options.headless, true);
   assert.match(launches[0].options.executablePath, /Microsoft\\Edge/); assert.match(launches[0].profile, /edge$/);
 });
 test('macOS unsupported Safari default falls back and launch failure tries an installed alternative', async () => {
@@ -30,6 +31,7 @@ test('macOS unsupported Safari default falls back and launch failure tries an in
 test('Linux Chromium works and manual selection overrides system default', async () => {
   const { instance } = manager('linux', ['google-chrome', '/chromium'], 'chromium.desktop');
   assert.equal((await instance.launch()).info.browser, 'chromium');
+  assert.equal(instance.info.headless, true);
   assert.equal((await instance.launch({ selection: 'chrome' })).info.browser, 'chrome');
 });
 test('profile policy rejects daily browser profiles, workspaces and parent directories', async () => {
