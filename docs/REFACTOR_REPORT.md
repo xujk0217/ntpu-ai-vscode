@@ -60,11 +60,22 @@ macOS arm64，Node 26.0.0：
 - localhost fixture：真實 Chrome headed／headless 啟動、串流、每 Task 對話重用、附件、停止、profile 保存通過；新版 Webview 無 pageerror，檢查歷史分頁、登入狀態位置、Browser 設定草稿、Project Memory 顯示。
 - `npm run package`：darwin-arm64 0.4.0 VSIX 打包成功，sharp 實際產生並解析 PNG。
 
-未使用真實 NTPU AI 帳號、未消耗學校模型用量。Windows／macOS Intel／Linux 的實機結果，須依下列 CI 實際紀錄更新，不能把 BrowserManager 的 mock 判斷當作實機驗證。
+此次重構驗證未使用真實 NTPU AI 帳號、未消耗學校模型用量。其他平台的真實瀏覽器結果見下列 CI 紀錄；mock 平台判斷與真實啟動分開驗證。
 
 ## CI 驗證紀錄
 
-已設定 Windows x64／macOS arm64／macOS x64／Linux x64、Node 20／22 共 8 個工作。CI 真實瀏覽器只連 localhost；Windows 使用 Edge，macOS 使用 Chrome，Linux 使用下載的 Chromium。執行完成前，其他平台的 runtime／VSIX 仍標記為尚未驗證。
+2026-10-13，commit `931e5f72fe148d1237312b19f7d321598b5d9e8d` 的 [CI 38393599933](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38393599933) **8／8 成功**。
+
+| 平台／runner | 真實受控瀏覽器 | Node 20／22 | VSIX target |
+| --- | --- | --- | --- |
+| Windows x64／Windows Server 2022 | Edge（headless） | 兩者通過 | win32-x64 |
+| macOS arm64／macOS 15 | Chrome（headless） | 兩者通過 | darwin-arm64 |
+| macOS x64／macOS 15 Intel | Chrome（headless） | 兩者通過 | darwin-x64 |
+| Linux x64／Ubuntu 22.04 | Playwright Chromium（headless） | 兩者通過 | linux-x64 |
+
+每個工作包含 `npm ci --include=optional`、59 項 tests、build、BrowserBridge／Webview localhost fixture、sharp 真實 PNG 自檢及 VSIX 打包。Node 22 上傳四平台安裝套件。此前一輪 `38391905815` 的 macOS Intel Node 20 因 runner 下載依賴 `ECONNRESET` 失敗，最新一輪成功。
+
+fixture 使用本機模擬網站與假的登入 cookie，實際驗證 Playwright 控制、串流、附件、取消、專用 profile 重開及 UI；不等同真實校方 SSO。Windows 一般桌面版本、macOS Intel 使用者装置、Linux 桌面互動 SSO、Debian 及 Remote Extension Host 實機尚未驗證。Remote SSH／Container／WSL 工作區執行與其他 ARM64 本版不支援。
 
 ## 使用與擴充
 

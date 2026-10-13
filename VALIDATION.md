@@ -24,7 +24,7 @@
 
 這些測試不是大型專案正確性或所有 MCP 相容性的保證；0.2.1 最後介面與 metadata 修正另以打包及原生 UI 確認。
 
-## 尚未驗證
+## 0.2.x 時尚未驗證
 
 Windows／Linux／Intel Mac、大專案、訪客用量、全部第三方 MCP、付費照片型生圖、所有 PDF 模型路由、工作區多視窗並行。
 
@@ -56,3 +56,11 @@ NTPU 公開網頁目前未提供原生 thinking／reasoning_effort 或任意模�
 - UI 顯示主機的簡短開始說明、「已執行 node --version」灰色折疊列；指令未要求核准，模型回報真實 v20.20.2。
 - 最終本地測試 35/35 通過；另直接執行產出的 stats.test.js，3/3 通過。
 - GitHub 儲存庫為 public，協作權限查詢只列出 xujk0217；所有提交僅使用使用者作者身份與 GitHub noreply 信箱。
+
+## 0.4.0 Local-first／防護／跨平台
+
+- 本機 macOS arm64：依賴安裝、build、59 項 tests、VSIX、真實 Chrome headed／headless localhost fixture 通過。
+- [CI 38393599933](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38393599933)，commit `931e5f7`：Windows x64／macOS arm64／macOS x64／Ubuntu x64，Node 20／22 共 8 工作全部成功。
+- 四平台真實 headless Edge／Chrome／Chromium 控制、串流、附件、取消、合成登入狀態 profile 保存、Webview、原生 sharp 與 VSIX 通過。
+- 測試使用 localhost／Mock BrowserBridge／假憑證，此輪沒有真正 NTPU AI 推論或 SSO。
+- 磁碟記憶／遷移／衝突／備份、跨帳號 mock 接續、敏感路徑與 stdout／MCP／Editor／保存遮蔽的細節，以及尚未驗證的平台與沙箱限制，見 [重構交付與驗收](docs/REFACTOR_REPORT.md)。

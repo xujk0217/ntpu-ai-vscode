@@ -23,7 +23,7 @@
 - [x] 3. 原子本機持久化、舊資料備份／遷移、Project／Session／Task、檢索與上下文管理；記憶測試。
 - [x] 4. 整合 Agent、離線歷史、分頁、封存／刪除／匯出／備份還原、Project Memory 與 Privacy UI。
 - [x] 5. Browser Manager、隔離 profile、跨平台設定與 shell／路徑防護；mock browser tests。
-- [ ] 6. 多平台 CI／VSIX、README／驗收文件、最終 build 與必要整合測試。
+- [x] 6. 多平台 CI／VSIX、README／驗收文件、最終 build 與必要整合測試。
 
 ## 初始實作盤點
 
@@ -51,9 +51,9 @@ Schema 1、每 Session 原子 JSON snapshot、fsync／rename、跨視窗寫入�
 
 BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium、Custom，跨平台資料路徑、各瀏覽器獨立 profile、拒絕一般 profile／工作區／symlink 別名、遠端／WSL／無 GUI 明確錯誤。保留串流、取消、附件、每任務暫時對話。Browser 設定透過 Configuration API，更換前保存 Session。9 個瀏覽器／App mock 測試通過；macOS arm64 真實 Chrome headed／headless + localhost fixture 實際驗證串流、附件、取消、profile 重開保存，全程沒有 NTPU AI 請求。Windows／Linux 實機仍待 CI。
 
-### 段落 6：本機驗證與 CI 待驗收
+### 段落 6：本機驗證與 CI 驗收
 
-本機 npm ci／build／57 項 tests／darwin-arm64 VSIX 成功。localhost 真實 Chrome 與新版 Webview 測試通過，沒有 NTPU AI 請求。新增 8 工作 CI 與四種平台 artifacts；將在 GitHub 實際執行後追加結果。交付細節與限制見 REFACTOR_REPORT.md。
+本機 npm ci／build／59 項 tests／darwin-arm64 VSIX 成功。localhost 真實 Chrome 與新版 Webview 測試通過，沒有 NTPU AI 請求。2026-10-13，commit `931e5f7` 的 [CI 38393599933](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38393599933) 共 8 個工作全部成功：四平台 × Node 20／22，各自安裝依賴、unit tests、build、真實 headless 瀏覽器 localhost fixture、原生 sharp 驗證及 VSIX；Node 22 上傳四種 artifacts。前一輪 `38391905815` 的 macOS Intel Node 20 因套件下載 `ECONNRESET` 失敗，最新一輪成功。交付細節與未驗證範圍見 REFACTOR_REPORT.md。
 
 ### 最後的恢復驗證
 

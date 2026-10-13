@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | VSIX target |
+| 系統 | 0.4.0 安裝檔 |
 | --- | --- |
-| Windows x64 | win32-x64 |
-| macOS Apple Silicon | darwin-arm64 |
-| macOS Intel | darwin-x64 |
-| Linux x64（glibc） | linux-x64 |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.0/ntpu-ai-coder-win32-x64-0.4.0.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.0/ntpu-ai-coder-darwin-arm64-0.4.0.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.0/ntpu-ai-coder-darwin-x64-0.4.0.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.0/ntpu-ai-coder-linux-x64-0.4.0.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -157,10 +157,12 @@ Extension 使用 VS Code 本機私有儲存；獨立 BrowserManager 的預設資
 
 | 系統 | 資料目錄與驗證狀態 |
 | --- | --- |
-| Windows x64 | `%LOCALAPPDATA%/NTPU AI Agent`；Edge 偵測／控制已通過 mock，實機驗證以 CI 紀錄為準 |
-| macOS arm64 | `~/Library/Application Support/NTPU AI Agent`；真實 Chrome headed／headless 的 localhost 整合測試通過 |
-| macOS x64 | 同 macOS 路徑；獨立 CI 目標，尚未在使用者 Intel 裝置驗證 |
-| Linux x64 | `$XDG_DATA_HOME/ntpu-ai-agent` 或 `~/.local/share/ntpu-ai-agent`；Chromium mock 通過，實機驗證以 CI 紀錄為準 |
+| Windows x64 | `%LOCALAPPDATA%/NTPU AI Agent`；Windows Server 2022 CI 真實 Edge headless、測試與 VSIX 通過 |
+| macOS arm64 | `~/Library/Application Support/NTPU AI Agent`；本機真實 Chrome headed／headless，macOS 15 CI 測試與 VSIX 通過 |
+| macOS x64 | 同 macOS 路徑；macOS 15 Intel CI 真實 Chrome headless、測試與 VSIX 通過 |
+| Linux x64 | `$XDG_DATA_HOME/ntpu-ai-agent` 或 `~/.local/share/ntpu-ai-agent`；Ubuntu 22.04 CI 真實 Chromium headless、測試與 VSIX 通過 |
+
+[CI 38393599933](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38393599933) 的四平台 × Node 20／22 共 8 個工作全部成功。瀏覽器整合測試只連 localhost，使用假的登入資料；不代表校方 SSO 已在每個平台驗證。Windows 一般桌面、使用者 Intel Mac、Linux 桌面 SSO 與 Debian 尚未實機驗證。
 
 Unix 目錄／檔案用 0700／0600；Windows 依私有應用資料目錄的使用者 ACL。拒絕 Profile 指向日常 Chrome／Edge／Chromium 資料、家目錄、專案或其 symlink 別名。瀏覽器原生 profile lock 衝突會明確報錯；不刪除瀏覽器的鎖來強制取得日常 profile。
 
