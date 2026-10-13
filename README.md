@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.5.4 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.5.5 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.5.4 安裝檔 |
+| 系統 | 0.5.5 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-win32-x64-0.5.4.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-darwin-arm64-0.5.4.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-darwin-x64-0.5.4.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.4/ntpu-ai-coder-linux-x64-0.5.4.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.5/ntpu-ai-coder-win32-x64-0.5.5.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.5/ntpu-ai-coder-darwin-arm64-0.5.5.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.5/ntpu-ai-coder-darwin-x64-0.5.5.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.5.5/ntpu-ai-coder-linux-x64-0.5.5.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -118,7 +118,7 @@ Build 會修復一般文字回覆造成的工具格式偏差；未完成的計�
 - 終端機輸出在執行時更新，完成後提供輸出、退出碼、核准來源與耗時。
 - 檔案變更可開啟 diff 或回復；後續有新修改時會拒絕覆蓋。回復新檔使用系統垃圾桶。
 - 提問可附目前檔案／選取內容、額外專案檔、圖片或 PDF。
-- 忙碌時可排入下一個提問，最多五項；停止會取消目前工作與佇列。
+- 忙碌時輸入內容，按送出區的「排入佇列」，可排入下一個提問，最多五項；空白不能送出。任務進度旁的「停止」會取消目前工作與佇列。
 - 完整本機歷史不再以 25 個 Session／100 則訊息截斷；一次顯示 50 則，支援載入較早訊息、搜尋、封存、刪除、重新命名與完整匯出。
 
 ### 管理聊天紀錄

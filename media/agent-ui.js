@@ -53,7 +53,7 @@ function empty() {
     ['找出問題', 'build', '請幫我追查並修正這個錯誤：', 'terminal'],
     ['檢查程式碼', 'review', '請檢查目前程式碼，找出具體的錯誤與回歸風險。', 'shield'],
     ['查資料', 'research', '請搜尋官方資料，整理並附上來源：', 'globe'],
-  ]) grid.append(button(name, 'suggestion', () => { send('option', { key: 'agent', value: agent }); $('prompt').value = prompt; $('prompt').focus(); }, image));
+  ]) grid.append(button(name, 'suggestion', () => { send('option', { key: 'agent', value: agent }); $('prompt').value = prompt; updateComposer(); $('prompt').focus(); }, image));
   welcome.append(grid); return welcome;
 }
 
@@ -134,6 +134,14 @@ function renderChanges(changes) {
   }
 }
 
+function updateComposer() {
+  $('send').disabled = !$('prompt').value.trim();
+  $('send').title = state.busy ? '排入佇列，等待目前任務完成後執行' : '送出';
+  $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
+  $('sendLabel').hidden = !state.busy;
+  $('sendHint').hidden = !!state.busy;
+}
+
 function renderState(value) {
   const busyChanged = !!state.busy !== !!value.busy;
   state = value;
@@ -150,8 +158,7 @@ function renderState(value) {
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
-  $('stop').hidden = !state.busy; $('send').title = state.busy ? '排入佇列' : '送出'; $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
-  $('sendHint').textContent = state.busy ? '排入佇列' : '⌘ ↵';
+  $('stop').hidden = !state.busy; updateComposer();
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
   if (!$('drawer').hidden && ['tools', 'connection', 'security'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
   if (!$('drawer').hidden && tab === 'sessions' && busyChanged) renderDrawer();
@@ -346,12 +353,13 @@ window.addEventListener('message', event => {
   else if (message.kind === 'prefill') { $('prompt').value = message.text; includeEditor = true; $('prompt').focus(); renderState(state); }
 });
 
-$('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text) return; send('ask', { text, includeEditor }); $('prompt').value = ''; $('prompt').style.height = ''; $('slashMenu').hidden = true; });
+$('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text) return; send('ask', { text, includeEditor }); $('prompt').value = ''; updateComposer(); $('prompt').style.height = ''; $('slashMenu').hidden = true; });
 $('prompt').addEventListener('keydown', event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); $('composer').requestSubmit(); } if (event.key === 'Escape') $('slashMenu').hidden = true; });
 $('prompt').addEventListener('input', () => {
+  updateComposer();
   $('prompt').style.height = 'auto'; $('prompt').style.height = Math.min(200, $('prompt').scrollHeight) + 'px';
   const query = $('prompt').value; $('slashMenu').hidden = !/^\/[a-z-]*$/.test(query); $('slashMenu').replaceChildren();
-  if (!$('slashMenu').hidden) for (const [command, description] of [['build', '實作與修正'], ['plan', '先探索，再規劃'], ['review', '唯讀程式碼審查'], ['research', '搜尋與來源整理'], ['ask', '說明與問答']]) if (command.startsWith(query.slice(1))) $('slashMenu').append(button('/' + command + ' · ' + description, 'slash-option', () => { $('prompt').value = '/' + command + ' '; $('slashMenu').hidden = true; $('prompt').focus(); }));
+  if (!$('slashMenu').hidden) for (const [command, description] of [['build', '實作與修正'], ['plan', '先探索，再規劃'], ['review', '唯讀程式碼審查'], ['research', '搜尋與來源整理'], ['ask', '說明與問答']]) if (command.startsWith(query.slice(1))) $('slashMenu').append(button('/' + command + ' · ' + description, 'slash-option', () => { $('prompt').value = '/' + command + ' '; updateComposer(); $('slashMenu').hidden = true; $('prompt').focus(); }));
 });
 for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('change', event => send('option', { key, value: event.target.value }));
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));

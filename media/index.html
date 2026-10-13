@@ -42,7 +42,7 @@
 <div class="scope-bar"><button id="workspace" class="scope-button" title="選擇專案"><svg><use href="#i-file"/></svg><span>專案</span></button><div id="connectionActions" class="connection-actions"><button id="connect" class="connection-button" title="登入 NTPU AI"><i id="connectionDot"></i><span id="connectionLabel">登入</span></button></div></div>
 <aside id="loginNotice" class="login-notice" hidden aria-live="polite"><svg><use href="#i-connect"/></svg><div><strong id="loginNoticeTitle">請在瀏覽器完成登入</strong><p id="loginNoticeText">完成後會自動回到背景連線，你可以關閉登入視窗。</p></div></aside>
 <main id="messages" class="conversation" aria-live="polite"></main>
-<div id="progress" class="progress" hidden><span class="pulse"></span><span id="progressText">正在處理</span><span id="budgetLabel" class="budget-label"></span></div>
+<div id="progress" class="progress" hidden><span class="pulse"></span><span id="progressText">正在處理</span><span id="budgetLabel" class="budget-label"></span><button id="stop" type="button" class="stop-button" aria-label="停止任務" title="停止目前任務並清除待執行提問" hidden><svg><use href="#i-stop"/></svg><span>停止</span></button></div>
 <details id="plan" class="task-panel" hidden><summary><svg><use href="#i-check"/></svg><span>任務進度</span><span id="planCount"></span></summary><div id="planSteps"></div></details>
 <details id="changes" class="changes-panel" hidden><summary><svg><use href="#i-edit"/></svg><span id="changesTitle">檔案變更</span><span id="changeStats"></span></summary><div id="changeRows"></div></details>
 <section id="approval" class="approval-card" hidden aria-label="操作確認">
@@ -65,7 +65,7 @@
       <button id="web" type="button" class="icon-button toggle-button" title="網路搜尋：使用外部 MCP" aria-label="網路搜尋"><svg><use href="#i-globe"/></svg></button>
       <button id="skills" type="button" class="skill-button" title="選擇 skills"><svg><use href="#i-spark"/></svg><span>Skills</span><span id="skillsCount"></span></button>
     </div>
-    <div class="send-actions"><span id="sendHint" class="send-hint">⌘ ↵</span><button id="stop" type="button" class="icon-button stop-button" aria-label="停止" title="停止並清除佇列" hidden><svg><use href="#i-stop"/></svg></button><button id="send" type="submit" class="send-button" aria-label="送出" title="送出"><svg><use href="#i-arrow"/></svg></button></div>
+    <div class="send-actions"><span id="sendHint" class="send-hint">⌘ ↵</span><button id="send" type="submit" class="send-button" aria-label="送出" title="送出" disabled><span id="sendLabel" hidden>排入佇列</span><svg><use href="#i-arrow"/></svg></button></div>
   </div>
   <div class="control-row"><select id="agent" aria-label="Agent 模式" title="Build 可實作；Plan／Review／Research／Ask 為唯讀"><option value="build">Build · 實作</option><option value="plan">Plan · 規劃</option><option value="review">Review · 審查</option><option value="research">Research · 研究</option><option value="ask">Ask · 問答</option></select>
     <button id="model" type="button" class="model-button" title="NTPU AI 由伺服器自動選擇模型">NTPU AI · 自動</button>

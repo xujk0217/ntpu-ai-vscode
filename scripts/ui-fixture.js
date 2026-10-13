@@ -20,6 +20,28 @@ async function testUI(page, origin) {
   assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
   assert.equal(await page.locator('#loginNotice').isHidden(), true);
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
+  // Queueing a draft and stopping a task have separate, clearly labelled
+  // controls. Blank clicks and keyboard submissions must emit neither action.
+  await send({ ...state, busy: true, progress: 'AI 正在處理（5/50）' });
+  await page.waitForFunction(() => !document.getElementById('stop').hidden && document.getElementById('send').disabled);
+  assert.equal(await page.locator('#composer #stop').count(), 0);
+  const taskMessages = () => page.evaluate(() => window.hostMessages.filter(message => ['ask', 'stop'].includes(message.kind)));
+  await page.locator('#prompt').fill('  \n ');
+  await page.locator('#send').evaluate(button => button.click());
+  await page.locator('#prompt').press('Control+Enter');
+  assert.deepEqual(await taskMessages(), []);
+  await page.locator('#prompt').fill('接著補上錯誤處理');
+  await page.getByRole('button', { name: '排入佇列', exact: true }).click();
+  assert.deepEqual(await taskMessages(), [{ kind: 'ask', text: '接著補上錯誤處理', includeEditor: true }]);
+  assert.equal(await page.locator('#send').isDisabled(), true);
+  await fs.mkdir(path.join(__dirname, '..', '.local'), { recursive: true });
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'composer-busy-ui.png') });
+  await page.getByRole('button', { name: '停止任務', exact: true }).click();
+  assert.equal((await taskMessages()).at(-1).kind, 'stop');
+  await send(state); await page.waitForFunction(() => document.getElementById('stop').hidden);
+  await send({ kind: 'prefill', text: '已有草稿' });
+  await page.waitForFunction(() => !document.getElementById('send').disabled);
+  await page.locator('#prompt').fill('');
   await page.locator('.history-more').click();
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
   await page.locator('#settings').click();
