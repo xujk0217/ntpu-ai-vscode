@@ -39,3 +39,5 @@
 [hidden] { display: none !important; }
 
 .mini-browser.zoom img { width: 1000px; max-width: none; }
+.browser-toggle, .mini-browser header button { color: var(--vscode-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-widget-border, #555); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+.browser-toggle:hover, .mini-browser header button:hover { border-color: var(--vscode-focusBorder); }

@@ -40,6 +40,8 @@ class SandboxExecutor {
       ['/usr/bin', '/usr/sbin', '/usr/lib', '/usr/share', '/bin', '/sbin', '/lib', '/lib64', '/System/Library', '/System/Volumes/Preboot/Cryptexes/OS/usr/lib', '/System/Volumes/Preboot/Cryptexes/OS/System/Library', '/Library/Apple', '/opt/homebrew/bin', '/opt/homebrew/Cellar', '/opt/homebrew/opt', '/opt/homebrew/lib', '/opt/homebrew/share', '/usr/local/bin', '/usr/local/lib', path.dirname(process.execPath)];
     const prefix = path.dirname(path.dirname(process.execPath));
     if (!['/', '/usr', '/usr/local', '/opt', '/opt/homebrew', os.homedir()].includes(prefix)) roots.push(prefix);
+    // Linux helper is part of the shipped sandbox, outside the user's workspace.
+    try { roots.push(path.resolve(path.dirname(require.resolve('@anthropic-ai/sandbox-runtime')), '../vendor/seccomp')); } catch {}
     const result = [];
     for (const root of roots) { try { const stat = await fs.stat(root); if (stat.isDirectory() && root !== os.homedir() && path.dirname(root) !== root) result.push(root, await fs.realpath(root)); } catch {} }
     return [...new Set(result)];
