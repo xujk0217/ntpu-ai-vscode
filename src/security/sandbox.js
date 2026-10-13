@@ -5,7 +5,7 @@ const os = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { classifyPath, classifyContent, redact } = require('./guard');
 
-const PROTECTED = ['**/.env', '**/.env.*', '**/.ssh/**', '**/.aws/**', '**/.azure/**', '**/.gcloud/**', '**/.kube/**', '**/.codex/**', '**/.git/**', '**/.local/**', '**/agent-memory/**', '**/browser-profiles/**', '**/Secrets/**', '**/Credentials/**', '**/*.pem', '**/*.key', '**/*.p12', '**/*.pfx', '**/.npmrc', '**/.pypirc', '**/.git-credentials'];
+const PROTECTED = ['**/.env', '**/.env.*', '**/.ssh/**', '**/.aws/**', '**/.azure/**', '**/.gcloud/**', '**/.kube/**', '**/.codex/**', '**/.git/**', '**/.local/**', '**/agent-memory/**', '**/browser-profiles/**', '**/Secrets/**', '**/Credentials/**', '**/*.pem', '**/*.key', '**/*.p12', '**/*.pfx', '**/.npmrc', '**/.pypirc', '**/.git-credentials', '**/secrets/**', '**/credentials/**', '**/browser-profile/**', '**/*.keystore', '**/id_rsa*', '**/id_ed25519*', '**/id_ecdsa*', '**/id_dsa*', '**/Cookies*', '**/cookies*', '**/Login Data*', '**/service-account*.json', '**/*-service-account.json'];
 function cleanEnvironment(parent = process.env) {
   const env = {};
   for (const key of ['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'ComSpec', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL']) if (parent[key]) env[key] = parent[key];

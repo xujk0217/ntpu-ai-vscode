@@ -78,7 +78,7 @@ NTPU 公開網頁目前未提供原生 thinking／reasoning_effort 或任意模�
 
 ## 0.5.0 開發驗收（2026-10-13，Mac arm64）
 
-- 77 個單元／整合測試通過；涵蓋 OCR 末頁秘密、缺頁、清理、SSO HTTPS 面板输入與忙碌鎖定。
+- 78 個單元／整合測試通過；涵蓋 OCR 末頁秘密、缺頁、清理、SSO HTTPS 面板輸入與忙碌鎖定。
 - 真實 Chrome localhost Mock：側欄畫面、輸入、設定分區、串流、附件、取消與 Profile 保留通過。
 - 真實 macOS Seatbelt：工作區外檔案及 `.env` 讀取禁止，工作區寫入允許；運作中的 localhost HTTP 不可存取，stdio MCP 初始化／工具呼叫通過。
 - 真實 Tesseract／Poppler：乾淨圖片／PDF 通過，合成憑證圖片／PDF 拒絕，原文不保存。

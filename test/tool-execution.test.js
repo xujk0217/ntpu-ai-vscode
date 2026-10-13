@@ -14,7 +14,7 @@ function loadTools(mock) {
   const module = new Module(filename); module.filename = filename; module.paths = Module._nodeModulePaths(path.dirname(filename));
   module.require = name => name === 'vscode' ? mock : Module.prototype.require.call(module, name);
   module._compile(fsSync.readFileSync(filename, 'utf8'), filename); const Original = module.exports.WorkspaceTools;
-  module.exports.WorkspaceTools = class extends Original { constructor(...args) { args[5] = { ...args[5], sandbox: testSandbox }; super(...args); } };
+  module.exports.WorkspaceTools = class extends Original { constructor(...args) { args[5] = { ...args[5], sandbox: args[5]?.sandbox || testSandbox }; super(...args); } };
   return module.exports;
 }
 function mockVscode() {
@@ -120,4 +120,11 @@ test('search hides secrets and Review files still require consent under full acc
   const result = await tools.execute('search_text', { query: 'API_KEY' });
   assert.equal(result.matches.length, 1); assert.equal(JSON.stringify(result).includes('only-test'), false);
   assert.equal((await tools.execute('read_file', { path: 'private.csv' })).ok, false);
+});
+
+test('isolation failure never falls back to an ordinary command even in full access', async t => {
+  const root = await fixture(t); const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => detail.accept, { policy: new PermissionPolicy({ mode: 'full' }), sandbox: { prepare: async () => { throw new Error('ISOLATION_FAILED'); } } });
+  const result = await tools.execute('run_command', { command: 'echo unsafe > should-not-exist.txt' });
+  assert.equal(result.ok, false); assert.match(result.error, /ISOLATION_FAILED/); await assert.rejects(fs.access(path.join(root, 'should-not-exist.txt')));
 });

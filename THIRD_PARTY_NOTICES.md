@@ -6,6 +6,7 @@
 
 | 套件 | 用途 | 授權 |
 | --- | --- | --- |
+| @anthropic-ai/sandbox-runtime | OS 沙箱與網路隔離（node-forge 間接依賴弱點見安全說明） | Apache-2.0 |
 | @modelcontextprotocol/sdk | MCP client 與 transports | MIT |
 | playwright-core | 正常 Chrome 網頁橋接 | Apache-2.0 |
 | markdown-it | Markdown 呈現 | MIT |
@@ -24,3 +25,5 @@
 - [OpenCode](https://opencode.ai/docs/)：Agent、permissions、SKILL.md 的使用方式。
 
 此版本自行實作側欄與 Agent，沒有直接複製上述產品的 UI 原始碼、商標或資產。保留參考來源不表示這些專案作者為本專案協作者，亦不表示官方整合或背書。
+
+Tesseract（Apache-2.0）與 Poppler（GPL 系列）是使用者另行安裝的本機 CLI，不包含在 VSIX；實際授權以各自安裝版本為準。參考專案未複製程式碼。
