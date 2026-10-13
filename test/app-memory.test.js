@@ -21,7 +21,7 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   finally { Module._load = original; }
   const context = { subscriptions: [], extensionPath: directory, globalStorageUri: uri(path.join(directory, 'storage')),
     workspaceState: { get: (key, fallback) => state.get(key) ?? fallback, update: async (key, value) => value === undefined ? state.delete(key) : state.set(key, value) },
-    globalState: { get: (key, fallback) => fallback }, secrets: { get: async () => undefined } };
+    globalState: { get: (key, fallback) => fallback, update: async () => {} }, secrets: { get: async () => undefined } };
   const app = new AgentApp(context); await app.ready;
   assert.equal(app.session.id, 'legacy-session'); assert.equal(state.has('ntpuAI.sessions.v2'), false);
   const editorFile = path.join(directory, 'settings.js'); await fs.writeFile(editorFile, 'API_KEY=only-test-editor');

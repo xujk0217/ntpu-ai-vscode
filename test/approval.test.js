@@ -27,3 +27,20 @@ test('stop clears a pending approval without approving its operation', async () 
   assert.equal(gate.state(), null);
   assert.equal(gate.decide(id, true), false);
 });
+
+test('parallel approvals are serialized and stale approval cannot grant the next request', async () => {
+  const gate = new ApprovalGate(() => {}), controller = new AbortController();
+  const a = gate.request({ title: 'a', accept: 'allow-a' }, controller.signal);
+  const old = gate.state().id;
+  const b = gate.request({ title: 'b', accept: 'allow-b' }, controller.signal);
+  assert.equal(gate.state().title, 'a'); gate.decide(old, true); assert.equal(await a, 'allow-a');
+  assert.equal(gate.state().title, 'b'); assert.equal(gate.decide(old, true), false);
+  controller.abort(); assert.equal(await b, undefined); assert.equal(gate.state(), null);
+});
+test('cancelling a queued approval preserves the active request', async () => {
+  const gate = new ApprovalGate(() => {}), a = new AbortController(), b = new AbortController();
+  const first = gate.request({ title: 'a', accept: 'ok' }, a.signal);
+  const second = gate.request({ title: 'b', accept: 'ok' }, b.signal); b.abort();
+  assert.equal(await second, undefined); assert.equal(gate.state().title, 'a');
+  gate.decide(gate.state().id,true); assert.equal(await first,'ok'); assert.equal(gate.state(),null);
+});

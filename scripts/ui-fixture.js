@@ -59,6 +59,15 @@ async function testUI(page, origin) {
   await send(state); await send({ kind: 'changes', changes: [] });
   await page.locator('.history-more').click();
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
+  const worker = { id: 'worker-fixture', role: 'tool', name: 'agent_task', args: { name: '探索專案', role: 'explore' }, status: 'running', result: '正在讀取程式', startedAt: Date.now() };
+  await send({ kind: 'message', message: worker });
+  await page.locator('[data-id="worker-fixture"] summary').click();
+  await page.getByRole('button', { name: '停止此子任務', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'cancelWorker', id: 'worker-fixture' });
+  await send({ kind: 'patch', message: { ...worker, status: 'done', result: '真實結果' } });
+  await page.waitForFunction(() => document.querySelector('[data-id="worker-fixture"]')?.textContent.includes('真實結果'));
+  assert.equal(await page.locator('[data-id="worker-fixture"] details').evaluate(node => node.open), true);
+  assert.equal(await page.getByRole('button', { name: '停止此子任務', exact: true }).count(), 0);
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /已登入/);
   assert.equal(await page.getByRole('button', { name: '開啟側欄小瀏覽器' }).count(), 0);

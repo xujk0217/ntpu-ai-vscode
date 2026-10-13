@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -47,6 +47,10 @@
       {
         "command": "ntpuAI.stop",
         "title": "NTPU AI: 停止"
+      },
+      {
+        "command": "ntpuAI.testConcurrency",
+        "title": "NTPU AI: 測試兩個聊天室同時回覆"
       }
     ],
     "menus": {
@@ -212,6 +216,22 @@
               "type": "string"
             }
           }
+        },
+        "ntpuAI.parallel.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "啟用獨立唯讀工具批次與子任務。模型並行只在近期測試通過後啟用。"
+        },
+        "ntpuAI.parallel.maxConcurrency": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ],
+          "default": 2,
+          "scope": "application",
+          "description": "最多同時模型請求數。未驗證、登入失效或超過一天時使用 1。"
         }
       }
     }

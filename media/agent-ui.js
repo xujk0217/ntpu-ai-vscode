@@ -16,7 +16,7 @@ let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false;
 const selectedSessions = new Set();
 const nodes = new Map();
-const names = { list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const names = { agent_task: '唯讀子任務', delegate_tasks: '分派子任務', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 const md = new MarkdownIt({ html: false, breaks: false, linkify: false, highlight: (code, language) => {
@@ -73,6 +73,7 @@ function renderMessage(message) {
     if (hint) meta.append(element('span', 'tool-hint', String(hint).slice(0, 180)));
     summary.append(meta, element('span', 'tool-status ' + message.status, { running: '進行中', done: '完成', denied: '未允許', error: '未完成', interrupted: '已中斷' }[message.status] || message.status), element('span', 'tool-chevron', '›'));
     const content = element('div', 'tool-detail');
+    if (message.name === 'agent_task' && message.status === 'running') content.append(button('停止此子任務', 'text-button', () => send('cancelWorker', { id: message.id }), 'stop'));
     if (args.path) content.append(button('開啟 ' + args.path, 'text-button', () => send('openFile', { path: args.path }), 'file'));
     if (args.command) content.append(element('pre', 'command', args.command));
     let result; try { result = JSON.parse(message.result || 'null'); } catch {}
@@ -364,6 +365,12 @@ function renderDrawer() {
     if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.server), element('p', '', tool.description)); list.append(row); } content.append(list); }
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));
+    const parallel = capabilities.parallel || {};
+    content.append(element('h3', '', 'Agent 多工'), element('p', 'panel-description', parallel.verified ? `已驗證聊天室串流可重疊，目前最多 ${parallel.effectiveConcurrency} 個模型請求。` : '模型並行尚未確認，目前使用序列請求。本機獨立唯讀工具可批次處理。'));
+    if (parallel.verification) content.append(element('p', 'panel-description', parallel.verification.message));
+    const probe = button('測試兩個聊天室同時回覆', 'secondary-button full-width', () => send('testConcurrency'));
+    probe.disabled = state.busy || !state.connection?.ready; content.append(probe);
+    content.append(element('p', 'panel-description', '測試會使用兩個小型 NTPU AI 對話，不自動重試；驗證結果一天內有效。'), button('設定多工', 'text-button', () => send('parallelSettings'), 'gear'));
     content.append(button('開啟 VS Code 設定', 'text-button', () => send('settings'), 'gear'));
     content.append(element('p', 'panel-footnote', '程式碼、附件與工具結果會傳給 NTPU AI；外部工具也會收到執行它所需的參數。MCP 金鑰保存在 VS Code SecretStorage。'));
   }

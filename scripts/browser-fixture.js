@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
 const { BrowserBridge } = require('../src/browser');
+const { probeConcurrency } = require('../src/browser/concurrency-probe');
 const { assets, testUI } = require('./ui-fixture');
 
 const html = `<!doctype html><html><body>
@@ -25,6 +26,7 @@ async function main() {
   const sockets = new Set();
   const ui = await assets();
   let requiresLogin = false;
+  let activeStreams = 0, peakStreams = 0;
   const loginHtml = '<!doctype html><html><body><div id="auth-overlay">Fixture login</div><form action="/fixture-login" method="post"><input id="fixture-user" name="user"><button id="fixture-submit">Login</button></form></body></html>';
   const server = http.createServer((request, response) => {
     if (request.url === '/fixture-login') { response.writeHead(303, { location: '/', 'set-cookie': 'fixture_session=synthetic; HttpOnly; SameSite=Lax; Path=/' }); response.end(); return; }
@@ -33,13 +35,16 @@ async function main() {
     if (request.url === '/upload') { response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}'); return; }
     if (request.url !== '/chat/stream') { response.writeHead(200, { 'content-type': 'text/html' }); response.end(html); return; }
     let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => {
+      activeStreams++; peakStreams = Math.max(peakStreams, activeStreams);
       response.writeHead(200, { 'content-type': 'text/event-stream' }); response.flushHeaders();
       response.write('data: {"type":"judge","model":"fixture"}\n\n');
+      const marker = body.match(/NTPU_PARALLEL_[a-f0-9]+_[01]/)?.[0];
+      const prefix = marker ? marker + '-' : body.startsWith('parallel-') ? body + '-' : 'mock-';
+      response.write('data: ' + JSON.stringify({ type: 'token', content: prefix }) + '\n\n');
       const timer = setTimeout(() => {
-        response.write('data: {"type":"token","content":"mock-');
-        response.end('response"}\n\ndata: {"type":"done"}\n\n');
-      }, body.includes('slow') ? 10000 : 40);
-      response.on('close', () => clearTimeout(timer));
+        response.end('data: {"type":"token","content":"response"}\n\ndata: {"type":"done"}\n\n');
+      }, body.includes('slow') ? 10000 : marker || body.startsWith('parallel-') ? 800 : 40);
+      response.on('close', () => { clearTimeout(timer); activeStreams--; });
     });
   });
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
@@ -59,6 +64,21 @@ async function main() {
     const pending = bridge.chat('slow', { newConversation: false, signal: controller.signal });
     const cancel = setTimeout(() => controller.abort(), 150);
     try { await assert.rejects(pending, /已停止/); } finally { clearTimeout(cancel); }
+    const firstChannel = await bridge.createChannel(), secondChannel = await bridge.createChannel();
+    try {
+      const replies = await Promise.all([firstChannel.chat('parallel-A'), secondChannel.chat('parallel-B')]);
+      assert.deepEqual(replies.map(reply => reply.text), ['parallel-A-response', 'parallel-B-response']);
+      assert.ok(peakStreams >= 2, 'the mock server observed overlapping independent streams');
+      await firstChannel.close(); assert.equal(bridge.manager.info.controlled, true);
+      const workerAbort = new AbortController();
+      const slowWorker = secondChannel.chat('slow', { signal: workerAbort.signal });
+      const parentReply = bridge.chat('parallel-parent');
+      const cancelWorker = setTimeout(() => workerAbort.abort(), 150);
+      try { await assert.rejects(slowWorker, /已停止/); assert.equal((await parentReply).text, 'parallel-parent-response'); }
+      finally { clearTimeout(cancelWorker); }
+    } finally { await firstChannel.close(); await secondChannel.close(); }
+    const concurrent = await probeConcurrency(bridge);
+    assert.equal(concurrent.verified, true); assert.equal(bridge.channels.size, 0);
     const selected = bridge.manager.info.label;
     await bridge.close(); bridge = new BrowserBridge(options); await bridge.open();
     assert.equal(await bridge.page.evaluate(() => document.cookie.includes('fixture_state=synthetic')), true);

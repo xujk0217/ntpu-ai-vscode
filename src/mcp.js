@@ -105,6 +105,17 @@ class McpManager {
     if (structuredContent && JSON.stringify(structuredContent).length > 18000) structuredContent = { truncated: true, text: JSON.stringify(structuredContent).slice(0, 18000) };
     return sanitize({ ok: !result.isError, server: tool.server, content: await this.onContent(sanitize(result.content || [])), structuredContent });
   }
+  async lookup({ operation, parameters = {} }, signal) {
+    const allowed = new Set(['get_center_info', 'search_services', 'get_service', 'search_members', 'get_member', 'search_projects', 'get_project', 'find_research_experts', 'search_documents', 'get_document', 'search_events']);
+    if (!allowed.has(operation) || !parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error('需要有效的 AI4X operation 與 parameters。');
+    inspectOutboundPayload(parameters, { reject: true });
+    if (signal?.aborted) throw new Error('已停止');
+    const connection = await this.connect(AI4X);
+    if (signal?.aborted) throw new Error('已停止');
+    const tool = connection.tools.find(tool => tool.name === operation);
+    if (!tool) throw new Error('官方 MCP 沒有提供此操作。');
+    return this.call(alias(AI4X.name, operation), parameters, signal);
+  }
   async search(query, signal) {
     const connection = await this.connect(EXA);
     const tool = connection.tools.find(tool => tool.name === 'web_search_exa');

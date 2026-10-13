@@ -13,8 +13,8 @@ const PROFILE = path.join(dataDirectory(), 'browser-profiles');
 // inside the dedicated browser. No private API credentials are extracted.
 function installStreamObserver(bindingName) {
   const key = '__ntpuLocalBridge';
-  if (window[key]) return;
-  window[key] = { active: null, controller: null, cancel: null };
+  if (window[key]) { window[key].binding = bindingName; return; }
+  window[key] = { active: null, controller: null, cancel: null, binding: bindingName };
   const originalFetch = window.fetch;
   window.fetch = async function (...args) {
     const request = args[0];
@@ -35,7 +35,7 @@ function installStreamObserver(bindingName) {
     options.signal = controller.signal;
     let reader;
     let completed = false;
-    const emit = payload => window[bindingName]({ id, ...payload }).catch(() => {});
+    const emit = payload => window[state.binding]({ id, ...payload }).catch(() => {});
     const task = (async () => {
       try {
         const response = await originalFetch.call(this, request, options);
@@ -45,6 +45,7 @@ function installStreamObserver(bindingName) {
             message: body.detail || `網站回應 HTTP ${response.status}` });
           return response;
         }
+        await emit({ kind: 'opened' });
         reader = response.clone().body.getReader();
         state.cancel = () => { controller.abort(); reader?.cancel().catch(() => {}); };
         (async () => {
@@ -123,6 +124,7 @@ class BrowserBridge {
     this.loginWindowClosed = false;
     this.loginNoticeAt = 0;
     this.loginAcknowledged = false;
+    this.channels = new Set(); this.ownsContext = true;
     this.binding = 'ntpuLocal_' + randomUUID().replaceAll('-', '');
     this.profile = options.profile || PROFILE;
   }
@@ -142,7 +144,7 @@ class BrowserBridge {
     while (this.opening) await this.opening;
     const mode = headless ? 'background' : 'login';
     if (this.context && this.page && !this.page.isClosed() && this.mode === mode && !this.loginWindowClosed) return;
-    if (this.pending) throw new Error('回答期間不能切換瀏覽器。');
+    if (this.pending || this.channels.size) throw new Error('回答或子任務執行期間不能切換瀏覽器。');
     this.opening = this._open(headless);
     try { await this.opening; } finally { this.opening = null; }
   }
@@ -192,6 +194,33 @@ class BrowserBridge {
     try { return await this.loginFinishing; } finally { this.loginFinishing = null; }
   }
 
+  async createChannel() {
+    if (!this.ownsContext) throw new Error('子聊天室不能再建立其他聊天室。');
+    if (this.mode === 'login') throw new Error('請完成登入後再建立子聊天室。');
+    await this.open();
+    if (!(await this.status()).ready) throw new Error('NTPU AI 尚未登入。');
+    const channel = new BrowserBridge({ ...this.options, manager: this.manager });
+    channel.ownsContext = false; channel.parent = this; channel.context = this.context;
+    channel.mode = 'background'; channel.profile = this.profile; this.channels.add(channel);
+    try {
+      channel.page = await this.context.newPage();
+      await channel.page.exposeBinding(channel.binding, (source, payload) => {
+        if (source.page === channel.page && source.frame.url().startsWith(this.origin + '/')) channel._receive(payload);
+      });
+      await channel.page.addInitScript(installStreamObserver, channel.binding);
+      channel.page.on('close', () => channel._fail(new Error('子聊天室已關閉。')));
+      channel.page.on('framenavigated', frame => {
+        if (frame === channel.page?.mainFrame() && channel.pending) channel._fail(new Error('子聊天室回答期間已離開頁面。'));
+      });
+      await channel.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await channel.page.waitForFunction(() => {
+        const overlay = document.getElementById('auth-overlay');
+        return overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none') && document.getElementById('input');
+      }, null, { timeout: this.options.bootstrapTimeoutMs || 12000 }).catch(() => {});
+      return channel;
+    } catch (error) { await channel.close(); throw error; }
+  }
+
   async _finishLogin() {
     if (this.opening) await this.opening;
     if (this.mode !== 'login') return this.status();
@@ -231,7 +260,7 @@ class BrowserBridge {
   }
 
   async logout() {
-    if (this.pending) throw new Error('請先停止目前執行中的任務，再登出 NTPU AI。');
+    if (this.pending || [...this.channels].some(channel => channel.pending)) throw new Error('請先停止目前執行中的任務，再登出 NTPU AI。');
     if (!this.context || !this.page || this.page.isClosed()) await this.open();
     await this.context.clearCookies({ domain: /(^|\.)ntpu\.edu\.tw$/ });
     if (!this.page.url().startsWith(this.origin + '/'))
@@ -288,7 +317,7 @@ class BrowserBridge {
     const abort = () => { this._fail(new Error('已停止')); void this._abortPage(); };
     options.signal?.addEventListener('abort', abort, { once: true });
     this.pending = { id, resolve, reject, timer, text: '', model: null,
-      onToken: options.onToken, onJudge: options.onJudge, signal: options.signal, abort };
+      onToken: options.onToken, onJudge: options.onJudge, onOpen: options.onOpen, signal: options.signal, abort };
     try {
       await this.page.evaluate(requestId => { window.__ntpuLocalBridge.active = requestId; }, id);
       if (options.signal?.aborted) abort();
@@ -314,10 +343,12 @@ class BrowserBridge {
   _receive(payload) {
     const pending = this.pending;
     if (!pending || payload?.id !== pending.id) return;
+    if (payload.kind === 'opened') { pending.onOpen?.(); return; }
     if (payload.kind === 'failure') {
       const suffix = [401, 403].includes(payload.status) ? ' 請回瀏覽器重新登入或完成驗證。' :
         payload.status === 429 ? ' 已達網站用量限制，請等待或使用學校帳號；不會自動重試。' : '';
-      return this._fail(new Error((payload.message || '網站請求失敗') + suffix));
+      const error = new Error((payload.message || '網站請求失敗') + suffix); error.status = payload.status;
+      return this._fail(error);
     }
     const event = payload.event;
     if (!event) return;
@@ -354,12 +385,15 @@ class BrowserBridge {
     if (this.opening) await this.opening.catch(() => {});
     this._fail(new Error('已停止'));
     await this._abortPage();
+    await Promise.allSettled([...this.channels].map(channel => channel.close()));
     const context = this.context;
+    const page = this.page;
     this.context = null;
     this.page = null;
     this.mode = null; this.loginWindowClosed = false;
-    await context?.close().catch(() => {});
-    if (this.manager.info) this.manager.info.controlled = false;
+    if (this.ownsContext) await context?.close().catch(() => {});
+    else { await page?.close().catch(() => {}); this.parent?.channels.delete(this); }
+    if (this.ownsContext && this.manager.info) this.manager.info.controlled = false;
   }
 }
 

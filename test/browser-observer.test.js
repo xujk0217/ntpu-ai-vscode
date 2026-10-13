@@ -43,3 +43,13 @@ test('HTTP auth errors are reported without retrying and unrelated origins are n
   await window.fetch('https://other.example/chat/stream');
   assert.equal(events.length, 0);
 });
+test('reinstalling an observer changes its binding without wrapping fetch a second time', async () => {
+  const old = [], next = [];
+  const window = observer(async () => new Response('data: {"type":"done"}\n\n'), async payload => old.push(payload));
+  const wrapped = window.fetch; window.next = async payload => next.push(payload);
+  vm.runInNewContext(`(${installStreamObserver.toString()})('next')`, { window });
+  assert.equal(window.fetch, wrapped);
+  await (await window.fetch('/chat/stream')).text();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(old.length, 0); assert.equal(next[0].kind, 'opened');
+});

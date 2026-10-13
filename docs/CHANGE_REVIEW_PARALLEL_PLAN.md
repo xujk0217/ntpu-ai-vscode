@@ -26,8 +26,9 @@
 ## 狀態
 
 - [x] 變更 UI、單一檔案／hunk 撤回及衝突測試。
-- [ ] Browser 多對話隔離與 mock 同時串流。
-- [ ] 真實 NTPU AI 同時串流探測。
-- [ ] 本機唯讀工具批次與 worker orchestration。
-- [ ] AI4X 實際公開查詢及使用說明。
-- [ ] 套件、CI、README 與本機安裝。
+- [x] Browser 多對話隔離與 mock 同時串流。
+- [x] 真實 NTPU AI 同時串流探測。
+- [x] 本機唯讀工具批次與 worker orchestration。
+- [x] AI4X 實際公開查詢及使用說明。
+- [x] README、macOS 套件與本機安裝；多平台 CI 設定完成。
+- [ ] 發布前確認多平台 CI 通過及四平台 VSIX 產物。

@@ -11,6 +11,7 @@ const DEFINITIONS = [
   ['ask_user', '需要偏好或缺少資訊時詢問使用者', '{"question":"你偏好哪種方式？","options":["A","B"]}'],
   ['load_skill', '依名稱載入已發現的 SKILL.md；skill 不能授予工具權限', '{"name":"web-research"}'],
   ['web_search', '透過 Exa MCP 查詢即時網路資訊，回傳內容與來源；不可把既有知識冒充搜尋結果', '{"query":"search terms"}'],
+  ['ntpu_lookup', '查詢 NTPU AI4X 官方研究資料並保留來源；operation 可用 get_center_info/search_services/get_service/search_members/get_member/search_projects/get_project/find_research_experts/search_documents/get_document/search_events；parameters 按工具 schema。校務問題另用官方 aia.ntpu.ai，這不是校務問答 API。', '{"operation":"get_center_info","parameters":{}}'],
   ['web_fetch', '讀取公開 HTTP(S) 網頁；拒絕本機和內部網路', '{"url":"https://example.com/docs"}'],
   ['inspect_image', '把工作區中的圖片／PDF 經本機 OCR 檢查後交由 NTPU AI 模型分析', '{"path":"image.png","question":"請分析這張圖片"}'],
   ['create_visual', '把安全 SVG 畫成 PNG，適合圖表、圖示、資訊圖、向量插畫；照片型生圖須另外連接影像 MCP', '{"path":"artwork.png","svg":"<svg ...>...</svg>","width":1024,"height":768}'],
@@ -22,7 +23,7 @@ Your response must be exactly ONE JSON object, without markdown fences or any su
 {"kind":"tool","name":"read_file","args":{"path":"src/main.js"}}
 OR {"kind":"final","message":"Your useful answer for the user, with Markdown if helpful."}
 The host executes a tool and then sends its actual result back. Never claim that a file was changed or a command succeeded before a successful tool result. Do not invent tool outputs.
-Available tools (one at a time):
+Available tool examples (use the actual catalog and parallel settings below):
 - list_files: {"glob":"**/*"}, optional glob, returns at most 250 paths.
 - read_file: {"path":"relative/path","start_line":1,"end_line":200}, optional 1-based line range. Existing files must be read before editing. To edit, get the complete current file first.
 - search_text: {"query":"literal text","glob":"**/*"}, returns limited matches.
@@ -34,7 +35,7 @@ All paths must be relative to the selected workspace. File tools exclude secrets
 Select the smallest set of files needed. Ask tools for missing evidence. Preserve the project's conventions and unrelated changes. Use write_file for edits. If the user only asks a question, explain it without editing. Shell and stdio MCP require an OS sandbox (Node >=22.12, macOS Seatbelt or Linux bubblewrap); network is denied, workspace credentials and external user files are blocked. If isolation cannot start, report the blocker. Commands may be used when needed to complete the requested work; explain a verification limitation if a command was denied or failed.
 When finished, emit kind=final describing what you actually changed, useful usage instructions, and actual verification results. If you cannot complete the task, state the specific blocker.`;
 
-function parseReply(text, allowedTools = TOOLS) {
+function parseReply(text, allowedTools = TOOLS, parallelTools = new Set()) {
   let raw = String(text).trim();
   const fence = raw.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
   if (fence) raw = fence[1].trim();
@@ -43,13 +44,15 @@ function parseReply(text, allowedTools = TOOLS) {
   catch { return { kind: 'unstructured', message: text }; }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('模型回傳的操作格式不正確。');
   if (value.kind === 'final' && typeof value.message === 'string') return value;
+  if (value.kind === 'parallel' && Array.isArray(value.tools) && value.tools.length >= 2 && value.tools.length <= 6 && value.tools.every(call =>
+    call && allowedTools.has(call.name) && parallelTools.has(call.name) && call.args && typeof call.args === 'object' && !Array.isArray(call.args))) return value;
   if (value.kind === 'tool' && allowedTools.has(value.name) && value.args &&
       typeof value.args === 'object' && !Array.isArray(value.args)) return value;
   throw new Error('模型回傳未知工具或缺少必要欄位；沒有執行任何操作。');
 }
 
 function buildPrompt({ request, context = '', workspace = '', records = [], budget = 48000,
-  catalog = DEFINITIONS, skills = [], loadedSkills = [], profile = {} }) {
+  catalog = DEFINITIONS, skills = [], loadedSkills = [], profile = {}, parallelTools = [] }) {
   const agents = { build: 'Complete the requested implementation using tools and verify it where appropriate.',
     plan: 'Read-only planning. Inspect evidence and produce an actionable plan. File changes and non-read-only commands are disabled.',
     review: 'Read-only code review. Find actionable bugs with file locations and concrete triggers. Do not modify files.',
@@ -64,6 +67,8 @@ function buildPrompt({ request, context = '', workspace = '', records = [], budg
 HOST AGENT: ${agents[profile.agent] || agents.build}
 ANALYSIS STRATEGY: ${depths[profile.depth] || depths.standard}
 PERMISSION MODE: ${profile.permission || 'ask'}
+${parallelTools.length ? `PARALLEL READS: You may return {"kind":"parallel","tools":[{"name":"read_file","args":{"path":"a.js"}},{"name":"read_file","args":{"path":"b.js"}}],"message":"brief action"} for 2–6 INDEPENDENT read-only calls in ONE model response. Only these tools can run together: ${parallelTools.join(', ')}. Never batch writes, shell, plan updates, image model calls or dependent actions.` : 'PARALLEL READS: disabled.'}
+${catalog.some(tool => tool.name === 'delegate_tasks') ? 'DELEGATION: Use independent explore/research/review subtasks when they help. Each child has its own read-only tools and conversation. Do not delegate writes or shell. Continue independent parent work while children run, then get_task_results and integrate actual evidence before final. At most two unfinished children, four total, six rounds each; all model calls share this task budget. Failed/cancelled workers are not completion evidence.' : ''}
 ACTUAL TOOL CATALOG:
 ${catalogText}
 AVAILABLE SKILLS (load on demand):

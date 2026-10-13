@@ -1,5 +1,15 @@
 # 本地使用驗證
 
+## 0.6.0 變更檢視與並行（2026-10-14）
+
+- macOS arm64／Chrome／已登入的真實學校帳號：兩個獨立 Page 經正常網站 UI 同時送出請求，回覆各自識別碼且沒有另一個識別碼；耗時 4.50 秒及 4.21 秒，SSE 開啟至結束的區間重疊約 129 ms。測試完成時間 01:04:10（Asia/Taipei）。僅證明這次兩個串流重疊，不能推論推理硬體並行或速度提升比例。
+- 測試紀錄只包含時間、匹配結果、網站／Profile scope 雜湊，不保存原始回答或登入憑證；存於私有 globalStorage diagnostics。
+- AI4X 真實 MCP 連線取得 11 個工具，`get_center_info` 與 `search_services` 實際呼叫成功，資料帶官方來源。校務 Assistant 仍是官方網頁入口。
+- 98 個單元測試通過，涵蓋檔案／區段撤回、後續手動修改衝突、新檔案回收桶、並行讀取、唯讀 worker、實際 worker 工具迴圈、父任務收集證據、共用預算、單請求退回、限流取消與核准佇列。
+- localhost 真實 Chrome fixture 涵蓋同時串流／回覆隔離、停止子聊天室不影響主聊天室、聊天室關閉清理，以及登入接續、附件與側欄互動。
+- 多平台 GitHub CI 與產物請核對 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions)。Windows／Linux 的真人校方 SSO、長時間負載與學校端複雜子任務分工尚未實測；子任務 orchestration 目前有本機 mock 模型回覆驗收，真實學校端驗收範圍是兩個聊天室的有限請求。
+
+
 ## 0.5.4 登入視窗與背景接續（2026-10-14）
 
 - macOS Apple Silicon／Google Chrome：80 個單元測試通過；正常尺寸的原生登入視窗、成功提示與返回按鈕可見。

@@ -1,22 +1,26 @@
 'use strict';
 const { parseReply, buildPrompt } = require('./protocol');
 const { sanitize, redact, inspectOutboundPayload } = require('./security/guard');
+const { runReadBatch } = require('./parallel');
 
 async function runAgent({ bridge, tools, request, context, workspace, signal, maxSteps = 12,
   budget = 48000, timeoutMs = 240000, onActivity = () => {}, onFinal = () => {}, onJudge = () => {},
   onTool = () => {}, onBudget = () => {}, onStream = () => {}, onCheckpoint = () => {},
-  initialRecords = [], attachment, profile = {} }) {
+  initialRecords = [], attachment, profile = {}, modelBudget }) {
   const records = sanitize(initialRecords);
   const repeated = [];
-  let repairs = 0, completionRetries = 0, previousMessage = '';
+  let repairs = 0, completionRetries = 0, previousMessage = '', budgetExhausted = false, usedSteps = 0;
   const checkpoint = async () => onCheckpoint(sanitize(records));
   for (let step = 0; step < maxSteps; step++) {
     if (signal.aborted) throw new Error('已停止');
-    onActivity(`AI 正在處理（${step + 1}/${maxSteps}）`);
+    const round = modelBudget ? modelBudget.consume() : step + 1;
+    if (round === null) { budgetExhausted = true; break; }
+    usedSteps++;
+    onActivity(`AI 正在處理（${round}/${modelBudget?.limit || maxSteps}）`);
     let characters = 0, lastProgress = 0;
     const catalog = tools.catalog?.();
     const prompt = inspectOutboundPayload(buildPrompt({ request: redact(request), context: redact(context), workspace, records, budget, profile,
-      ...(catalog ? { catalog } : {}), skills: tools.skills?.list() || [], loadedSkills: sanitize([...(tools.loadedSkills?.values() || [])]) }));
+      ...(catalog ? { catalog } : {}), parallelTools: [...(tools.parallelNames?.() || [])], skills: tools.skills?.list() || [], loadedSkills: sanitize([...(tools.loadedSkills?.values() || [])]) }));
     onBudget({ used: prompt.length, total: budget });
     let rawReply = '';
     const response = await bridge.chat(prompt, {
@@ -37,13 +41,17 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     });
     if (signal.aborted) throw new Error('已停止');
     let reply;
-    try { reply = sanitize(parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined)); }
+    try { reply = sanitize(parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined, tools.parallelNames?.() || new Set())); }
     catch (error) {
       records.push({ type: 'format_error', message: error.message, instruction: 'Return a valid single JSON response. No tool was run.' });
       await checkpoint();
       continue;
     }
     if (reply.kind === 'final') {
+      if (tools.hasPending?.()) {
+        records.push({ type: 'coordination', name: 'get_task_results', result: await tools.waitPending(), instruction: 'Subtasks have now settled. Use their actual evidence to finish the parent task; do not claim a failed subtask succeeded.' });
+        await checkpoint(); continue;
+      }
       const plan = [...records].reverse().find(record => record.name === 'update_plan' && record.result?.ok);
       const unfinished = (profile.agent || 'build') === 'build' && (plan?.result.steps || []).some(item => item.status !== 'completed');
       const implementation = profile.agent === 'build' && /建立|新增|實作|修正|修改|產生|implement|create|build|fix/i.test(request) && !/^(?:請)?(?:只(?:說明|解釋|規劃)|(?:不要|不需|無需)(?:修改|實作|建立))/.test(request);
@@ -63,6 +71,10 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       }
       onFinal(reply.message + '\n\n此回答未使用本地操作格式，因此沒有執行檔案或終端機工具。');
       return { completed: false, unstructured: true, steps: step + 1 };
+    }
+    if (reply.kind === 'parallel') {
+      records.push(...await runReadBatch(reply.tools, { tools, onTool, signal, message: reply.message || '' }));
+      await checkpoint(); continue;
     }
     // Model-generated text alone never counts as an executed tool action.
     const id = require('node:crypto').randomUUID();
@@ -85,8 +97,8 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       return { completed: false, steps: step + 1, loopStopped: true };
     }
   }
-  onFinal(`已達這次提問的 ${maxSteps} 輪上限，已停止。已批准的修改會保留；若要繼續，請說明剩下的工作。`);
-  return { completed: false, steps: maxSteps };
+  onFinal((budgetExhausted ? '本次可用的共用模型輪數已用完，已停止。' : `已達這次提問的 ${maxSteps} 輪上限，已停止。`) + '已批准的修改會保留；若要繼續，請說明剩下的工作。');
+  return { completed: false, steps: usedSteps };
 }
 
 module.exports = { runAgent };

@@ -48,8 +48,10 @@ class WorkspaceTools {
       .concat((this.options.mcp?.catalog() || []).filter(tool => this.options.web !== false || tool.server !== 'exa')).slice(0, 40);
   }
 
+  parallelNames() { return this.options.parallel ? require('./parallel').batchNames(this.catalog()) : new Set(); }
+
   async authorize(name, args, detail = {}) {
-    const metadata = this.options.mcp?.tools.get(name) || {};
+    const metadata = name === 'ntpu_lookup' ? { external: true, readOnly: true, server: 'ntpu_ai4x' } : this.options.mcp?.tools.get(name) || {};
     const policyDecision = this.policy.decision(name, args, metadata);
     const decision = metadata.external && metadata.server !== 'exa' && policyDecision !== 'deny' ? 'ask' : policyDecision;
     if (decision === 'deny') return false;
@@ -85,7 +87,7 @@ class WorkspaceTools {
       list_files: () => this.list(args), read_file: () => this.read(args), search_text: () => this.search(args),
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
       update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
-      web_search: () => this.webSearch(args), web_fetch: () => this.webFetch(args),
+      ntpu_lookup: () => this.options.mcp.lookup(args, this.signal), web_search: () => this.webSearch(args), web_fetch: () => this.webFetch(args),
       inspect_image: () => this.inspect(args), create_visual: () => this.visual(args),
     };
     const mcpTool = this.options.mcp?.tools.get(name);

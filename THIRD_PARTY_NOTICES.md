@@ -22,6 +22,7 @@
 - [miuuyy/codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web)：瀏覽器工作階段搭配本地工具迴圈的概念。
 - [microsoft/vscode](https://github.com/microsoft/vscode)：工具紀錄、終端機核准設定的互動設計；參考 terminalChatAgentToolsConfiguration.ts。
 - [microsoft/vscode-copilot-chat](https://github.com/microsoft/vscode-copilot-chat)：公開原始碼與介面操作方式。
+- [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)：主 Agent 與唯讀子任務分工、背景並行與限流概念；原專案採 Sustainable Use License，本專案未複製其原始碼。
 - [OpenCode](https://opencode.ai/docs/)：Agent、permissions、SKILL.md 的使用方式。
 
 此版本自行實作側欄與 Agent，沒有直接複製上述產品的 UI 原始碼、商標或資產。保留參考來源不表示這些專案作者為本專案協作者，亦不表示官方整合或背書。
