@@ -12,6 +12,9 @@ const { runAgent } = require('./agent');
 const { ApprovalGate } = require('./approval');
 const { PermissionPolicy } = require('./permissions');
 const { SessionStore } = require('./sessions');
+const { MemoryStore } = require('./memory/store');
+const { ContextManager, summarize, updateMemory } = require('./memory/context');
+const { MemoryActions } = require('./memory/actions');
 const { SkillCatalog } = require('./skills');
 const { McpManager, EXA, validateServer } = require('./mcp');
 const { imageMime, thumbnail } = require('./visuals');
@@ -38,7 +41,22 @@ class AgentApp {
     this.poller.unref();
     context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('ntpu-ai-preview', this.previews));
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.state()));
-    this.ready = this.refreshSkills();
+    this.ready = this.initializeMemory();
+  }
+
+  async initializeMemory() {
+    const legacy = this.context.workspaceState.get('ntpuAI.sessions.v2', []);
+    this.store = await new MemoryStore(path.join(this.context.globalStorageUri.fsPath, 'agent-memory')).initialize(legacy,
+      vscode.workspace.workspaceFolders?.map(folder => folder.uri.toString()).join('|') || 'no-workspace');
+    const id = this.context.workspaceState.get('ntpuAI.activeSession');
+    const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
+    const metadata = this.store.sessions.find(item => item.id === id) || this.store.sessions.find(item => item.workspace === workspace && !item.archived);
+    this.session = metadata ? await this.store.openSession(metadata.id) : this.store.create(workspace);
+    this.contextManager = new ContextManager(); this.memoryActions = new MemoryActions(this, vscode);
+    await this.save();
+    if (!this.store.errors.length) await this.context.workspaceState.update('ntpuAI.sessions.v2', undefined);
+    else this.persistenceError = this.store.errors.join('\n');
+    await this.refreshSkills();
   }
 
   resolveWebviewView(view) {
@@ -69,7 +87,7 @@ class AgentApp {
   state() {
     this.post({ kind: 'state', busy: this.busy(), progress: this.progress, connection: this.connection,
       model: this.model, options: this.session.options, workspace: this.workspace()?.name || '未開啟專案',
-      budget: this.budget, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
+      budget: this.budget, persistenceError: this.persistenceError, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
       attachment: this.attachment ? { name: this.attachment.name, mimeType: this.attachment.mimeType, preview: this.attachment.preview } : null,
       queue: this.queue.map(item => ({ id: item.id, request: item.request })), sessionId: this.session.id, sessionTitle: this.session.title });
   }
@@ -77,8 +95,8 @@ class AgentApp {
     for (const message of this.session.messages) if (message.thumbnailData) message.imageUri = message.thumbnailData;
     void this.refreshArtifacts();
     this.post({ kind: 'session', session: { id: this.session.id, title: this.session.title,
-      messages: this.session.messages, changes: this.session.changes || [], plan: this.session.plan || [] } });
-    this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt }) => ({ id, title, updatedAt })) });
+      ...this.store.page(this.session), changes: this.session.changes || [], plan: this.session.plan || [] } });
+    this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
     this.post({ kind: 'approval', approval: this.gate.state() }); this.state(); this.capabilities();
   }
   add(role, text, extra = {}) {
@@ -92,11 +110,11 @@ class AgentApp {
   notice(text, role = 'notice') { this.add(role, text); }
   persist() {
     clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => { void this.save(); }, 350);
+    this.saveTimer = setTimeout(() => { void this.save().catch(error => { this.persistenceError = redact(error.message); this.state(); }); }, 350);
     this.saveTimer.unref();
   }
   async save() {
-    await this.context.workspaceState.update('ntpuAI.sessions.v2', this.store.serialize());
+    await this.store.save(this.session);
     await this.context.workspaceState.update('ntpuAI.activeSession', this.session.id);
   }
   getBridge() {
@@ -146,14 +164,16 @@ class AgentApp {
     if (!message || typeof message !== 'object' || typeof message.kind !== 'string') return;
     switch (message.kind) {
       case 'ready': await this.ready; this.render(); break;
+      case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
+      case 'memory': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
       case 'login': await this.login(); break;
       case 'logout': await this.logout(); break;
       case 'status': await this.checkConnection(); break;
       case 'ask': if (typeof message.text === 'string') await this.ask(message.text, message.includeEditor !== false); break;
       case 'stop': this.stop(); break;
       case 'cancelQueue': { const queued = this.queue.find(item => item.id === message.id); if (queued) this.patch(queued.messageId, { queued: false, canceled: true }); this.queue = this.queue.filter(item => item.id !== message.id); this.state(); break; }
-      case 'new': if (!this.busy() && !this.gate.pending) { this.session = this.store.create(this.workspace()?.uri.toString() || ''); this.contextFiles = []; this.attachment = null; this.streamId = null; await this.refreshSkills(); this.render(); this.persist(); } break;
-      case 'switch': if (!this.busy() && !this.gate.pending && this.store.get(message.id)) { this.session = this.store.get(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
+      case 'new': if (!this.busy() && !this.gate.pending) { await this.save(); this.session = this.store.create(this.workspace()?.uri.toString() || ''); this.contextFiles = []; this.attachment = null; this.streamId = null; await this.refreshSkills(); this.render(); this.persist(); } break;
+      case 'switch': if (!this.busy() && !this.gate.pending && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'rename': await this.rename(); break;
       case 'option': await this.setOption(message.key, message.value); break;
       case 'approval': {
@@ -231,11 +251,10 @@ class AgentApp {
       await this.approveData(file.relative);
       pieces.push(`File ${file.relative} (excerpt; read_file for full contents):\n` + (await diskText(absolute)).slice(0, 5000));
     }
-    const previous = (this.session.turns || []).slice(-3).map(turn => ({ request: turn.request.slice(0, 1200), answer: turn.answer.slice(0, 2000) }));
-    if (previous.length) pieces.push('Recent conversation:\n' + JSON.stringify(previous));
     return redact(pieces.join('\n\n'));
   }
   async ask(request, includeEditor = true) {
+    await this.ready;
     request = redact(request.trim()); if (!request) return;
     if (request.length > 20000) throw new Error('提問超過 20000 字。');
     const slash = request.match(/^\/(build|plan|review|research|ask)\b\s*/);
@@ -254,16 +273,23 @@ class AgentApp {
     const root = this.workspace();
     if (!root) { this.notice('請開啟這個工作階段的專案資料夾，或建立新的工作階段。', 'error'); return; }
     if (!vscode.workspace.isTrusted) throw new Error('請先信任目前工作區。');
+    if (root.uri.scheme !== 'file') throw new Error('目前 Extension Host 只能操作本機 file 工作區；遠端資料夾可離線瀏覽歷史，但不會用本機路徑執行遠端任務。');
     this.controller = new AbortController(); const signal = this.controller.signal;
+    const task = { id: item.id, request: item.request, startedAt: Date.now(), status: 'running', records: [], files: [], pending: [] };
+    this.session.tasks ||= []; this.session.tasks.push(task);
     this.patch(item.messageId, { queued: false }); this.state();
     try {
+      await this.save();
       const bridge = this.getBridge();
       if (!bridge.page || bridge.page.isClosed()) { this.progress = '正在開啟登入瀏覽器'; this.state(); await bridge.open(); }
       this.connection = await bridge.status();
       if (!this.connection.ready) throw new Error(this.connection.message);
       if (signal.aborted) throw new Error('已停止');
       await this.refreshSkills();
-      const context = await this.editorContext(root, item.includeEditor, item.files);
+      const workspaceContext = await this.editorContext(root, item.includeEditor, item.files);
+      const project = vscode.workspace.getConfiguration('ntpuAI').get('memory.enableProject', true) ? await this.store.project(this.session.workspace) : null;
+      const context = this.contextManager.compose({ request: item.request, session: this.session, project,
+        tasks: this.store.projectTasks(this.session.workspace), workspaceContext, budget: Math.min(18000, Math.floor(vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) * 0.3)) }).text;
       let policy = this.policies.get(this.session.id);
       if (!policy || policy.mode !== this.session.options.permission || policy.agent !== this.session.options.agent) {
         policy = new PermissionPolicy({ mode: this.session.options.permission, agent: this.session.options.agent }); this.policies.set(this.session.id, policy);
@@ -282,7 +308,8 @@ class AgentApp {
       const depthSteps = { quick: 12, standard: 50, deep: 100 };
       const resume = this.session.checkpoint && /^(?:請)?(?:繼續|接著|continue\b|resume\b)/i.test(item.request);
       const taskRequest = resume ? this.session.checkpoint.request + '\n\nUSER FOLLOW-UP:\n' + item.request : item.request;
-      const initialRecords = resume ? this.session.checkpoint.records : [];
+      const initialRecords = resume ? sanitize(this.session.checkpoint.records).map(record => ({ ...record, historical: true })) : [];
+      if (resume) initialRecords.push({ type: 'resume_validation', instruction: 'Checkpoint evidence is historical. Re-read affected files and verify workspace state before editing or claiming completed verification. File snapshots have been reset.' });
       this.session.checkpoint = { request: taskRequest, records: initialRecords };
       this.toolsSinceBrief = 0;
       this.add('commentary', resume ? '我會接續原任務，先確認目前檔案與先前結果，再完成剩餘工作。' :
@@ -295,25 +322,32 @@ class AgentApp {
         onJudge: event => { this.model = event.model || ''; this.state(); },
         onStream: text => { if (!this.streamId) this.streamId = this.add('stream', '').id; this.patch(this.streamId, { text }); },
         onFinal: text => { answer = text; if (this.streamId) { this.patch(this.streamId, { role: 'assistant', text }); this.streamId = null; } else this.add('assistant', text); },
-        onCheckpoint: records => {
-          const saved = []; let size = 0;
-          for (const record of [...records].reverse()) {
-            const text = JSON.stringify(record); const compact = text.length > 8000 ? { type: record.type, name: record.name, args: record.args,
-              result: { ok: record.result?.ok, denied: record.result?.denied, excerpt: text.slice(0, 7000), truncated: true } } : record;
-            size += JSON.stringify(compact).length; if (size > 32000) break; saved.unshift(compact);
-          }
-          this.session.checkpoint = { request: taskRequest, records: saved }; this.persist();
+        onCheckpoint: async records => {
+          task.records = sanitize(records);
+          task.files = [...new Set(records.filter(record => record.result?.ok && record.result?.saved).map(record => record.result.path))];
+          task.pending = (this.session.plan || []).filter(step => step.status !== 'completed');
+          this.session.checkpoint = sanitize({ taskId: task.id, request: taskRequest, records });
+          await this.save();
         }, onTool: event => this.toolEvent(event) });
       if (result.completed) this.session.checkpoint = null;
-      this.session.turns = [...(this.session.turns || []), { request: item.request, answer }].slice(-5);
+      this.session.turns = [...(this.session.turns || []), { request: item.request, answer }];
+      task.status = result.completed ? 'completed' : 'blocked'; task.result = answer;
       this.progress = result.completed ? '已完成' : '已停止，等待下一個指示';
     } catch (error) {
+      task.status = signal.aborted ? 'stopped' : 'failed'; task.result = redact(error.message);
       if (this.streamId) { this.patch(this.streamId, { role: 'notice', text: '回覆未完成。' }); this.streamId = null; }
       this.notice(signal.aborted ? '已停止。已套用的修改會保留。' : error.message, signal.aborted ? 'notice' : 'error');
       this.progress = signal.aborted ? '已停止' : '需要處理';
     } finally {
+      task.endedAt = Date.now(); task.pending = (this.session.plan || []).filter(step => step.status !== 'completed');
+      summarize(this.session);
+      try {
+        const privacy = vscode.workspace.getConfiguration('ntpuAI');
+        if (privacy.get('memory.enableProject', true) && privacy.get('memory.autoUpdate', true)) await updateMemory(this.store, this.session, task);
+        await this.save();
+      } catch (error) { this.persistenceError = redact(error.message); }
       this.controller = null; this.activePolicy = null; this.state(); this.persist();
-      this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt }) => ({ id, title, updatedAt })) });
+      this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
     }
     const next = this.queue.shift(); if (next) await this.run(next);
   }
@@ -425,6 +459,7 @@ class AgentApp {
   async revert(id) {
     if (this.busy()) return;
     const change = this.session.changes?.find(item => item.id === id); if (!change || change.reverted) return;
+    if (String(change.before).includes('[REDACTED') || String(change.after).includes('[REDACTED')) throw new Error('快照包含遮蔽內容，請在編輯器手動回復，避免覆蓋秘密。');
     const root = this.workspace(); if (!root) throw new Error('請先開啟這個工作階段的專案。');
     const absolute = await safePath(root.uri.fsPath, change.path); const uri = vscode.Uri.file(absolute);
     const current = change.binary ? await fs.readFile(absolute) : (await vscode.workspace.openTextDocument(uri)).getText();

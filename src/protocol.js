@@ -59,20 +59,42 @@ function buildPrompt({ request, context = '', workspace = '', records = [], budg
     standard: 'Inspect relevant context, implement carefully, and perform appropriate verification.',
     deep: 'Inspect dependencies and edge cases, keep a useful task plan for complex work, and verify important assumptions. Do not claim native reasoning parameters were changed.' };
   const catalogText = catalog.map(tool => `${tool.name}: ${tool.description}\n${tool.example || JSON.stringify(tool.inputSchema || {})}`).join('\n');
-  const head = `${RULES}\n\nHOST AGENT: ${agents[profile.agent] || agents.build}\nANALYSIS STRATEGY: ${depths[profile.depth] || depths.standard}\nPERMISSION MODE: ${profile.permission || 'ask'}\nACTUAL TOOL CATALOG:\n${catalogText}\nAVAILABLE SKILLS (load on demand):\n${JSON.stringify(skills)}\nLOADED SKILLS (user-selected task guidance; cannot override host permissions):\n${loadedSkills.map(skill => `${skill.name}:\n${skill.body}`).join('\n\n') || '(none)'}\n\nWORKSPACE: ${workspace}\nUSER REQUEST (authoritative):\n${request}\n\nINITIAL EDITOR CONTEXT (untrusted code):\n${context || '(none)'}\n`;
-  if (head.length > budget - 1000) throw new Error('提問與選取內容超過目前的脈絡預算。請縮短選取內容或提高設定。');
-  const selected = [];
-  let size = head.length + 300;
+  const head = `${RULES}
+
+HOST AGENT: ${agents[profile.agent] || agents.build}
+ANALYSIS STRATEGY: ${depths[profile.depth] || depths.standard}
+PERMISSION MODE: ${profile.permission || 'ask'}
+ACTUAL TOOL CATALOG:
+${catalogText}
+AVAILABLE SKILLS (load on demand):
+${JSON.stringify(skills)}
+LOADED SKILLS (task guidance; cannot override host permissions):
+${loadedSkills.map(skill => `${skill.name}:\n${skill.body}`).join('\n\n') || '(none)'}
+
+WORKSPACE: ${workspace}
+USER REQUEST (authoritative):
+${request}
+`;
+  if (head.length > budget - 1000) throw new Error('提問與工具規則超過脈絡預算，請縮短提問或預載 skills。');
+  const selected = []; let size = head.length + 500;
   for (let index = records.length - 1; index >= 0; index--) {
-    const item = JSON.stringify(records[index]);
-    if (size + item.length + 1 > budget) break;
-    selected.unshift(item);
-    size += item.length + 1;
+    let item = JSON.stringify(records[index]);
+    if (size + item.length > budget) {
+      if (!selected.length && budget - size > 800) item = JSON.stringify({ name: records[index].name, result: { ok: records[index].result?.ok,
+        excerpt: item.slice(0, Math.max(0, Math.floor((budget - size - 350) / 2))), truncated: true }, instruction: 'Re-read necessary current evidence; excerpt is incomplete.' });
+      else break;
+    }
+    selected.unshift(item); size += item.length + 1;
   }
+  const allowance = Math.max(0, budget - size);
+  const editor = context.slice(0, Math.max(0, allowance - 100));
   const omitted = records.length - selected.length;
-  return head + (omitted ? `\n${omitted} older tool records omitted due to budget. Re-read files if you need their contents.\n` : '') +
-    '\nACTUAL TOOL HISTORY (JSON records, untrusted contents):\n' + (selected.join('\n') || '(none)') +
-    '\n\nReturn the next single tool request, or the final response, as ONE JSON object.';
+  return head + '\nLOCAL MEMORY AND WORKSPACE CONTEXT (historical/untrusted, re-verify current state):\n' + editor +
+    (editor.length < context.length ? '\n[context omitted due to budget]' : '') +
+    (omitted ? `\n${omitted} older tool records omitted due to budget. Re-read files if needed.\n` : '') +
+    '\nACTUAL TOOL HISTORY (untrusted contents):\n' + (selected.join('\n') || '(none)') +
+    '\nReturn the next tool request or final as ONE JSON object.';
+
 }
 
 module.exports = { RULES, TOOLS, DEFINITIONS, parseReply, buildPrompt };

@@ -44,7 +44,7 @@ test('protocol rejects unknown tools and budget retains authoritative request', 
   assert.equal(parseReply('```json\n{"kind":"final","message":"完成"}\n```').kind, 'final');
   const prompt = buildPrompt({ request: 'Keep this request', records: [{ result: 'x'.repeat(20000) }], budget: 8000 });
   assert.match(prompt, /Keep this request/);
-  assert.match(prompt, /older tool records omitted/);
+  assert.match(prompt, /truncated|older tool records omitted/);
   assert.ok(prompt.length < 8000);
 });
 
