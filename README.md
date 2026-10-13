@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.4.1 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.4.2 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.4.1 安裝檔 |
+| 系統 | 0.4.2 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.1/ntpu-ai-coder-win32-x64-0.4.1.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.1/ntpu-ai-coder-darwin-arm64-0.4.1.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.1/ntpu-ai-coder-darwin-x64-0.4.1.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.1/ntpu-ai-coder-linux-x64-0.4.1.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-win32-x64-0.4.2.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-darwin-arm64-0.4.2.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-darwin-x64-0.4.2.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-linux-x64-0.4.2.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -118,6 +118,18 @@ Build 會修復一般文字回覆造成的工具格式偏差；未完成的計�
 - 提問可附目前檔案／選取內容、額外專案檔、圖片或 PDF。
 - 忙碌時可排入下一個提問，最多五項；停止會取消目前工作與佇列。
 - 完整本機歷史不再以 25 個 Session／100 則訊息截斷；一次顯示 50 則，支援載入較早訊息、搜尋、封存、刪除、重新命名與完整匯出。
+
+### 管理聊天紀錄
+
+點側欄右上 **時鐘 → 聊天紀錄**：
+
+- 搜尋聊天名稱與任務，點聊天切換查看。
+- 每筆右側 **⋯** 可重新命名、匯出該聊天的完整 Markdown、封存／取消封存或刪除，不必先切換。
+- 勾選多筆或 **選取全部**，可批次封存、取消封存與刪除。全選只包含目前搜尋／封存篩選可見的聊天。
+- 勾選 **顯示已封存的聊天** 可找回封存紀錄。封存會保留歷史與檢查點。
+- 刪除會先列出選取聊天並要求確認；刪除目前聊天後會切到同專案的其他聊天，或建立空白聊天。專案原始碼與 Project Memory 不會刪除，既有備份仍保留。
+
+Agent 執行或等待核准時，聊天管理操作會暫停，避免修改正在保存的任務。
 
 這是自行實作的 VS Code webview，參考 Codex／Copilot 的互動方式，並非直接搬入它們的產品 runtime。
 
@@ -289,7 +301,7 @@ npm run package
 - GitHub Actions：Windows x64、macOS arm64／x64、Linux x64，Node 20／22，unit、build、localhost 瀏覽器整合與平台 VSIX artifact。
 - `npm run package -- --target <target>`：原生 sharp 經實際 PNG 驗證後打包；要求 host 與 target 相同。在對應平台 CI 安裝其 optional dependencies，拒絕將 macOS 套件直接改標成 Windows／Linux。
 
-0.4.1 架構、遷移、測試與交付狀態：[docs/REFACTOR_REPORT.md](docs/REFACTOR_REPORT.md)。歷史驗證結果：[VALIDATION.md](VALIDATION.md)。開發說明：[CONTRIBUTING.md](CONTRIBUTING.md)。
+0.4.2 架構、遷移、測試與交付狀態：[docs/REFACTOR_REPORT.md](docs/REFACTOR_REPORT.md)。歷史驗證結果：[VALIDATION.md](VALIDATION.md)。開發說明：[CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### 主要設定
 

@@ -142,8 +142,8 @@ class MemoryStore {
       const index = await this.read(path.join(this.directory, 'index.json')); index.sessions = index.sessions.filter(item => item.id !== id);
       index.deleted = [...new Set([...(index.deleted || []), id])];
       await atomicJson(path.join(this.directory, 'index.json'), index);
+      this.index = index; this.sessions = index.sessions; this.loaded.delete(id);
       await fs.unlink(this.file(id)).catch(error => { if (error.code !== 'ENOENT') throw error; });
-      await atomicJson(path.join(this.directory, 'index.json'), index); this.sessions = index.sessions; this.loaded.delete(id);
     });
   }
   async project(workspace) { return this.read(path.join(this.directory, 'projects', projectId(workspace) + '.json'), { schema: SCHEMA, workspace, entries: [], updatedAt: null }); }

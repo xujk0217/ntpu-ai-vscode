@@ -196,7 +196,7 @@ class AgentApp {
     switch (message.kind) {
       case 'ready': await this.ready; this.render(); break;
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
-      case 'memory': case 'resumeTask': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
+      case 'memory': case 'resumeTask': case 'renameSession': case 'exportSession': case 'sessionsAction': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
       case 'login': await this.login(); break;
       case 'browserUpdate': await this.updateBrowser(message); break;
       case 'reconnectBrowser': await this.reconnectBrowser(true); break;
@@ -207,7 +207,7 @@ class AgentApp {
       case 'cancelQueue': { const task = this.session.tasks?.find(item => item.id === message.id); if (task) { task.status = 'stopped'; task.result = '已取消佇列'; task.endedAt = Date.now(); } const queued = this.queue.find(item => item.id === message.id); if (queued) this.patch(queued.messageId, { queued: false, canceled: true }); this.queue = this.queue.filter(item => item.id !== message.id); this.state(); break; }
       case 'new': if (!this.busy() && !this.gate.pending) { await this.save(); this.session = this.store.create(this.workspace()?.uri.toString() || ''); this.contextFiles = []; this.attachment = null; this.streamId = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'switch': if (!this.busy() && !this.gate.pending && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
-      case 'rename': await this.rename(); break;
+      case 'rename': await this.memoryActions.handle({ kind: 'renameSession', id: this.session.id }); break;
       case 'option': await this.setOption(message.key, message.value); break;
       case 'approval': {
         const pending = this.gate.pending;
@@ -225,7 +225,7 @@ class AgentApp {
       case 'removeAttachment': this.attachment = null; this.state(); break;
       case 'change': await this.showChange(message.id); break;
       case 'revert': await this.revert(message.id); break;
-      case 'export': await this.exportSession(); break;
+      case 'export': await this.memoryActions.handle({ kind: 'exportSession', id: this.session.id }); break;
       case 'refreshSkills': await this.refreshSkills(); break;
       case 'openSkill': { const skill = this.skills.load(message.name); await vscode.window.showTextDocument(vscode.Uri.file(skill.file)); break; }
       case 'addSkillDirectory': await this.addSkillDirectory(); break;
@@ -262,11 +262,6 @@ class AgentApp {
     const chosen = await vscode.window.showQuickPick(folders.map(folder => ({ label: folder.name, folder })), { title: '工作階段的專案' });
     if (chosen && chosen.folder.uri.toString() !== this.session.workspace) { this.session = this.store.create(chosen.folder.uri.toString()); await this.refreshSkills(); this.render(); this.persist(); }
   }
-  async rename() {
-    const title = await vscode.window.showInputBox({ title: '工作階段名稱', value: this.session.title, validateInput: text => text.trim() ? undefined : '請輸入名稱' });
-    if (title) { this.session.title = title.trim().slice(0, 80); this.render(); this.persist(); }
-  }
-
   async editorContext(root, includeEditor, files = this.contextFiles) {
     const pieces = [];
     const editor = vscode.window.activeTextEditor;
@@ -549,10 +544,12 @@ class AgentApp {
       await vscode.env.openExternal(vscode.Uri.parse(url));
     } else if (!/^[a-z]+:/i.test(url)) await this.openFile(url);
   }
-  async exportSession() {
+  async exportSession(id = this.session.id) {
+    const source = await this.store.openSession(id);
+    const snapshot = sanitize({ title: source.title, messages: source.messages });
     const target = await vscode.window.showSaveDialog({ title: '匯出工作階段', defaultUri: vscode.Uri.joinPath(this.context.globalStorageUri, 'NTPU-AI-session.md'), filters: { Markdown: ['md'] } });
     if (!target) return;
-    const text = '# ' + this.session.title + '\n\n' + this.session.messages.map(message =>
+    const text = '# ' + snapshot.title + '\n\n' + snapshot.messages.map(message =>
       `## ${message.role === 'user' ? '使用者' : 'NTPU AI'}\n\n${message.text || JSON.stringify({ name: message.name, args: message.args, result: message.result })}\n`).join('\n');
     await vscode.workspace.fs.writeFile(target, Buffer.from(redact(text))); await vscode.window.showTextDocument(target);
   }

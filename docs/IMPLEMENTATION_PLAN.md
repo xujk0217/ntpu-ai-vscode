@@ -66,3 +66,7 @@ BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium�
 ### 最終 0.4.1 驗收
 
 [CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343)，code commit `56c60e9`，四平台 × Node 20／22 全部 8／8 通過，各 60 項 tests、build、真實 headless BrowserBridge／Webview localhost fixture、sharp PNG 及原生 VSIX。macOS arm64 已安裝 0.4.1 並重新載入專用範例視窗，舊歷史、Browser 與 Memory／Privacy 頁確認正常；原使用者視窗草稿未改動。最終提交只更新驗收文件，不修改已驗證程式碼。
+
+### 0.4.2 聊天紀錄列表管理
+
+補充需求：直接在列表管理聊天。新增每筆重新命名／匯出／封存／刪除、勾選全選與批次操作、刪除確認與目前聊天替換、執行中限制；保留既有備份／Project Memory／原始碼。65 項本機 tests、build 與真實 Chrome localhost 列表 fixture 通過；沿用四平台 CI／VSIX。

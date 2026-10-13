@@ -49,5 +49,14 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   assert.equal(reopened.session.tasks[0].resolvedBy, reopened.session.tasks[2].id);
   assert.equal(reopened.session.tasks[1].resolvedBy, reopened.session.tasks[2].id);
   assert.equal((await reopened.store.project(reopened.session.workspace)).entries.filter(entry => entry.kind === 'pending' && !entry.stale).length, 0);
+  const inactive = reopened.store.create(reopened.session.workspace); inactive.title = '另一筆聊天';
+  reopened.store.add(inactive, { role: 'user', text: '指定的完整內容 PASSWORD=only-test-export' }); await reopened.store.save(inactive);
+  const exported = uri(path.join(directory, 'export.md')); mock.window.showSaveDialog = async () => exported;
+  mock.window.showTextDocument = async () => {}; mock.workspace.fs = { writeFile: async (target, bytes) => fs.writeFile(target.fsPath, bytes) };
+  const activeId = reopened.session.id;
+  await reopened.memoryActions.handle({ kind: 'exportSession', id: inactive.id });
+  const markdown = await fs.readFile(exported.fsPath, 'utf8');
+  assert.match(markdown, /另一筆聊天/); assert.match(markdown, /指定的完整內容/); assert.equal(markdown.includes('only-test-export'), false);
+  assert.equal(markdown.includes('mock result'), false); assert.equal(reopened.session.id, activeId);
   await reopened.dispose();
 });

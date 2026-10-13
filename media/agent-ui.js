@@ -14,6 +14,7 @@ let state = { busy: false, options: { agent: 'build', depth: 'standard', permiss
 let session = { messages: [], changes: [] }, sessions = [], capabilities = { skills: [], servers: [], tools: [] }, approval = null, tab = 'sessions';
 let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false;
+const selectedSessions = new Set();
 const nodes = new Map();
 const names = { list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
@@ -134,6 +135,7 @@ function renderChanges(changes) {
 }
 
 function renderState(value) {
+  const busyChanged = !!state.busy !== !!value.busy;
   state = value;
   if (state.sessionTitle) $('rename').textContent = state.sessionTitle;
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
@@ -148,6 +150,7 @@ function renderState(value) {
   $('sendHint').textContent = state.busy ? '排入佇列' : '⌘ ↵';
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
   if (!$('drawer').hidden && tab === 'tools' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
+  if (!$('drawer').hidden && tab === 'sessions' && busyChanged) renderDrawer();
   $('skillsCount').textContent = state.options.skills?.length ? state.options.skills.length : '';
   $('new').disabled = state.busy || !!approval;
   $('permission').title = { ask: '專案讀取與基本唯讀指令自動；修改、其他指令及外部工具先確認。', assisted: '工作區修改及公開搜尋自動；只有已辨識的唯讀指令自動執行。', full: '工具自動執行。終端機與 MCP 使用你的使用者權限；檔案工具維持工作區範圍。' }[state.options.permission];
@@ -183,27 +186,55 @@ function renderApproval(value) {
 
 function openDrawer(nextTab) { tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
 function renderDrawer() {
-  $('drawerTitle').textContent = { sessions: '工作階段', skills: 'Skills', tools: '工具與設定', memory: '記憶與隱私' }[tab];
+  $('drawerTitle').textContent = { sessions: '聊天紀錄', skills: 'Skills', tools: '工具與設定', memory: '記憶與隱私' }[tab];
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === tab));
   const content = $('drawerContent'); content.replaceChildren();
   if (tab === 'sessions') {
-    content.append(button('新工作階段', 'primary-button full-width', () => { send('new'); $('drawer').hidden = true; }, 'plus'));
-    const search = element('input', 'history-search'); search.placeholder = '搜尋工作階段與任務'; search.value = sessionQuery;
-    search.addEventListener('input', () => { sessionQuery = search.value; filterSessions(); }); content.append(search);
+    const locked = state.busy || !!approval;
+    const create = button('新增聊天', 'primary-button full-width', () => { send('new'); $('drawer').hidden = true; }, 'plus'); create.disabled = locked; content.append(create);
+    const search = element('input', 'history-search'); search.placeholder = '搜尋聊天名稱與任務'; search.setAttribute('aria-label', '搜尋聊天紀錄'); search.value = sessionQuery;
+    search.addEventListener('input', () => { sessionQuery = search.value; selectedSessions.clear(); filterSessions(); }); content.append(search);
     const archived = element('label', 'privacy-option'); const show = element('input'); show.type = 'checkbox'; show.checked = includeArchived;
-    show.addEventListener('change', () => { includeArchived = show.checked; filterSessions(); }); archived.append(show, element('span', '', '顯示封存工作階段')); content.append(archived);
+    show.addEventListener('change', () => { includeArchived = show.checked; selectedSessions.clear(); filterSessions(); }); archived.append(show, element('span', '', '顯示已封存的聊天')); content.append(archived);
+    for (const id of selectedSessions) if (!sessions.some(item => item.id === id)) selectedSessions.delete(id);
+    const toolbar = element('div', 'history-toolbar'); content.append(toolbar);
     const list = element('div', 'session-list'); content.append(list);
+    let visible = [];
+    function selectionToolbar() {
+      toolbar.replaceChildren();
+      const all = button(selectedSessions.size === visible.length && visible.length ? '取消全選' : '選取全部', 'text-button', () => {
+        if (selectedSessions.size === visible.length && visible.length) selectedSessions.clear(); else for (const item of visible) selectedSessions.add(item.id);
+        filterSessions();
+      }); all.disabled = locked || !visible.length;
+      const count = element('span', 'history-count', selectedSessions.size ? `已選 ${selectedSessions.size} 個` : `${visible.length} 個聊天`); count.setAttribute('aria-live', 'polite');
+      toolbar.append(all, count);
+      for (const [text, action] of [['封存所選', 'archive'], ['取消封存所選', 'unarchive'], ['刪除所選', 'delete']]) {
+        const control = button(text, 'text-button' + (action === 'delete' ? ' danger-text' : ''), () => send('sessionsAction', { action, ids: [...selectedSessions] }));
+        control.disabled = locked || !selectedSessions.size || action === 'archive' && !visible.some(item => selectedSessions.has(item.id) && !item.archived) || action === 'unarchive' && !visible.some(item => selectedSessions.has(item.id) && item.archived);
+        toolbar.append(control);
+      }
+    }
     function filterSessions() {
       list.replaceChildren();
-      for (const item of sessions.filter(item => (includeArchived || !item.archived) && ((item.title || '') + ' ' + (item.searchText || '')).toLowerCase().includes(sessionQuery.toLowerCase()))) {
+      visible = sessions.filter(item => (includeArchived || !item.archived) && ((item.title || '') + ' ' + (item.searchText || '')).toLowerCase().includes(sessionQuery.toLowerCase()));
+      for (const id of selectedSessions) if (!visible.some(item => item.id === id)) selectedSessions.delete(id);
+      for (const item of visible) {
         const card = element('div', 'session-item');
-        const row = button('', 'session-row' + (item.id === session.id ? ' current' : ''), () => { if (!state.busy) { send('switch', { id: item.id }); $('drawer').hidden = true; } });
+        const heading = element('div', 'session-card-header'); const check = element('input', 'session-select'); check.type = 'checkbox'; check.checked = selectedSessions.has(item.id); check.disabled = locked; check.setAttribute('aria-label', '選取聊天：' + item.title);
+        check.addEventListener('change', () => { if (check.checked) selectedSessions.add(item.id); else selectedSessions.delete(item.id); selectionToolbar(); });
+        const row = button('', 'session-row' + (item.id === session.id ? ' current' : ''), () => { if (!locked) { send('switch', { id: item.id }); $('drawer').hidden = true; } });
         row.append(element('strong', '', item.title), element('span', '', new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(item.updatedAt) + (item.pending ? ' · ' + item.pending + ' 個未完成任務' : '') + (item.archived ? ' · 已封存' : '')));
-        row.disabled = state.busy;
-        const actions = element('div', 'session-actions');
-        actions.append(button(item.archived ? '取消封存' : '封存', 'text-button', () => send('archiveSession', { id: item.id })), button('刪除', 'text-button', () => send('deleteSession', { id: item.id })));
-        card.append(row, actions); list.append(card);
+        row.disabled = locked;
+        const menu = element('details', 'session-menu'); const summary = element('summary', '', '⋯'); summary.setAttribute('aria-label', '管理聊天：' + item.title);
+        menu.append(summary); const actions = element('div', 'session-menu-actions');
+        for (const [text, kind] of [['重新命名', 'renameSession'], ['匯出 Markdown', 'exportSession'], [item.archived ? '取消封存' : '封存', 'archiveSession'], ['刪除', 'deleteSession']]) {
+          const control = button(text, 'text-button' + (kind === 'deleteSession' ? ' danger-text' : ''), () => { menu.open = false; send(kind, { id: item.id }); }); control.disabled = locked; actions.append(control);
+        }
+        menu.addEventListener('toggle', () => { if (menu.open) for (const other of list.querySelectorAll('.session-menu')) if (other !== menu) other.open = false; });
+        menu.append(actions); heading.append(check, row, menu); card.append(heading); list.append(card);
       }
+      if (!visible.length) list.append(element('p', 'panel-description', sessionQuery ? '找不到符合的聊天紀錄。' : '目前沒有聊天紀錄。'));
+      selectionToolbar();
     }
     filterSessions();
   } else if (tab === 'skills') {
@@ -296,7 +327,7 @@ window.addEventListener('message', event => {
   else if (message.kind === 'plan') renderPlan(message.steps);
   else if (message.kind === 'changes') { session.changes = message.changes; renderChanges(message.changes); }
   else if (message.kind === 'sessions') { sessions = message.sessions; if (!$('drawer').hidden && tab === 'sessions') renderDrawer(); }
-  else if (message.kind === 'capabilities') { capabilities = message; if (!$('drawer').hidden) renderDrawer(); }
+  else if (message.kind === 'capabilities') { capabilities = message; if (!$('drawer').hidden && ['skills', 'tools'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer(); }
   else if (message.kind === 'prefill') { $('prompt').value = message.text; includeEditor = true; $('prompt').focus(); renderState(state); }
 });
 
