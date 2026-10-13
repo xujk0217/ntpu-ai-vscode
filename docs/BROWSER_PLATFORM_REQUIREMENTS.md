@@ -50,3 +50,9 @@ VSIX 按原生依賴的平台產生；只有證明安全且相容才可 Universa
 - 未實際驗證的平台清楚標示尚未驗證。
 
 交付實際程式碼、設定、測試、CI、README，不只提供方案；不繞過登入、驗證碼或用量限制。
+
+### 0.5.0 驗收補充
+
+四平台 Node 20／22 Unit、Build、Mock Browser 與原生 VSIX 已通過 CI。Node 22 的 macOS arm64／x64、Linux 增加真實 OS 沙箱／stdio MCP 與 Tesseract／Poppler 驗收。Windows OS 沙箱尚待人工實機測試，因此 Shell／stdio 拒絕執行是預期行為，不能要求關閉隔離後通過。Windows OCR 可用使用者設定指定 CLI 路徑，尚待實機驗收。
+
+所有平台的新 SSO／CAPTCHA 都需人工操作；Mac 已驗證既有 Profile 還原與背景畫面，本輪真正模型完整任務遇 HTTP 502，未完成。側欄、背景模式、依賴與風險見 [瀏覽器及安全說明](BROWSER_SURFACE_AND_SECURITY.md)。

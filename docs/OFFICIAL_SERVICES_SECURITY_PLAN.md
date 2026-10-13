@@ -18,10 +18,10 @@ Assistant [首頁](https://aia.ntpu.ai/) 目前列出 21 個單位；回答以�
 ## 分段
 
 - [x] 官方服務 preset、UI、skill、來源保存與真正 MCP 查詢。
-- [x] macOS 沙箱執行邊界、stdio MCP、設定與隔離測試；Linux CI／Windows 後端實機仍待驗收。
+- [x] macOS 沙箱執行邊界、stdio MCP、設定與隔離測試；Linux CI 已通過；Windows 後端實機仍待驗收。
 - [x] 本機圖片／PDF OCR、阻擋流程、設定與假秘密測試。
 - [ ] Mac 真實 SSO／NTPU Agent、其他平台驗收指南。
-- [ ] CI、套件、README、測試紀錄與分段提交。
+- [x] CI、四平台套件、README、測試紀錄與分段提交。
 
 OCR 與 OS sandbox 是可驗證的防護機制，不能宣稱辨識所有秘密或防止所有 OS／容器漏洞。官方 MCP 的公開資料仍屬外部內容，不具有修改主機安全政策的權限。
 

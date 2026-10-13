@@ -85,3 +85,5 @@ NTPU 公開網頁目前未提供原生 thinking／reasoning_effort 或任意模�
 - 真正 NTPU 背景模式還原既有登入並產生畫面；本輪 Agent 任務在背景及原生視窗皆收到 HTTP 502。未重做全新 SSO／CAPTCHA。
 - Windows Shell／stdio 仍阻止執行。Windows、Linux、Intel Mac 桌面 SSO 尚待人工驗收。新多平台 CI 結果需另行確認。
 - 依賴弱點與 OCR 漏辨範圍見 [安全實作說明](docs/BROWSER_SURFACE_AND_SECURITY.md)。
+
+最終 CI：[38415167553](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38415167553)，程式碼 `4aab9276e898e503912048e5a7d331195692d21d`，8／8 工作成功。Node 22 的 macOS arm64／x64 與 Linux 原生 OS 沙箱／stdio MCP／OCR 通過；四平台產生原生 VSIX。這不等於學校 SSO 或 Windows 沙箱已驗收。
