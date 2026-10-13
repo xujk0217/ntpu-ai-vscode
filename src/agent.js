@@ -76,7 +76,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     const args = { ...reply.args };
     if (reply.name === 'write_file') args.content = `(proposed ${reply.args.content?.length || 0} characters; re-read the file for current contents)`;
     if (reply.name === 'create_visual') args.svg = `(rendered SVG: ${reply.args.svg?.length || 0} characters)`;
-    records.push({ type: 'tool', name: reply.name, args, result });
+    records.push({ type: 'tool', at: Date.now(), name: reply.name, args, result });
     await checkpoint();
     const fingerprint = JSON.stringify({ name: reply.name, args, result });
     repeated.push(fingerprint);

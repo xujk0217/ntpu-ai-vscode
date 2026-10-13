@@ -103,7 +103,7 @@ class AgentApp {
     void this.refreshArtifacts();
     this.post({ kind: 'session', session: { id: this.session.id, title: this.session.title,
       ...this.store.page(this.session), changes: this.session.changes || [], plan: this.session.plan || [] } });
-    this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
+    this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed' && !task.resolvedBy).length })) });
     this.post({ kind: 'approval', approval: this.gate.state() }); this.state(); this.capabilities();
   }
   add(role, text, extra = {}) {
@@ -311,7 +311,7 @@ class AgentApp {
     if (root.uri.scheme !== 'file') throw new Error('目前 Extension Host 只能操作本機 file 工作區；遠端資料夾可離線瀏覽歷史，但不會用本機路徑執行遠端任務。');
     this.controller = new AbortController(); const signal = this.controller.signal;
     const task = this.session.tasks.find(task => task.id === item.id);
-    task.startedAt = Date.now(); task.status = 'running';
+    task.startedAt = Date.now(); task.status = 'running'; task.agent = this.session.options.agent;
     this.patch(item.messageId, { queued: false }); this.state();
     try {
       await this.save();
@@ -342,11 +342,14 @@ class AgentApp {
           onCommandOutput: output => { if (this.activeToolId) this.patch(this.activeToolId, { liveOutput: output }); } });
       const depthSteps = { quick: 12, standard: 50, deep: 100 };
       const resume = this.session.checkpoint && /^(?:請)?(?:繼續|接著|continue\b|resume\b)/i.test(item.request);
+      if (resume) task.resumeOf = this.session.checkpoint.taskId;
       const taskRequest = resume ? this.session.checkpoint.request + '\n\nUSER FOLLOW-UP:\n' + item.request : item.request;
       if (!resume) { this.session.plan = []; this.post({ kind: 'plan', steps: [] }); }
       const initialRecords = resume ? sanitize(this.session.checkpoint.records).map(record => ({ ...record, historical: true })) : [];
       if (resume) initialRecords.push({ type: 'resume_validation', instruction: 'Checkpoint evidence is historical. Re-read affected files and verify workspace state before editing or claiming completed verification. File snapshots have been reset.' });
-      this.session.checkpoint = { request: taskRequest, records: initialRecords };
+      task.taskRequest = taskRequest; task.records = initialRecords;
+      this.session.checkpoint = { taskId: task.id, request: taskRequest, records: initialRecords };
+      await this.save();
       this.toolsSinceBrief = 0;
       this.add('commentary', resume ? '我會接續原任務，先確認目前檔案與先前結果，再完成剩餘工作。' :
         this.session.options.agent === 'build' ? '我會先查看專案脈絡，再完成實作並確認執行結果。' : '我會先查看相關證據，再整理這次需求的結果。');
@@ -360,7 +363,7 @@ class AgentApp {
         onFinal: text => { answer = text; if (this.streamId) { this.patch(this.streamId, { role: 'assistant', text }); this.streamId = null; } else this.add('assistant', text); },
         onCheckpoint: async records => {
           task.records = sanitize(records);
-          task.files = [...new Set(records.filter(record => record.result?.ok && record.result?.saved).map(record => record.result.path))];
+          task.files = [...new Set(records.filter(record => !record.historical && record.result?.ok && (record.result?.saved || record.name === 'create_visual')).map(record => record.result.path).filter(Boolean))];
           task.pending = (this.session.plan || []).filter(step => step.status !== 'completed');
           this.session.checkpoint = sanitize({ taskId: task.id, request: taskRequest, records });
           await this.save();
@@ -368,6 +371,14 @@ class AgentApp {
       if (result.completed) this.session.checkpoint = null;
       this.session.turns = [...(this.session.turns || []), { request: item.request, answer }];
       task.status = result.completed ? 'completed' : 'blocked'; task.result = answer;
+      if (result.completed && task.resumeOf) {
+        const seen = new Set(); let previousId = task.resumeOf;
+        while (previousId && !seen.has(previousId)) {
+          seen.add(previousId); const previous = this.session.tasks.find(item => item.id === previousId);
+          if (!previous || previous.agent !== task.agent) break;
+          previous.resolvedBy = task.id; previous.resolvedAt = Date.now(); previousId = previous.resumeOf;
+        }
+      }
       this.progress = result.completed ? '已完成' : '已停止，等待下一個指示';
     } catch (error) {
       task.status = signal.aborted ? 'stopped' : 'failed'; task.result = redact(error.message);
@@ -385,7 +396,7 @@ class AgentApp {
       this.controller = null; this.activePolicy = null;
       if (this.browserConfigurationChanged) { this.browserConfigurationChanged = false; await this.reconnectBrowser(false); }
       this.state(); this.persist();
-      this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
+      this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed' && !task.resolvedBy).length })) });
     }
     const next = this.queue.shift(); if (next) await this.run(next);
   }

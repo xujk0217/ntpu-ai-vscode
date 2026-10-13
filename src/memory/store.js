@@ -88,6 +88,7 @@ class MemoryStore {
   metadata(session) {
     return sanitize({ id: session.id, title: session.title, workspace: session.workspace, updatedAt: session.updatedAt,
       archived: !!session.archived, tasks: (session.tasks || []).map(task => ({ id: task.id, request: task.request, status: task.status,
+        resolvedBy: task.resolvedBy, agent: task.agent,
         endedAt: task.endedAt, startedAt: task.startedAt, files: task.files || [], result: String(task.result || '').slice(0, 1800), pending: task.pending || [] })) });
   }
   create(workspace = '') {

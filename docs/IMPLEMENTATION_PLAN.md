@@ -54,3 +54,7 @@ BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium�
 ### 段落 6：本機驗證與 CI 待驗收
 
 本機 npm ci／build／57 項 tests／darwin-arm64 VSIX 成功。localhost 真實 Chrome 與新版 Webview 測試通過，沒有 NTPU AI 請求。新增 8 工作 CI 與四種平台 artifacts；將在 GitHub 實際執行後追加結果。交付細節與限制見 REFACTOR_REPORT.md。
+
+### 最後的恢復驗證
+
+補齊無工具輸出的初始 Task checkpoint（Task ID／完整恢復需求），同模式成功接續後標記舊中斷任務 resolvedBy、Project Pending stale；保留舊執行歷史。從真實完整 package.json 讀取整理依賴，來源帶 Task／路徑／時間；重複更新不重複新增，更新檔案後舊觀測 stale。新增回歸測試，總計 59 項。

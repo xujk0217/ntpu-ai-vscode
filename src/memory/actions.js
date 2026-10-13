@@ -10,7 +10,7 @@ class MemoryActions {
   async view() {
     const { app } = this; const config = this.vscode.workspace.getConfiguration('ntpuAI');
     app.post({ kind: 'memory', project: await app.store.project(app.session.workspace),
-      tasks: (app.session.tasks || []).map(({ id, request, status, result, pending, startedAt, endedAt }) => ({ id, request, status, result, pending, startedAt, endedAt })),
+      tasks: (app.session.tasks || []).map(({ id, request, status, resolvedBy, result, pending, startedAt, endedAt }) => ({ id, request, status, resolvedBy, result, pending, startedAt, endedAt })),
       storage: app.store.directory, enabled: config.get('memory.enableProject', true), autoUpdate: config.get('memory.autoUpdate', true),
       reviewPaths: config.get('privacy.reviewPaths', []), error: app.persistenceError });
   }
@@ -51,6 +51,7 @@ class MemoryActions {
       if (!await this.confirm('清空這個專案的本機 Project Memory？', 'Session 歷史、原始碼與校方資料不會被刪除。')) return;
       await app.store.updateProject(app.session.workspace, project => { project.entries = []; });
     } else if (message.kind === 'refreshMemory') {
+      await app.store.updateProject(app.session.workspace, project => { project.taskRevisions = {}; });
       for (const metadata of app.store.sessions.filter(item => item.workspace === app.session.workspace)) {
         const session = await app.store.openSession(metadata.id);
         for (const task of session.tasks || []) await updateMemory(app.store, session, task);
@@ -59,7 +60,8 @@ class MemoryActions {
     } else if (message.kind === 'resumeTask') {
       const task = app.session.tasks?.find(item => item.id === message.id);
       if (!task || task.status === 'completed') return;
-      app.session.checkpoint = sanitize({ taskId: task.id, request: task.request, records: task.records });
+      if (['build', 'plan', 'review', 'research', 'ask'].includes(task.agent)) app.session.options.agent = task.agent;
+      app.session.checkpoint = sanitize({ taskId: task.id, request: task.taskRequest || task.request, records: task.records || [] });
       await app.ask('繼續 ' + task.request, false); return;
     } else if (message.kind === 'backupMemory') {
       await app.save();

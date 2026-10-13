@@ -236,7 +236,7 @@ function renderDrawer() {
     }
     if (!memory.project?.entries?.length) content.append(element('p', 'panel-description', '尚無專案記憶。成功的工具紀錄會在任務結束後整理，也可手動新增。'));
     content.append(element('h3', '', '未完成任務'));
-    for (const task of (memory.tasks || []).filter(task => task.status !== 'completed')) {
+    for (const task of (memory.tasks || []).filter(task => task.status !== 'completed' && !task.resolvedBy)) {
       const card = element('div', 'memory-card'); card.append(element('strong', '', task.request), element('p', 'memory-text', task.status + ' · ' + (task.result || '可從本機檢查點接續')),
         button('接續任務', 'secondary-button', () => { send('resumeTask', { id: task.id }); $('drawer').hidden = true; })); content.append(card);
     }

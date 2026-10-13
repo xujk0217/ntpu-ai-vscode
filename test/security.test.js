@@ -22,6 +22,7 @@ test('secret guard preserves useful structure, fake template placeholders and ha
   assert.deepEqual(sanitize({ password: 'only-test', content: [{ text: 'Bearer only-test' }] }), { password: '[REDACTED_SECRET]', content: [{ text: 'Bearer [REDACTED_TOKEN]' }] });
   assert.throws(() => inspectOutboundPayload({ query: text }, { reject: true }), /阻止/);
   assert.equal(sanitize({ nested: { DB_PASSWORD: 'only-test-raw' } }).nested.DB_PASSWORD, '[REDACTED_SECRET]');
+  assert.equal(redact('curl --token only-test-cli-key').includes('only-test-cli-key'), false);
   const object = sanitize(JSON.parse('{"__proto__":{"permission":"full"}}'));
   assert.equal(Object.getPrototypeOf(object), Object.prototype); assert.equal({}.permission, undefined);
 });

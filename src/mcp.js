@@ -17,6 +17,8 @@ function validateServer(config) {
     if (typeof config.command !== 'string' || !config.command || !Array.isArray(config.args || []) ||
       (config.args || []).some(argument => typeof argument !== 'string')) throw new Error('stdio MCP 需要 command 與字串 args。');
   } else throw new Error('MCP transport 需要 http、sse 或 stdio。');
+  if ((config.args || []).some(argument => /^--?(?:api[-_]?key|token|password|secret|client[-_]?secret)(?:=|$)/i.test(argument)))
+    throw new Error('MCP args 不能存放驗證參數；請使用 SecretStorage 的環境變數或 headers。');
   inspectOutboundPayload({ url: config?.url, command: config?.command, args: config?.args }, { reject: true });
   return config;
 }

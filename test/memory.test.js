@@ -49,7 +49,9 @@ test('project memories are isolated, evidence updates are idempotent and plans n
     { name: 'update_plan', result: { ok: true, steps: [{ title: 'done?', status: 'pending' }] } },
     { name: 'write_file', result: { ok: true, saved: true, path: 'login.js' } } ] };
   session.tasks.push(task); await updateMemory(store, session, task); await updateMemory(store, session, task);
-  assert.equal((await store.project('file:///one')).entries.length, 1); assert.equal((await store.project('file:///two')).entries.length, 0);
+  assert.equal((await store.project('file:///one')).entries.length, 2);
+  assert.equal((await store.project('file:///one')).entries.find(entry => entry.kind === 'completed').stale, false);
+  assert.equal((await store.project('file:///two')).entries.length, 0);
   await store.updateProject('file:///one', project => { project.entries.push({ text: 'API_KEY=only-test-value' }); });
   assert.equal(JSON.stringify(await store.project('file:///one')).includes('only-test-value'), false);
 });
@@ -67,4 +69,16 @@ test('backups restore with new session IDs without overwriting existing local hi
   const { store } = await fixture(t); const session = store.create('file:///one'); store.add(session, { text: 'keep' }); await store.save(session);
   const backup = await store.backup(); await store.restore(backup);
   assert.equal(store.sessions.length, 2); assert.equal((await store.openSession(session.id)).messages[0].text, 'keep');
+});
+
+test('architecture observations derive from actual complete file reads and become stale after edits', async t => {
+  const { store } = await fixture(t); const session = store.create('file:///one');
+  const task = { id: 'architecture-task', status: 'completed', request: '查看架構', endedAt: 10, records: [
+    { name: 'read_file', at: 9, result: { ok: true, path: 'package.json', start_line: 1, end_line: 1, total_lines: 1,
+      text: '1: {"name":"fixture","dependencies":{"next":"14.0.0","typescript":"5.0.0"}}' } } ] };
+  await updateMemory(store, session, task);
+  const project = await store.project(session.workspace); assert.match(project.entries.find(entry => entry.kind === 'architecture').text, /next@14.0.0/);
+  await updateMemory(store, session, { id: 'new-edit', status: 'completed', request: '修改依賴', endedAt: 20,
+    records: [{ name: 'write_file', at: 19, result: { ok: true, saved: true, path: 'package.json' } }] });
+  assert.equal((await store.project(session.workspace)).entries.find(entry => entry.kind === 'architecture').stale, true);
 });

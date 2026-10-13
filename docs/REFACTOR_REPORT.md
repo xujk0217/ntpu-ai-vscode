@@ -30,7 +30,7 @@
 
 保留原 Agent 模式、權限、Skills、MCP、檔案／終端機／圖片工具、diff／回復、佇列與 Markdown 匯出。敏感檔案讀取／外傳與快照回復增加主機限制。
 
-未支援：Attach Existing Browser、其他 ARM64／Alpine、遠端工作區檔案／終端機操作、語意向量檢索、圖片／PDF OCR 秘密辨識、完整 OS sandbox、Oh My OpenAgent runtime。介面可管理手動技術架構／決策；自動摘要只記真實工具結果，不從模型計畫猜測已完成架構。
+未支援：Attach Existing Browser、其他 ARM64／Alpine、遠端工作區檔案／終端機操作、語意向量檢索、圖片／PDF OCR 秘密辨識、完整 OS sandbox、Oh My OpenAgent runtime。介面可管理技術架構／決策；完整 package.json 讀取可整理已宣告的架構依賴，待辦依實際 Task 狀態保存。成功接續會標記舊待辦已解決，同時保留原中斷歷史；不從模型計畫猜測已完成架構。
 
 ## 遷移與可靠性
 
@@ -56,7 +56,7 @@ macOS arm64，Node 26.0.0：
 
 - `npm ci --include=optional --offline`：成功（使用本機套件快取）。
 - `npm run build`：成功。
-- `npm test`：57 項通過，涵蓋歷史超過原本上限、重開、遷移備份／冪等、revision／衝突、專案隔離、跨帳號 mock、checkpoint、分頁／備份還原、路徑／秘密、真實 stdout 遮蔽、原 Agent、MCP、圖像。
+- `npm test`：59 項通過，涵蓋歷史超過原本上限、重開、遷移備份／冪等、revision／衝突、專案隔離、跨帳號 mock、checkpoint、分頁／備份還原、路徑／秘密、真實 stdout 遮蔽、原 Agent、MCP、圖像。
 - localhost fixture：真實 Chrome headed／headless 啟動、串流、每 Task 對話重用、附件、停止、profile 保存通過；新版 Webview 無 pageerror，檢查歷史分頁、登入狀態位置、Browser 設定草稿、Project Memory 顯示。
 - `npm run package`：darwin-arm64 0.4.0 VSIX 打包成功，sharp 實際產生並解析 PNG。
 

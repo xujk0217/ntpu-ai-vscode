@@ -32,10 +32,10 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   app.session.checkpoint = { request: '繼續登入功能', records: [{ name: 'read_file', result: { ok: true, path: 'login.js' } }] };
   await app.store.updateProject(app.session.workspace, project => project.entries.push({ id: 'e1', kind: 'preference', text: '使用 TypeScript' }));
   await app.save();
-  const prompts = []; let account = 'A';
+  const prompts = []; let account = 'A', completed = false;
   const bridge = { page: { isClosed: () => false }, logout: async () => {}, open: async () => {},
     status: async () => ({ ready: true, message: 'Mock Account ' + account }), close: async () => {},
-    chat: async prompt => { prompts.push({ account, prompt }); return { text: '{"kind":"final","message":"需要後續處理","completed":false}' }; } };
+    chat: async prompt => { prompts.push({ account, prompt }); return { text: JSON.stringify({ kind: 'final', message: 'mock result', completed }) }; } };
   app.getBridge = () => bridge;
   await app.ask('檢查登入系統', false); await app.logout(); account = 'B'; await app.login(); await app.ask('繼續', false);
   assert.equal(app.session.tasks.length, 2); assert.equal(app.session.tasks[0].status, 'blocked');
@@ -44,5 +44,10 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   await app.dispose();
   const reopened = new AgentApp(context); await reopened.ready;
   assert.equal(reopened.session.messages[0].text, '原本的需求'); assert.match(reopened.session.checkpoint.request, /檢查登入系統/);
+  reopened.getBridge = () => bridge; completed = true; await reopened.ask('繼續', false);
+  assert.equal(reopened.session.checkpoint, null);
+  assert.equal(reopened.session.tasks[0].resolvedBy, reopened.session.tasks[2].id);
+  assert.equal(reopened.session.tasks[1].resolvedBy, reopened.session.tasks[2].id);
+  assert.equal((await reopened.store.project(reopened.session.workspace)).entries.filter(entry => entry.kind === 'pending' && !entry.stale).length, 0);
   await reopened.dispose();
 });

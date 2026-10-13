@@ -28,10 +28,12 @@ function redact(text) {
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{25,})\b/g, '[REDACTED_API_KEY]')
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_JWT]')
     .replace(/\bBearer\s+(?!\[REDACTED)[A-Za-z0-9._~+\/-]+={0,2}/gi, 'Bearer [REDACTED_TOKEN]')
+    .replace(/(--(?:api[-_]?key|token|password|secret|client[-_]?secret)(?:=|\s+))(["']?)([^\s"']+)\2/gi,
+      (match, prefix, quote, value) => value.startsWith('[REDACTED') ? match : prefix + quote + '[REDACTED_SECRET]' + quote)
     .replace(/\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^\s"'<>]+/gi, '[REDACTED_CONNECTION_STRING]')
     .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[REDACTED_CREDENTIALS]@')
     .replace(/([?&](?:access_token|token|api[_-]?key|secret|password|signature|sig|code|x-amz-(?:signature|credential|security-token)|x-goog-(?:signature|credential))=)[^&#\s"']+/gi, '$1[REDACTED_SECRET]')
-    .replace(/((?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret|token|aws_secret_access_key|authorization|database_url|connection[_-]?string)(?:["']?)\s*[:=]\s*)(["']?)([^\r\n,;"'}]+)(["']?)/gi,
+    .replace(/((?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret|token|aws_secret_access_key|authorization|private[_-]?key|database_url|connection[_-]?string)(?:["']?)\s*[:=]\s*)(["']?)([^\r\n,;"'}]+)(["']?)/gi,
       (match, prefix, quote, value, ending) => {
         const trimmed = value.trim();
         if (!trimmed || trimmed.startsWith('[REDACTED') || /^(?:null|undefined|true|false|process\.env\.|os\.environ|\$\{|<|your[_-]|example|placeholder|test[_-]|fake[_-])/i.test(trimmed)) return match;
@@ -46,7 +48,7 @@ function sanitize(value) {
   if (Array.isArray(value)) return value.map(sanitize);
   const out = {};
   for (const [key, item] of Object.entries(value)) {
-    const cleaned = typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key|database[_-]?url|connection[_-]?string|^token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item ? '[REDACTED_SECRET]' : sanitize(item);
+    const cleaned = typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key|database[_-]?url|connection[_-]?string|private[_-]?key|token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item ? '[REDACTED_SECRET]' : sanitize(item);
     Object.defineProperty(out, key, { value: cleaned, enumerable: true, configurable: true, writable: true });
   }
   return out;
