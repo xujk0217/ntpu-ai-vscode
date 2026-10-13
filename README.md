@@ -162,7 +162,7 @@ Extension 使用 VS Code 本機私有儲存；獨立 BrowserManager 的預設資
 | macOS x64 | 同 macOS 路徑；macOS 15 Intel CI 真實 Chrome headless、測試與 VSIX 通過 |
 | Linux x64 | `$XDG_DATA_HOME/ntpu-ai-agent` 或 `~/.local/share/ntpu-ai-agent`；Ubuntu 22.04 CI 真實 Chromium headless、測試與 VSIX 通過 |
 
-[CI 38393599933](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38393599933) 的四平台 × Node 20／22 共 8 個工作全部成功。瀏覽器整合測試只連 localhost，使用假的登入資料；不代表校方 SSO 已在每個平台驗證。Windows 一般桌面、使用者 Intel Mac、Linux 桌面 SSO 與 Debian 尚未實機驗證。
+[CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343) 的四平台 × Node 20／22 共 8 個工作全部成功。瀏覽器整合測試只連 localhost，使用假的登入資料；不代表校方 SSO 已在每個平台驗證。Windows 一般桌面、使用者 Intel Mac、Linux 桌面 SSO 與 Debian 尚未實機驗證。
 
 Unix 目錄／檔案用 0700／0600；Windows 依私有應用資料目錄的使用者 ACL。拒絕 Profile 指向日常 Chrome／Edge／Chromium 資料、家目錄、專案或其 symlink 別名。瀏覽器原生 profile lock 衝突會明確報錯；不刪除瀏覽器的鎖來強制取得日常 profile。
 

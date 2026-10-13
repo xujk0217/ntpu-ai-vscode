@@ -64,3 +64,10 @@ NTPU 公開網頁目前未提供原生 thinking／reasoning_effort 或任意模�
 - 四平台真實 headless Edge／Chrome／Chromium 控制、串流、附件、取消、合成登入狀態 profile 保存、Webview、原生 sharp 與 VSIX 通過。
 - 測試使用 localhost／Mock BrowserBridge／假憑證，此輪沒有真正 NTPU AI 推論或 SSO。
 - 磁碟記憶／遷移／衝突／備份、跨帳號 mock 接續、敏感路徑與 stdout／MCP／Editor／保存遮蔽的細節，以及尚未驗證的平台與沙箱限制，見 [重構交付與驗收](docs/REFACTOR_REPORT.md)。
+
+## 0.4.1 最終驗收
+
+- Cookie 集合／標頭回歸防護完成，本機 60／60 tests、build、Chrome localhost fixture、VSIX 成功。
+- [CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343)，code commit `56c60e9`：四平台 × Node 20／22 全部 8／8 工作成功，各 60 項測試、build、瀏覽器 fixture、sharp 自檢及 VSIX。
+- VS Code CLI 確認本機版本 0.4.1；範例視窗重新載入後，原對話仍可離線查看，Browser 與 Memory／Privacy 頁正常。沒有重新登入或真正 NTPU AI 請求。
+- 目標原生 binary 與私有目錄排除另以 VSIX ZIP 檢查；公開套件及校驗碼見 [0.4.1 Release](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.4.1)。

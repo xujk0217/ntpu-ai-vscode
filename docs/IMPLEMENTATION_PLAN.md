@@ -62,3 +62,7 @@ BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium�
 ### Cookie 防護補強
 
 最終資料流核對補上 Cookie／Set-Cookie 標頭與結構化集合的主機遮蔽，阻止外傳並保持重複遮蔽的冪等性。60 項測試與 build 成功，版本 0.4.1 重新執行四平台 CI／打包。
+
+### 最終 0.4.1 驗收
+
+[CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343)，code commit `56c60e9`，四平台 × Node 20／22 全部 8／8 通過，各 60 項 tests、build、真實 headless BrowserBridge／Webview localhost fixture、sharp PNG 及原生 VSIX。macOS arm64 已安裝 0.4.1 並重新載入專用範例視窗，舊歷史、Browser 與 Memory／Privacy 頁確認正常；原使用者視窗草稿未改動。最終提交只更新驗收文件，不修改已驗證程式碼。

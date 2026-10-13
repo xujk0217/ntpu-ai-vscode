@@ -64,7 +64,7 @@ macOS arm64，Node 26.0.0：
 
 ## CI 驗證紀錄
 
-2026-10-13，commit `931e5f72fe148d1237312b19f7d321598b5d9e8d` 的 [CI 38393599933](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38393599933) **8／8 成功**。
+2026-10-13，commit `56c60e9f84e61b00d06e42e973cb391ab414d954` 的 [CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343) **8／8 成功**。
 
 | 平台／runner | 真實受控瀏覽器 | Node 20／22 | VSIX target |
 | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ macOS arm64，Node 26.0.0：
 | macOS x64／macOS 15 Intel | Chrome（headless） | 兩者通過 | darwin-x64 |
 | Linux x64／Ubuntu 22.04 | Playwright Chromium（headless） | 兩者通過 | linux-x64 |
 
-每個工作包含 `npm ci --include=optional`、59 項 tests、build、BrowserBridge／Webview localhost fixture、sharp 真實 PNG 自檢及 VSIX 打包。Node 22 上傳四平台安裝套件。此前一輪 `38391905815` 的 macOS Intel Node 20 因 runner 下載依賴 `ECONNRESET` 失敗，最新一輪成功。
+每個工作包含 `npm ci --include=optional`、60 項 tests、build、BrowserBridge／Webview localhost fixture、sharp 真實 PNG 自檢及 VSIX 打包。Node 22 上傳四平台安裝套件。此前一輪 `38391905815` 的 macOS Intel Node 20 因 runner 下載依賴 `ECONNRESET` 失敗，最新一輪成功。
 
 fixture 使用本機模擬網站與假的登入 cookie，實際驗證 Playwright 控制、串流、附件、取消、專用 profile 重開及 UI；不等同真實校方 SSO。Windows 一般桌面版本、macOS Intel 使用者装置、Linux 桌面互動 SSO、Debian 及 Remote Extension Host 實機尚未驗證。Remote SSH／Container／WSL 工作區執行與其他 ARM64 本版不支援。
 
@@ -89,4 +89,4 @@ fixture 使用本機模擬網站與假的登入 cookie，實際驗證 Playwright
 
 ## 0.4.1 防護補強
 
-補上 Cookie／Set-Cookie 文字及結構化集合的遮蔽，含冪等與外傳拒絕回歸測試。本機 60 項測試與 build 成功；沿用同一四平台 CI 流程，修正版套件驗證連結見 GitHub Release。0.4.0 已在原生 VS Code 驗證舊歷史與記憶／Browser 設定頁啟動。
+補上 Cookie／Set-Cookie 文字及結構化集合的遮蔽，含冪等與外傳拒絕回歸測試。本機 60 項測試、build、localhost Chrome fixture 與 VSIX 成功；修正版 CI 38395852343 的 8 個工作全部通過，四平台套件可從 [0.4.1 Release](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.4.1) 下載。0.4.1 已安裝到本機 VS Code，重新載入範例視窗後確認舊歷史、Browser 設定與記憶／隱私頁仍正常。
