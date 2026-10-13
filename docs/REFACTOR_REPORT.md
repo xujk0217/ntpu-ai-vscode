@@ -1,4 +1,4 @@
-# 0.4.1 重構交付與驗收
+# 0.4.2 重構交付與驗收
 
 ## 架構
 
@@ -50,7 +50,7 @@ Protected 路徑涵蓋 `.env`、私鑰、雲端／SSH／Kube 設定、受保護�
 
 Shell／stdio MCP 使用 OS 權限，能自行讀取檔案或連網；本機 guard 只保護主機掌控的資料流，不能阻止所有惡意程式自行外傳。秘密偵測依已知格式與欄位，未知編碼／任意私人內容可能漏判。圖片／PDF／輸出圖片快取沒有 OCR 防護，必須由使用者檢查附件；不宣稱上傳或刪除能清除校方資料。
 
-## 實際本機驗證
+## 0.4.1 實際本機驗證
 
 macOS arm64，Node 26.0.0：
 
@@ -62,7 +62,7 @@ macOS arm64，Node 26.0.0：
 
 此次重構驗證未使用真實 NTPU AI 帳號、未消耗學校模型用量。其他平台的真實瀏覽器結果見下列 CI 紀錄；mock 平台判斷與真實啟動分開驗證。
 
-## CI 驗證紀錄
+## 0.4.1 CI 驗證紀錄
 
 2026-10-13，commit `56c60e9f84e61b00d06e42e973cb391ab414d954` 的 [CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343) **8／8 成功**。
 
@@ -90,3 +90,11 @@ fixture 使用本機模擬網站與假的登入 cookie，實際驗證 Playwright
 ## 0.4.1 防護補強
 
 補上 Cookie／Set-Cookie 文字及結構化集合的遮蔽，含冪等與外傳拒絕回歸測試。本機 60 項測試、build、localhost Chrome fixture 與 VSIX 成功；修正版 CI 38395852343 的 8 個工作全部通過，四平台套件可從 [0.4.1 Release](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.4.1) 下載。0.4.1 已安裝到本機 VS Code，重新載入範例視窗後確認舊歷史、Browser 設定與記憶／隱私頁仍正常。
+
+## 0.4.2 聊天紀錄管理
+
+列表每筆 ⋯ 可重新命名、匯出指定聊天完整 Markdown、封存／恢復及確認刪除；勾選與搜尋範圍全選支援批次封存／恢復／刪除。刪除目前聊天會切到同專案其他聊天或建立空白聊天；原始碼、Project Memory 與既有備份保留。執行中停用管理，並行管理對話框由主機拒絕；部分批次失敗仍保有可保存的目前聊天。
+
+修改 media/agent-ui.js／agent.css／index.html、src/memory/actions.js／store.js、src/app.js；新增 test/memory-actions.test.js，延伸 App 匯出與 Webview fixture。
+
+本機 65／65 tests、build、Chrome localhost fixture、VSIX 成功。原生 VS Code 已安裝 0.4.2，重新載入範例視窗後確認舊聊天與列表管理入口。code commit `75eeb7c` 的 [CI 38398505182](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38398505182) 四平台 × Node 20／22 全部 8／8 成功，各 65 項 tests、build、BrowserBridge／Webview fixture、sharp 自檢與 VSIX。套件與校驗碼見 [0.4.2 Release](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.4.2)。沒有真正 NTPU AI 請求。

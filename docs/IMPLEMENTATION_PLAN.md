@@ -70,3 +70,5 @@ BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium�
 ### 0.4.2 聊天紀錄列表管理
 
 補充需求：直接在列表管理聊天。新增每筆重新命名／匯出／封存／刪除、勾選全選與批次操作、刪除確認與目前聊天替換、執行中限制；保留既有備份／Project Memory／原始碼。65 項本機 tests、build 與真實 Chrome localhost 列表 fixture 通過；沿用四平台 CI／VSIX。
+
+0.4.2 最終驗收：[CI 38398505182](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38398505182) 全部 8／8 通過，各 65 項 tests 與四平台原生套件。原生 VS Code 已安裝 0.4.2 並確認列表管理；本段驗收提交僅更新文件。

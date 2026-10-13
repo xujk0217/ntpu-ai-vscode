@@ -71,3 +71,7 @@ NTPU 公開網頁目前未提供原生 thinking／reasoning_effort 或任意模�
 - [CI 38395852343](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38395852343)，code commit `56c60e9`：四平台 × Node 20／22 全部 8／8 工作成功，各 60 項測試、build、瀏覽器 fixture、sharp 自檢及 VSIX。
 - VS Code CLI 確認本機版本 0.4.1；範例視窗重新載入後，原對話仍可離線查看，Browser 與 Memory／Privacy 頁正常。沒有重新登入或真正 NTPU AI 請求。
 - 目標原生 binary 與私有目錄排除另以 VSIX ZIP 檢查；公開套件及校驗碼見 [0.4.1 Release](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.4.1)。
+
+## 0.4.2 聊天紀錄管理
+
+65／65 本機 tests、build、Chrome localhost 列表 fixture、VSIX 成功。原生 VS Code 重新載入範例視窗後確認聊天紀錄、勾選、批次按鈕與每筆 ⋯ 選單。code commit `75eeb7c` 的 [CI 38398505182](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38398505182) 四平台 × Node 20／22 全部 8／8 成功，各 65 項測試、build、真實瀏覽器 localhost／Webview fixture、sharp 自檢與 VSIX；全程沒有真正 NTPU AI 請求。
