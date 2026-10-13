@@ -141,7 +141,7 @@ function renderState(value) {
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
   $('workspace').querySelector('span').textContent = state.workspace;
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
-  $('connectionLabel').textContent = state.connection?.ready ? '已連線' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '連線 NTPU AI';
+  $('connectionLabel').textContent = state.connection?.ready ? '已連線' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '登入';
   $('connectionActions').hidden = !!state.connection?.ready;
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;

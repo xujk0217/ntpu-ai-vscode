@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.5.2 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.5.3 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
