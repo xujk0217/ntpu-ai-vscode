@@ -3,20 +3,14 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const { classifyPath } = require('./security/guard');
 
 const MAX_FILE_BYTES = 160000;
 const EXCLUDES = '**/{.git,node_modules,.venv,venv,dist,build,.next,.local,__pycache__,coverage,.ssh,.aws,.codex}/**';
 const hash = text => createHash('sha256').update(text).digest('hex');
 
 function isBlocked(relative) {
-  const parts = relative.replaceAll('\\', '/').split('/');
-  return parts.some(part => {
-    const name = part.toLowerCase();
-    return ['.git', 'node_modules', '.venv', 'venv', '.local', '.ssh', '.aws', '.codex'].includes(name) ||
-      (/^\.env(?:\.|$)/.test(name) && !['.env.example', '.env.sample', '.env.template'].includes(name)) ||
-      /\.(pem|key|p12|pfx|keystore)$/.test(name) ||
-      /^(id_rsa|id_ed25519|credentials|secrets)(?:\.|$)/.test(name);
-  });
+  return classifyPath(relative).level === 'protected';
 }
 
 function inside(root, file) {
@@ -30,6 +24,7 @@ async function safePath(root, relative) {
     throw new Error('必須使用工作區內的相對路徑。');
   }
   const normalized = relative.replaceAll('\\', '/');
+  if (normalized.split('/').some(part => /[:]/.test(part) || /[. ]$/.test(part) && part !== '.' && part !== '..' || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new Error('不安全或不相容的檔案名稱。');
   if (isBlocked(normalized)) throw new Error('此路徑包含秘密資料或不允許的目錄。');
   const absolute = path.resolve(root, normalized);
   if (!inside(path.resolve(root), absolute)) throw new Error('路徑超出目前工作區。');

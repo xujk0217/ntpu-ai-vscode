@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { inspectOutboundPayload } = require('./security/guard');
 
 const ORIGIN = 'https://ai.ntpu.edu.tw';
 const PROFILE = path.join(os.homedir(), '.ntpu-ai-coder', 'browser-profile');
@@ -168,6 +169,8 @@ class BrowserBridge {
   }
 
   async chat(prompt, options = {}) {
+    prompt = inspectOutboundPayload(prompt);
+    if (options.attachment && !options.attachment.approved) throw new Error('附件需要先確認目的地與敏感資料風險。');
     if (this.pending) throw new Error('已有一個 NTPU AI 請求執行中。');
     if (!this.page || this.page.isClosed()) await this.open();
     const status = await this.status();

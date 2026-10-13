@@ -1,10 +1,11 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { sanitize } = require('./security/guard');
 
 const DEFAULT_OPTIONS = { agent: 'build', permission: 'ask', depth: 'standard', web: true, skills: [] };
 class SessionStore {
   constructor(saved = []) {
-    this.sessions = Array.isArray(saved) ? saved.filter(item => item?.id && Array.isArray(item.messages)).slice(0, 25) : [];
+    this.sessions = Array.isArray(saved) ? sanitize(saved.filter(item => item?.id && Array.isArray(item.messages))) : [];
     for (const session of this.sessions) {
       session.options = { ...DEFAULT_OPTIONS, ...session.options, permission: 'ask' };
       session.messages = session.messages.filter(item => item?.role !== 'stream');
@@ -17,14 +18,14 @@ class SessionStore {
   create(workspace = '', options = {}) {
     const session = { id: randomUUID(), title: '新工作階段', workspace, createdAt: Date.now(), updatedAt: Date.now(),
       options: { ...DEFAULT_OPTIONS, ...options, permission: 'ask' }, messages: [], turns: [], changes: [], plan: [] };
-    this.sessions.unshift(session); this.sessions = this.sessions.slice(0, 25); return session;
+    this.sessions.unshift(session); return session;
   }
   get(id) { return this.sessions.find(item => item.id === id); }
-  add(session, message) { const item = { id: randomUUID(), at: Date.now(), ...message }; session.messages.push(item); session.updatedAt = Date.now(); return item; }
-  update(session, id, patch) { const item = session.messages.find(message => message.id === id); if (item) Object.assign(item, patch); return item; }
+  add(session, message) { const item = sanitize({ id: randomUUID(), at: Date.now(), ...message }); session.messages.push(item); session.updatedAt = Date.now(); return item; }
+  update(session, id, patch) { const item = session.messages.find(message => message.id === id); if (item) Object.assign(item, sanitize(patch)); return item; }
   serialize() {
-    return this.sessions.map(session => ({ ...session, messages: session.messages.filter(item => item.role !== 'stream').slice(-100),
-      turns: (session.turns || []).slice(-5), changes: (session.changes || []).slice(-12) }));
+    return sanitize(this.sessions.map(session => ({ ...session, messages: session.messages.filter(item => item.role !== 'stream'),
+      turns: session.turns || [], changes: session.changes || [] }))); 
   }
 }
 module.exports = { SessionStore, DEFAULT_OPTIONS };

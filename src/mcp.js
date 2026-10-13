@@ -4,9 +4,11 @@ const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/cli
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');
 const { createHash } = require('node:crypto');
+const { inspectOutboundPayload, sanitize, redact } = require('./security/guard');
 
 const EXA = { name: 'exa', type: 'http', url: 'https://mcp.exa.ai/mcp', builtin: true, readOnly: true };
 function validateServer(config) {
+  inspectOutboundPayload({ url: config?.url, command: config?.command, args: config?.args }, { reject: true });
   if (!config || !/^[a-zA-Z0-9_-]{1,48}$/.test(config.name || '')) throw new Error('MCP 名稱必須是 1–48 字的英數字、底線或連字號。');
   if (config.type === 'http' || config.type === 'sse') {
     const url = new URL(config.url);
@@ -73,7 +75,7 @@ class McpManager {
       this.onState(); return connection;
     } catch (error) {
       await client.close().catch(() => {});
-      this.failures.set(config.name, error.message); this.onState(); throw error;
+      this.failures.set(config.name, redact(error.message)); this.onState(); throw new Error(redact(error.message));
     }
   }
   catalog() { return [...this.tools.values()]; }
@@ -84,13 +86,14 @@ class McpManager {
         [...this.connecting.keys()].filter(name => !this.connections.has(name)).map(name => ({ name, connected: false, connecting: true })));
   }
   async call(name, args, signal) {
+    args = inspectOutboundPayload(args, { reject: true });
     const tool = this.tools.get(name);
     if (!tool) throw new Error('此 MCP 工具尚未連線。');
     const connection = this.connections.get(tool.server);
     const result = await connection.client.callTool({ name: tool.originalName, arguments: args }, undefined, { signal, timeout: 60000 });
     let structuredContent = result.structuredContent;
     if (structuredContent && JSON.stringify(structuredContent).length > 18000) structuredContent = { truncated: true, text: JSON.stringify(structuredContent).slice(0, 18000) };
-    return { ok: !result.isError, server: tool.server, content: await this.onContent(result.content || []), structuredContent };
+    return sanitize({ ok: !result.isError, server: tool.server, content: await this.onContent(sanitize(result.content || [])), structuredContent });
   }
   async search(query, signal) {
     const connection = await this.connect(EXA);

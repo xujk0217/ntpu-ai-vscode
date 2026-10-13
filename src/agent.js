@@ -1,11 +1,12 @@
 'use strict';
 const { parseReply, buildPrompt } = require('./protocol');
+const { sanitize, redact, inspectOutboundPayload } = require('./security/guard');
 
 async function runAgent({ bridge, tools, request, context, workspace, signal, maxSteps = 12,
   budget = 48000, timeoutMs = 240000, onActivity = () => {}, onFinal = () => {}, onJudge = () => {},
   onTool = () => {}, onBudget = () => {}, onStream = () => {}, onCheckpoint = () => {},
   initialRecords = [], attachment, profile = {} }) {
-  const records = [...initialRecords];
+  const records = sanitize(initialRecords);
   const repeated = [];
   let repairs = 0, completionRetries = 0, previousMessage = '';
   const checkpoint = () => onCheckpoint(records);
@@ -14,8 +15,8 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     onActivity(`AI 正在處理（${step + 1}/${maxSteps}）`);
     let characters = 0, lastProgress = 0;
     const catalog = tools.catalog?.();
-    const prompt = buildPrompt({ request, context, workspace, records, budget, profile,
-      ...(catalog ? { catalog } : {}), skills: tools.skills?.list() || [], loadedSkills: [...(tools.loadedSkills?.values() || [])] });
+    const prompt = inspectOutboundPayload(buildPrompt({ request: redact(request), context: redact(context), workspace, records, budget, profile,
+      ...(catalog ? { catalog } : {}), skills: tools.skills?.list() || [], loadedSkills: sanitize([...(tools.loadedSkills?.values() || [])]) }));
     onBudget({ used: prompt.length, total: budget });
     let rawReply = '';
     const response = await bridge.chat(prompt, {
@@ -36,7 +37,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     });
     if (signal.aborted) throw new Error('已停止');
     let reply;
-    try { reply = parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined); }
+    try { reply = sanitize(parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined)); }
     catch (error) {
       records.push({ type: 'format_error', message: error.message, instruction: 'Return a valid single JSON response. No tool was run.' });
       checkpoint();
@@ -66,10 +67,10 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     // Model-generated text alone never counts as an executed tool action.
     const id = require('node:crypto').randomUUID();
     const message = typeof reply.message === 'string' ? reply.message.slice(0, 500) : '';
-    onTool({ id, status: 'running', name: reply.name, args: reply.args, message: message === previousMessage ? '' : message });
+    onTool(sanitize({ id, status: 'running', name: reply.name, args: reply.args, message: message === previousMessage ? '' : message }));
     if (message) previousMessage = message;
     let result;
-    try { result = await tools.execute(reply.name, reply.args); }
+    try { result = sanitize(await tools.execute(reply.name, reply.args)); }
     catch (error) { onTool({ id, status: signal.aborted ? 'interrupted' : 'error', result: error.message }); throw error; }
     onTool({ id, status: result.denied ? 'denied' : result.ok === false ? 'error' : 'done', result });
     const args = { ...reply.args };

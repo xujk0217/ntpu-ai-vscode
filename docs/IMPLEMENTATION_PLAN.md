@@ -19,7 +19,7 @@
 ## 分段提交
 
 - [x] 1. 保存需求、盤點既有資料流與風險。
-- [ ] 2. 統一敏感路徑、內容遮蔽、傳輸與保存邊界；安全測試。
+- [x] 2. 統一敏感路徑、內容遮蔽、傳輸與保存邊界；安全測試。
 - [ ] 3. 原子本機持久化、舊資料備份／遷移、Project／Session／Task、檢索與上下文管理；記憶測試。
 - [ ] 4. 整合 Agent、離線歷史、分頁、封存／刪除／匯出／備份還原、Project Memory 與 Privacy UI。
 - [ ] 5. Browser Manager、隔離 profile、跨平台設定與 shell／路徑防護；mock browser tests。
@@ -34,3 +34,7 @@
 - CI 與 VSIX 僅 macOS；sharp 需要依目標平台安裝與驗證。
 
 每段完成時追加實際測試證據，再 commit。網站 smoke 須明確說明，不能在單元測試中消耗 NTPU AI 用量。
+
+### 段落 2 證據
+
+新增中央 guard，覆蓋檔案／Editor／使用者輸入／Terminal／MCP／模型出口／Session 保存。保護 Windows 與 Unix 憑證路徑，Review 檔案與附件單次確認；文字秘密遮蔽。含秘密的既有檔案禁止 Agent 改寫，避免把遮蔽值寫回憑證。MCP 自訂外部工具保留個別核准。圖片／PDF 無文字 OCR 防護，必須明示確認；Shell／stdio 仍沒有 OS sandbox。執行安全與工作區／工具測試 10 項通過，原有 38 項測試通過。

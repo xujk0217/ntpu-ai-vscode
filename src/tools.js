@@ -10,6 +10,7 @@ const { DEFINITIONS } = require('./protocol');
 const { fetchPublic, pageText } = require('./network');
 const { imageMime, renderSvg } = require('./visuals');
 const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
+const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
 
 class PreviewProvider {
   constructor() { this.documents = new Map(); }
@@ -46,7 +47,8 @@ class WorkspaceTools {
 
   async authorize(name, args, detail = {}) {
     const metadata = this.options.mcp?.tools.get(name) || {};
-    const decision = this.policy.decision(name, args, metadata);
+    const policyDecision = this.policy.decision(name, args, metadata);
+    const decision = metadata.external && metadata.server !== 'exa' && policyDecision !== 'deny' ? 'ask' : policyDecision;
     if (decision === 'deny') return false;
     if (decision === 'allow') return true;
     if (!this.onApproval) return false;
@@ -62,6 +64,7 @@ class WorkspaceTools {
   checkStopped() { if (this.signal.aborted) throw new Error('已停止'); }
 
   async text(absolute) {
+    await safePath(this.root.fsPath, path.relative(this.root.fsPath, absolute));
     const uri = vscode.Uri.file(absolute);
     const open = vscode.workspace.textDocuments.find(document => document.uri.toString() === uri.toString());
     if (open) {
@@ -88,7 +91,7 @@ class WorkspaceTools {
     if (this.policy.decision(name, args, mcpTool) === 'deny') return { ok: false, denied: true, error: '目前 agent 模式禁止這個操作。' };
     try {
       if (!['write_file', 'edit_file', 'run_command', 'create_visual'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
-      return methods[name] ? await methods[name]() : await this.options.mcp.call(name, args, this.signal);
+      return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
     catch (error) { if (this.signal.aborted) throw error; return { ok: false, error: error.message }; }
   }
@@ -121,6 +124,7 @@ class WorkspaceTools {
   }
 
   async read(args) {
+    await this.reviewData(args.path);
     const absolute = await safePath(this.root.fsPath, args.path);
     this.onActivity('讀取 ' + args.path);
     const text = await this.text(absolute);
@@ -130,6 +134,7 @@ class WorkspaceTools {
     if (!snapshot || snapshot.hash !== digest) snapshot = { hash: digest, ranges: [], totalLines: lines.total_lines };
     if (lines.end_line >= lines.start_line) snapshot.ranges.push([lines.start_line, lines.end_line]);
     this.snapshots.set(absolute, snapshot);
+    snapshot.sensitive = classifyContent(text).detected;
     return { ok: true, path: args.path, ...lines,
       ...(lines.truncated ? { hint: '內容超過本輪上限，使用行號分段 read_file 取得其餘內容。' } : {}) };
   }
@@ -141,6 +146,7 @@ class WorkspaceTools {
     const matches = [];
     for (const { uri, relative } of files) {
       this.checkStopped();
+      try { await this.reviewData(relative); } catch { continue; }
       let text;
       try { text = await this.text(uri.fsPath); } catch { continue; }
       const lines = text.split('\n');
@@ -160,6 +166,7 @@ class WorkspaceTools {
     let before = '', exists = true;
     try { before = await this.text(absolute); } catch (error) { if (error.code === 'ENOENT') exists = false; else throw error; }
     if (exists && !this.snapshots.has(absolute)) throw new Error('請先 read_file 讀取這個既有檔案，再提出修改。');
+    if (exists && classifyContent(before).detected) throw new Error('這個檔案含已遮蔽的秘密，為避免覆蓋憑證，請在編輯器手動修改。');
     if (exists && this.snapshots.get(absolute).hash !== hash(before)) throw new Error('檔案已被其他操作修改，請重新 read_file 後再提出修改。');
     if (exists && !fullyRead(this.snapshots.get(absolute)) && !internal.partialVerified) throw new Error('尚未讀完這個檔案。請以 read_file 分段讀取其餘行數，或用 edit_file 精確替換已讀取的區段。');
     if (before === args.content && exists) return { ok: true, path: args.path, changed: false };
@@ -187,8 +194,8 @@ class WorkspaceTools {
     const doc = await vscode.workspace.openTextDocument(uri);
     const saved = await doc.save();
     this.snapshots.delete(absolute);
-    this.options.onChange?.({ id: randomUUID(), path: args.path, before: exists ? before : null,
-      after: doc.getText(), afterHash: hash(doc.getText()), created: !exists, saved, binary: false });
+    this.options.onChange?.(sanitize({ id: randomUUID(), path: args.path, before: exists ? before : null,
+      after: doc.getText(), afterHash: hash(doc.getText()), created: !exists, saved, binary: false }));
     this.onActivity((saved ? '已儲存 ' : '已套用但尚未儲存 ') + args.path);
     return { ok: saved, applied: true, saved, created: !exists, path: args.path,
       ...(saved ? {} : { error: '修改已套用到編輯器，但儲存失敗；請在編輯器確認。' }) };
@@ -237,17 +244,20 @@ class WorkspaceTools {
     return { ok: true, name: skill.name, instructions: skill.body };
   }
   async webSearch(args) {
+    inspectOutboundPayload(args, { reject: true });
     if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 1000) throw new Error('搜尋 query 需要 1–1000 字。');
     if (!this.options.mcp) throw new Error('MCP 尚未初始化。');
     return this.options.mcp.search(args.query, this.signal);
   }
   async webFetch(args) {
+    inspectOutboundPayload(args, { reject: true });
     if (typeof args.url !== 'string') throw new Error('需要公開網址。');
     const page = await fetchPublic(args.url, this.signal);
     const content = page.mime.includes('html') ? pageText(page.body) : page.body;
     return { ok: true, url: page.url, content: content.slice(0, 18000), truncated: content.length > 18000 };
   }
   async inspect(args) {
+    await this.reviewData(args.path, true);
     const absolute = await safePath(this.root.fsPath, args.path);
     const stat = await fs.stat(absolute);
     if (stat.size > 8 * 1024 * 1024) throw new Error('圖片工具上限 8 MB。');
@@ -255,7 +265,7 @@ class WorkspaceTools {
     const mimeType = imageMime(buffer);
     if (!this.options.bridge) throw new Error('圖片分析需要已登入的 NTPU AI 瀏覽器。');
     const result = await this.options.bridge.chat('請依附上的真實圖片回答：' + String(args.question || '描述圖片內容，指出可觀察到的細節。').slice(0, 2000),
-      { signal: this.signal, attachment: { name: path.basename(absolute), mimeType, buffer }, timeoutMs: 240000 });
+      { signal: this.signal, newConversation: false, attachment: { name: path.basename(absolute), mimeType, buffer, approved: true }, timeoutMs: 240000 });
     return { ok: true, path: args.path, analysis: result.text.slice(0, 16000) };
   }
   async visual(args) {
@@ -274,12 +284,13 @@ class WorkspaceTools {
   }
 
   async command(args) {
+    inspectOutboundPayload(args, { reject: true });
     if (typeof args.command !== 'string' || !args.command.trim() || args.command.length > 2000) throw new Error('command 必須是 1–2000 字的完整指令。');
     const cwd = await safePath(this.root.fsPath, args.cwd || '.');
     if (!(await fs.stat(cwd)).isDirectory()) throw new Error('cwd 必須是工作區內的資料夾。');
     this.onActivity('準備執行指令');
     const approvalInfo = this.policy.commandExplanation(args.command);
-    const detail = { title: '確認執行指令', detail: args.command + `\n\n工作目錄：${cwd}\n${approvalInfo.reason}\n以你的使用者權限執行，最多 60 秒。`, accept: '執行這次指令', tool: 'run_command' };
+    const detail = { title: '確認執行指令', detail: args.command + `\n\n工作目錄：${cwd}\n${approvalInfo.reason}\n以你的使用者權限執行，最多 60 秒。指令可能讀取工作區外檔案或透過網路傳送資料；此終端機沒有 OS sandbox。`, accept: '執行這次指令', tool: 'run_command' };
     const autoApproved = this.policy.decision('run_command', args) === 'allow';
     const approved = autoApproved ? '執行這次指令' : this.onApproval ? await this.onApproval(detail, this.signal) :
       await vscode.window.showWarningMessage('NTPU AI 要執行終端機指令：\n' + args.command,
@@ -292,7 +303,7 @@ class WorkspaceTools {
       const child = spawn(args.command, { shell: true, cwd, windowsHide: true, detached: process.platform !== 'win32' });
       let output = '', total = 0, timedOut = false, lastOutput = 0;
       const consume = data => { const text = data.toString(); total += text.length; output = (output + text).slice(-14000);
-        if (Date.now() - lastOutput > 200) { lastOutput = Date.now(); this.options.onCommandOutput?.(output); } };
+        if (Date.now() - lastOutput > 200) { lastOutput = Date.now(); this.options.onCommandOutput?.(redact(output)); } };
       child.stdout.on('data', consume);
       child.stderr.on('data', consume);
       const kill = () => {
@@ -315,6 +326,17 @@ class WorkspaceTools {
       });
       if (this.signal.aborted) kill();
     });
+  }
+
+  async reviewData(relative, attachment = false) {
+    const classification = classifyPath(relative, this.options.reviewPaths || []);
+    if (classification.level === 'protected') throw new Error('受保護資料禁止 Agent 存取。');
+    if (classification.level !== 'review' && !attachment) return;
+    const accept = '傳送遮蔽後的資料';
+    const result = await this.onApproval?.({ title: '確認資料傳送：' + relative,
+      detail: '資料將交給 NTPU AI。文字憑證會遮蔽；圖片中的憑證無法由文字防護辨識，請先確認圖片內容。', accept }, this.signal);
+    this.checkStopped();
+    if (result !== accept) throw new Error('未批准敏感資料傳送。');
   }
 }
 

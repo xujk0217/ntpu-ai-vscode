@@ -15,6 +15,7 @@ const { SessionStore } = require('./sessions');
 const { SkillCatalog } = require('./skills');
 const { McpManager, EXA, validateServer } = require('./mcp');
 const { imageMime, thumbnail } = require('./visuals');
+const { sanitize, redact, classifyPath, classifyContent } = require('./security/guard');
 
 class AgentApp {
   constructor(context) {
@@ -50,7 +51,7 @@ class AgentApp {
       .replaceAll('%SCRIPT%', view.webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'chat.bundle.js')).toString());
     view.webview.onDidReceiveMessage(message => { void this.handle(message).catch(error => this.notice(error.message, 'error')); }, null, this.context.subscriptions);
   }
-  post(message) { void this.view?.webview.postMessage(message); }
+  post(message) { void this.view?.webview.postMessage(sanitize(message)); }
   busy() { return !!this.controller; }
   workspace(session = this.session) {
     return vscode.workspace.workspaceFolders?.find(folder => folder.uri.toString() === session.workspace) ||
@@ -81,11 +82,11 @@ class AgentApp {
     this.post({ kind: 'approval', approval: this.gate.state() }); this.state(); this.capabilities();
   }
   add(role, text, extra = {}) {
-    const item = this.store.add(this.session, { role, text, ...extra });
+    const item = this.store.add(this.session, sanitize({ role, text, ...extra }));
     this.post({ kind: 'message', message: item }); this.persist(); return item;
   }
   patch(id, patch) {
-    const item = this.store.update(this.session, id, patch);
+    const item = this.store.update(this.session, id, sanitize(patch));
     if (item) this.post({ kind: 'patch', message: item }); this.persist(); return item;
   }
   notice(text, role = 'notice') { this.add(role, text); }
@@ -219,6 +220,7 @@ class AgentApp {
       const relative = path.relative(root.uri.fsPath, editor.document.uri.fsPath).replaceAll(path.sep, '/');
       try {
         await safePath(root.uri.fsPath, relative);
+        await this.approveData(relative);
         const selected = !editor.selection.isEmpty;
         pieces.push(`File ${relative}${selected ? ` (selected lines ${editor.selection.start.line + 1}–${editor.selection.end.line + 1})` : ''}:\n` +
           (selected ? editor.document.getText(editor.selection) : editor.document.getText()).slice(0, 9000));
@@ -226,21 +228,22 @@ class AgentApp {
     }
     for (const file of files.slice(0, 3)) {
       const absolute = await safePath(root.uri.fsPath, file.relative);
+      await this.approveData(file.relative);
       pieces.push(`File ${file.relative} (excerpt; read_file for full contents):\n` + (await diskText(absolute)).slice(0, 5000));
     }
     const previous = (this.session.turns || []).slice(-3).map(turn => ({ request: turn.request.slice(0, 1200), answer: turn.answer.slice(0, 2000) }));
     if (previous.length) pieces.push('Recent conversation:\n' + JSON.stringify(previous));
-    return pieces.join('\n\n');
+    return redact(pieces.join('\n\n'));
   }
   async ask(request, includeEditor = true) {
-    request = request.trim(); if (!request) return;
+    request = redact(request.trim()); if (!request) return;
     if (request.length > 20000) throw new Error('提問超過 20000 字。');
     const slash = request.match(/^\/(build|plan|review|research|ask)\b\s*/);
     if (slash && !this.busy()) { this.session.options.agent = slash[1]; request = request.slice(slash[0].length) || '請依目前專案提供協助。'; }
     if (this.queue.length >= 5) throw new Error('佇列最多保留五個提問。');
     const item = { id: randomUUID(), request, includeEditor, sessionId: this.session.id, attachment: this.attachment, files: [...this.contextFiles] };
     this.attachment = null; this.contextFiles = [];
-    const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name, preview: item.attachment.preview } : null });
+    const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name } : null });
     item.messageId = user.id;
     if (this.session.title === '新工作階段') this.session.title = request.slice(0, 32);
     if (this.busy()) { this.queue.push(item); this.state(); return; }
@@ -271,6 +274,7 @@ class AgentApp {
       const tools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); },
         (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills,
           selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, bridge,
+          reviewPaths: config.get('privacy.reviewPaths', []),
           onPlan: steps => { this.session.plan = steps; this.post({ kind: 'plan', steps }); this.persist(); },
           onSkill: name => { if (!this.session.options.skills.includes(name)) this.post({ kind: 'skillLoaded', name }); },
           onArtifact: artifact => this.artifact(artifact), onChange: change => this.changed(change),
@@ -348,12 +352,13 @@ class AgentApp {
       filters: { '圖片或 PDF': ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'] } });
     if (!files?.length) return;
     const file = files[0]; const stat = await fs.stat(file.fsPath);
+    await this.approveData(await fs.realpath(file.fsPath), true);
     if (stat.size > 20 * 1024 * 1024) throw new Error('附件上限 20 MB。');
     const buffer = await fs.readFile(file.fsPath);
     let mimeType, preview;
     if (buffer.subarray(0, 5).toString() === '%PDF-') mimeType = 'application/pdf';
     else { mimeType = imageMime(buffer); preview = 'data:image/png;base64,' + (await thumbnail(buffer)).toString('base64'); }
-    this.attachment = { name: path.basename(file.fsPath), mimeType, buffer, preview }; this.state();
+    this.attachment = { name: path.basename(file.fsPath), mimeType, buffer, preview, approved: true }; this.state();
   }
   async addSkillDirectory() {
     if (this.busy()) return;
@@ -465,7 +470,16 @@ class AgentApp {
     if (!target) return;
     const text = '# ' + this.session.title + '\n\n' + this.session.messages.filter(message => ['user', 'assistant'].includes(message.role)).map(message =>
       `## ${message.role === 'user' ? '使用者' : 'NTPU AI'}\n\n${message.text}\n`).join('\n');
-    await vscode.workspace.fs.writeFile(target, Buffer.from(text)); await vscode.window.showTextDocument(target);
+    await vscode.workspace.fs.writeFile(target, Buffer.from(redact(text))); await vscode.window.showTextDocument(target);
+  }
+
+  async approveData(file, attachment = false) {
+    const level = classifyPath(file, vscode.workspace.getConfiguration('ntpuAI').get('privacy.reviewPaths', [])).level;
+    if (level === 'protected') throw new Error('受保護路徑禁止傳送。');
+    if (!attachment && level !== 'review') return;
+    const answer = await vscode.window.showWarningMessage('這份資料將傳送至 NTPU AI：' + redact(file),
+      { modal: true, detail: '文字秘密會遮蔽。圖片與 PDF 的秘密無法由文字掃描辨識，請先確認附件。完整存取仍需要此次資料確認。' }, '確認傳送');
+    if (answer !== '確認傳送') throw new Error('未批准資料傳送。');
   }
 
   async connectServer(name) {
