@@ -6,7 +6,7 @@
 - 真實 Chrome localhost mock：自建對話刪除成功，原有對話未操作；HTTP 503 刪除失敗保留歸屬，後續明確清理成功。重新開啟 Profile 後仍能載入模擬歷史及清理；登入、串流、附件、取消與並行回歸通過。
 - UI fixture：聊天標題與設定同列、專案位於輸入框下方、地球提示、AI4X 範例只填入而不送出，變更／子任務按鈕回歸通過；README 三張圖由實際側欄程式與示範資料產生。
 - macOS／Chrome／真實 NTPU AI：主 Agent 分派探索與審查兩個子任務，分別讀取測試專案 HTML／JS 前十行；兩者完成並由主 Agent 收集結果、產生最終報告。主任務正常網站刪除操作成功，本機聊天與工具紀錄仍可讀，未觀察到清理失敗通知。這是 HTTP 刪除成功的驗收，不是校方後端備份抹除證明。
-- 多平台 CI 結果請核對 Actions；Windows／Linux 真人校方 SSO 尚未實測。
+- Windows x64、macOS arm64／x64、Linux x64 的 Node 20／22 [八項 CI 工作全通過](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38441510151)。Windows／Linux 真人校方 SSO 尚未實測。
 
 
 ## 0.6.0 變更檢視與並行（2026-10-14）
