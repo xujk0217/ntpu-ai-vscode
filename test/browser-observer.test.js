@@ -53,3 +53,10 @@ test('reinstalling an observer changes its binding without wrapping fetch a seco
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(old.length, 0); assert.equal(next[0].kind, 'opened');
 });
+
+test('observer reports only session identity for an owned UI request, never its credentials', async () => {
+  const events=[];const window=observer(async()=>new Response('',{status:200}),async payload=>events.push(payload));
+  await window.fetch('/chat/stream',{method:'POST',body:JSON.stringify({session_id:'task-owned-1',message:'private prompt'}),headers:{Authorization:'Bearer secret'}});
+  assert(events.some(event=>event.kind==='conversation'&&event.sessionId==='task-owned-1'));
+  assert.doesNotMatch(JSON.stringify(events),/private prompt|Bearer|secret/);
+});

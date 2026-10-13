@@ -150,6 +150,7 @@ class AgentApp {
       const config = vscode.workspace.getConfiguration('ntpuAI');
       this.bridge = new BrowserBridge({ browser: config.get('browser', 'auto') === 'auto' && config.get('chromePath') ? 'custom' : config.get('browser', 'auto'),
         customPath: config.get('customBrowserPath') || config.get('chromePath') || '', profile: config.get('browserProfilePath') || undefined,
+        cleanupConversations: config.get('browser.cleanupTaskConversations', true), onCleanupFailure: () => this.notice('部分任務對話未能從校方網站清理；本機記錄已保留，請到網站確認。'),
         storageRoot: this.context.globalStorageUri.fsPath, workspaces: vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath) || [],
         remote: this.context.globalStorageUri.scheme === 'vscode-remote' || this.context.extension?.extensionKind === 2 && !!vscode.env?.remoteName });
     }
@@ -272,7 +273,7 @@ class AgentApp {
       servers: [...BUILTINS, ...this.servers.filter(server => !BUILTINS.some(item => item.name === server.name))].map(server => ({ name: server.name, label: server.label, type: server.type,
         target: server.url || [server.command, ...(server.args || [])].join(' '), builtin: !!server.builtin,
         ...connected.find(state => state.name === server.name) })),
-      tools: this.mcp.catalog().map(({ name, description, server }) => ({ name, description, server })),
+      tools: this.mcp.catalog().map(({ name, originalName, description, server }) => ({ name, originalName, description, server })),
       thinking: 'NTPU AI 未提供原生 thinking 設定。分析深度會調整本地 agent 的規劃與驗證策略。',
       image: '可分析圖片，並以 SVG 繪製 PNG。照片型生圖可透過你連接的影像 MCP 工具擴充。' });
   }
@@ -392,6 +393,10 @@ class AgentApp {
   }
 
   async run(item) {
+    const operation = this.runTask(item); this.runOperation = operation;
+    try { return await operation; } finally { if (this.runOperation === operation) this.runOperation = null; }
+  }
+  async runTask(item) {
     const root = this.workspace();
     if (!root) { const task = this.session.tasks.find(task => task.id === item.id); task.status = 'blocked'; task.result = '尚未開啟工作區'; task.endedAt = Date.now(); this.notice('請開啟這個工作階段的專案資料夾，或建立新的工作階段。', 'error'); await this.save(); return; }
     if (!vscode.workspace.isTrusted) throw new Error('請先信任目前工作區。');
@@ -442,6 +447,7 @@ class AgentApp {
           (detail, requestSignal) => this.gate.request({ ...detail, title: title + ' · ' + detail.title }, requestSignal),
           { ...baseTools.options, policy: new PermissionPolicy({ mode: policy.mode, agent: 'research' }), bridge: workerBridge,
             onPlan: undefined, onChange: undefined, onArtifact: undefined, onCommandOutput: undefined }),
+        onBeforeCleanup: () => this.save(),
         onEvent: event => {
           const existing = this.session.messages.find(message => message.id === event.id);
           const detail = JSON.stringify({ activity: event.activity, result: event.result, evidence: event.records }, null, 2).slice(0, 20000);
@@ -501,6 +507,9 @@ class AgentApp {
         const privacy = vscode.workspace.getConfiguration('ntpuAI');
         if (privacy.get('memory.enableProject', true) && privacy.get('memory.autoUpdate', true)) await updateMemory(this.store, this.session, task);
         await this.save();
+        const cleanup = await this.bridge?.cleanupConversations?.();
+        if (cleanup?.deleted) this.add('tool', '', { name: 'cleanup_conversations', args: {}, status: 'done', result: JSON.stringify({ deleted: cleanup.deleted, message: '本機紀錄保留，校方任務對話已刪除。' }) });
+        if (cleanup?.failed) this.notice('任務已存本機，但部分校方對話清理失敗，請到網站確認。');
       } catch (error) { this.persistenceError = redact(error.message); }
       this.controller = null; this.activePolicy = null;
       if (this.browserConfigurationChanged) { this.browserConfigurationChanged = false; await this.reconnectBrowser(false); }
@@ -730,7 +739,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

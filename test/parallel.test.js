@@ -78,3 +78,11 @@ test('single-request fallback works and provider failure prevents queued work st
   const second=scheduler.run(()=>{started++;},controller.signal);
   await Promise.all([assert.rejects(first,/limit/),assert.rejects(second,/已停止/)]);assert.equal(started,1);
 });
+
+test('worker keeps remote evidence when saving local results fails', async () => {
+  const {workers}=fixture(async options=>{options.onFinal('evidence');return {completed:true};});
+  const closes=[];workers.bridge.createChannel=async()=>({close:async options=>closes.push(options)});
+  workers.onBeforeCleanup=async()=>{throw new Error('disk full');};
+  workers.delegate({tasks:[{title:'read',role:'review',request:'read evidence'}]});
+  const result=await workers.collect();assert.equal(result.ok,false);assert.match(result.tasks[0].result,/保留校方對話/);assert.equal(closes[0].cleanup,false);await workers.close();
+});

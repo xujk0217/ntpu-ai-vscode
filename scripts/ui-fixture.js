@@ -17,6 +17,9 @@ async function testUI(page, origin) {
   const send = data => page.evaluate(value => window.postMessage(value, '*'), data);
   await send({ kind: 'session', session: { id: 'fixture', title: 'Fixture', messages: [{ id: 'm1', role: 'assistant', text: '本機歷史' }], hasMore: true, before: 1, changes: [], plan: [] } });
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [], browser: { selection: 'auto', host: 'Fixture host' }, thinking: 'Fixture', image: 'Fixture' });
+  assert.equal(await page.locator('.brand, .session-heading').count(), 0);
+  assert.equal(await page.locator('.topbar #rename').count(), 1);
+  assert.equal(await page.locator('#composer').evaluate(node => !!node.nextElementSibling.querySelector('#workspace')), true);
   assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
   assert.equal(await page.locator('#loginNotice').isHidden(), true);
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
@@ -68,6 +71,8 @@ async function testUI(page, origin) {
   await page.waitForFunction(() => document.querySelector('[data-id="worker-fixture"]')?.textContent.includes('真實結果'));
   assert.equal(await page.locator('[data-id="worker-fixture"] details').evaluate(node => node.open), true);
   assert.equal(await page.getByRole('button', { name: '停止此子任務', exact: true }).count(), 0);
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'agent-overview-ui.png') });
+  assert.match(await page.locator('#web').getAttribute('title'), /Exa/);
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /已登入/);
   assert.equal(await page.getByRole('button', { name: '開啟側欄小瀏覽器' }).count(), 0);
@@ -77,6 +82,12 @@ async function testUI(page, origin) {
   await page.locator('.settings-advanced > summary').first().click();
   const input = page.getByRole('textbox', { name: 'Custom Browser Path', exact: true }); await input.fill('/fixture/draft');
   await send(state); assert.equal(await input.inputValue(), '/fixture/draft');
+  await page.locator('[data-tab="tools"]').click();
+  const sample = page.getByRole('button', { name: '請查詢 NTPU AI4X 的中心資訊與合作服務，附官方來源。', exact: true });
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'agent-tools-ui.png') });
+  const before = await taskMessages(); await sample.click();
+  assert.match(await page.locator('#prompt').inputValue(), /AI4X/); assert.deepEqual(await taskMessages(), before);
+  await page.locator('#prompt').fill(''); await page.locator('#settings').click();
   await page.locator('[data-tab="memory"]').click();
   await send({ kind: 'memory', project: { entries: [{ id: 'e1', kind: 'architecture', text: 'TypeScript', source: { userEditedAt: 1 } }] }, tasks: [], storage: 'private fixture', enabled: true, autoUpdate: true });
   await page.waitForFunction(() => document.querySelector('.memory-card')?.textContent.includes('TypeScript'));
@@ -122,5 +133,23 @@ async function testUI(page, origin) {
   await page.waitForFunction(() => document.getElementById('connect').disabled);
   assert.equal(await page.locator('#connect').isDisabled(), true);
   assert.deepEqual(errors, []);
+  // Documentation captures use the real webview UI with synthetic data only.
+  await page.setViewportSize({ width: 380, height: 760 });
+  await send({ kind: 'session', session: { id: 'docs', title: '修正計算機輸入', messages: [
+    { id: 'd1', role: 'user', text: '檢查計算機輸入與樣式，修正錯誤並整理結果。' },
+    { id: 'd2', role: 'commentary', text: '我會分別檢查輸入邏輯與畫面樣式，再整合需要的修改。' },
+    { id: 'd3', role: 'tool', name: 'agent_task', args: { name: '檢查輸入邏輯', role: 'review' }, status: 'done', result: '已讀取 script.js，找到鍵盤輸入的邊界條件。' },
+    { id: 'd4', role: 'tool', name: 'agent_task', args: { name: '檢查畫面樣式', role: 'explore' }, status: 'done', result: '已檢查 style.css 的按鈕與小螢幕排版。' },
+    { id: 'd5', role: 'tool', name: 'edit_file', args: { path: 'script.js' }, status: 'done', result: '已保存修改；本機紀錄已更新。', outcome: { saved: true } },
+    { id: 'd6', role: 'assistant', text: '已修正鍵盤輸入的邊界條件。\n\n- 子任務已完成輸入邏輯與樣式檢查。\n- 可在「檔案變更」保留或撤回修改。\n\n*此畫面為文件示範資料。*' }
+  ], plan: [], changes: [] } });
+  await send({ ...state, sessionTitle: '修正計算機輸入', workspace: 'calculator-demo' });
+  await page.screenshot({ path: path.join(directory, 'docs-chat.png') });
+  await send({ kind: 'changes', changes: [{ id: 'doc-file', path: 'script.js', added: 1, removed: 1, hunks: [{ id: 'doc-hunk', line: 24, added: 1, removed: 1, before: 'if (!value) return;\n', after: 'if (value === null) return;\n' }] }] });
+  await page.locator('.change-state').waitFor({ state: 'attached' }); await page.locator('#changes').evaluate(node => { node.open = true; }); await page.locator('.change-state').click(); await page.locator('.change-hunk > summary').click();
+  await page.screenshot({ path: path.join(directory, 'docs-changes.png') });
+  await send({ kind: 'capabilities', skills: [], servers: [{ name: 'ntpu_ai4x', label: 'NTPU AI4X · 官方研究資料', target: 'https://ai4x.mcp.ntpu.ai/mcp', connected: true, tools: 11, builtin: true }], tools: [], parallel: { enabled: true, verified: true, effectiveConcurrency: 2 }, thinking: '模型由校方自動選擇。', image: '圖片／PDF 分析與 SVG 繪圖。' });
+  await page.locator('#settings').click(); await page.locator('[data-tab="tools"]').click();
+  await page.screenshot({ path: path.join(directory, 'docs-tools.png') });
 }
 module.exports = { assets, testUI };

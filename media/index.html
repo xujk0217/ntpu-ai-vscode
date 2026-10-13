@@ -31,15 +31,14 @@
   <symbol id="i-connect" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M5 8h14v3a7 7 0 0 1-14 0Zm7 10v4"/></symbol>
 </defs></svg>
 <header class="topbar">
-  <div class="brand"><span class="brand-mark">N</span><strong>NTPU <span>Agent</span></strong></div>
+  <button id="rename" class="session-title" title="重新命名聊天">新工作階段</button>
   <div class="top-actions">
+    <button id="export" class="icon-button" title="匯出對話" aria-label="匯出對話"><svg><use href="#i-export"/></svg></button>
     <button id="history" class="icon-button" title="聊天紀錄" aria-label="聊天紀錄"><svg><use href="#i-clock"/></svg></button>
     <button id="new" class="icon-button" title="新工作階段" aria-label="新工作階段"><svg><use href="#i-plus"/></svg></button>
     <button id="settings" class="icon-button" title="工具與設定" aria-label="工具與設定"><svg><use href="#i-gear"/></svg></button>
   </div>
 </header>
-<div class="session-heading"><button id="rename" class="session-title" title="重新命名工作階段">新工作階段</button><button id="export" class="icon-button" title="匯出對話" aria-label="匯出對話"><svg><use href="#i-export"/></svg></button></div>
-<div class="scope-bar"><button id="workspace" class="scope-button" title="選擇專案"><svg><use href="#i-file"/></svg><span>專案</span></button><div id="connectionActions" class="connection-actions"><button id="connect" class="connection-button" title="登入 NTPU AI"><i id="connectionDot"></i><span id="connectionLabel">登入</span></button></div></div>
 <aside id="loginNotice" class="login-notice" hidden aria-live="polite"><svg><use href="#i-connect"/></svg><div><strong id="loginNoticeTitle">請在瀏覽器完成登入</strong><p id="loginNoticeText">完成後會自動回到背景連線，你可以關閉登入視窗。</p></div></aside>
 <main id="messages" class="conversation" aria-live="polite"></main>
 <div id="progress" class="progress" hidden><span class="pulse"></span><span id="progressText">正在處理</span><span id="budgetLabel" class="budget-label"></span><button id="stop" type="button" class="stop-button" aria-label="停止任務" title="停止目前任務並清除待執行提問" hidden><svg><use href="#i-stop"/></svg><span>停止</span></button></div>
@@ -72,6 +71,7 @@
     <select id="depth" aria-label="分析深度" title="調整 agent 的規劃與驗證策略；NTPU AI 不提供原生 thinking 設定"><option value="quick">快速</option><option value="standard">標準</option><option value="deep">深入</option></select>
   </div>
 </form>
+<div class="scope-bar"><button id="workspace" class="scope-button" title="選擇這個聊天使用的專案資料夾"><svg><use href="#i-file"/></svg><span>專案</span></button><div id="connectionActions" class="connection-actions"><button id="connect" class="connection-button" title="登入 NTPU AI"><i id="connectionDot"></i><span id="connectionLabel">登入</span></button></div></div>
 <footer class="permissions-footer"><svg><use href="#i-shield"/></svg><select id="permission" aria-label="權限模式"><option value="ask">要求核准</option><option value="assisted">協助核准</option><option value="full">完整存取</option></select><span id="permissionDescription">修改與外部操作先確認</span></footer>
 <aside id="drawer" class="drawer" hidden aria-label="工作階段與工具設定">
   <div class="drawer-header"><strong id="drawerTitle">工作階段</strong><button id="closeDrawer" class="icon-button" aria-label="關閉面板"><svg><use href="#i-close"/></svg></button></div>

@@ -16,7 +16,7 @@ let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false;
 const selectedSessions = new Set();
 const nodes = new Map();
-const names = { agent_task: '唯讀子任務', delegate_tasks: '分派子任務', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const names = { cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 const md = new MarkdownIt({ html: false, breaks: false, linkify: false, highlight: (code, language) => {
@@ -28,7 +28,7 @@ md.renderer.rules.image = (tokens, index) => `<span class="image-reference">${md
 
 function element(tag, className, text) { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = text; return item; }
 function icon(name) { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', '#i-' + name); svg.append(use); svg.setAttribute('aria-hidden', 'true'); return svg; }
-function button(text, className, handler, iconName) { const item = element('button', className); item.type = 'button'; if (iconName) item.append(icon(iconName)); if (text) item.append(element('span', '', text)); item.addEventListener('click', handler); return item; }
+function button(text, className, handler, iconName) { const item = element('button', className); item.type = 'button'; if (text) item.title = text; if (iconName) item.append(icon(iconName)); if (text) item.append(element('span', '', text)); item.addEventListener('click', handler); return item; }
 function iconButton(name, title, handler) { const item = button('', 'icon-button', handler, name); item.title = title; item.setAttribute('aria-label', title); return item; }
 function markdown(text) {
   const body = element('div', 'markdown'); body.innerHTML = md.render(String(text || ''));
@@ -192,7 +192,8 @@ function renderState(value) {
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
   $('stop').hidden = !state.busy; updateComposer();
   if (busyChanged) renderChanges(session.changes || []);
-  $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
+  $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy; $('web').title = state.options.web ? '網路搜尋已開啟：Agent 可使用 Exa 搜尋和公開網頁讀取；按一下關閉。AI4X 是獨立的官方研究工具。' : '網路搜尋已關閉：按一下允許 Agent 使用 Exa 搜尋和公開網頁讀取。';
+  $('skills').title = 'Skills：Agent 可依任務載入適用技能；在此選擇預先載入的技能。技能不會增加工具權限。';
   if (!$('drawer').hidden && ['tools', 'connection', 'security'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
   if (!$('drawer').hidden && tab === 'sessions' && busyChanged) renderDrawer();
   $('skillsCount').textContent = state.options.skills?.length ? state.options.skills.length : '';
@@ -203,7 +204,7 @@ function renderState(value) {
   const chips = $('contextChips'); chips.replaceChildren();
   if (includeEditor && state.editor) { const chip = element('span', 'context-chip'); chip.append(icon('file'), element('span', '', state.editor.name + (state.editor.selected ? ':' + state.editor.line + '–' + state.editor.endLine : '')), iconButton('close', '不帶入目前檔案', () => { includeEditor = false; renderState(state); })); chips.append(chip); }
   for (const file of state.contexts || []) { const chip = element('span', 'context-chip'); chip.append(icon('file'), element('span', '', file.name), iconButton('close', '移除脈絡檔案', () => send('removeContext', { path: file.path }))); chips.append(chip); }
-  for (const name of state.options.skills || []) { const chip = element('span', 'context-chip skill-chip'); chip.append(icon('spark'), element('span', '', name)); chips.append(chip); }
+
   $('attachment').hidden = !state.attachment; $('attachment').replaceChildren();
   if (state.attachment) {
     if (state.attachment.preview) { const image = element('img'); image.src = state.attachment.preview; image.alt = state.attachment.name; $('attachment').append(image); }
@@ -362,11 +363,17 @@ function renderDrawer() {
     }
     const actions = element('div', 'panel-actions'); actions.append(button('新增 MCP', 'secondary-button', () => send('addMcp'), 'plus'), button('匯入設定', 'secondary-button', () => send('importMcp'), 'file')); content.append(actions);
     content.append(element('h3', '', '官方校務問答'), element('p', 'panel-description', '體育、通識、語言中心與各行政單位問題可直接使用官方 NTPU AI Assistant；此入口不會自動傳送目前聊天或專案內容。'), button('開啟 NTPU AI Assistant', 'secondary-button full-width', () => send('officialAssistant'), 'globe'));
-    if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.server), element('p', '', tool.description)); list.append(row); } content.append(list); }
+    content.append(element('h3', '', '如何使用 AI4X'), element('p', 'panel-description', '直接在聊天描述需求，Agent 會選用已連線工具或 ntpu_lookup；不需要手動指定 11 個工具。研究資料查詢與 Exa 地球按鈕分開控制，對外傳送參數仍會依權限確認。'));
+    for (const prompt of ['請查詢 NTPU AI4X 的中心資訊與合作服務，附官方來源。', '請用 AI4X 找出與人工智慧相關的研究專家及公開計畫，附官方來源。']) {
+      const sample = button(prompt, 'secondary-button full-width', () => { $('prompt').value = prompt; $('drawer').hidden = true; updateComposer(); $('prompt').focus(); });
+      sample.title = '將範例填入聊天；確認內容後自行送出。'; content.append(sample);
+    }
+    content.append(element('p', 'panel-description', '工具與 skills 由 Agent 按需求選擇。複雜任務可自動分派探索、研究、審查子任務；單純提問通常直接處理。'));
+    if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.originalName || tool.name), element('p', '', tool.description)); list.append(row); } content.append(list); }
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));
     const parallel = capabilities.parallel || {};
-    content.append(element('h3', '', 'Agent 多工'), element('p', 'panel-description', parallel.verified ? `已驗證聊天室串流可重疊，目前最多 ${parallel.effectiveConcurrency} 個模型請求。` : '模型並行尚未確認，目前使用序列請求。本機獨立唯讀工具可批次處理。'));
+    content.append(element('h3', '', 'Agent 多工'), element('p', 'panel-description', parallel.verified ? `已驗證聊天室串流可重疊，目前最多 ${parallel.effectiveConcurrency} 個模型請求。` : '模型並行尚未確認，目前使用序列請求。Agent 仍可自動分派唯讀子任務及批次讀取。'));
     if (parallel.verification) content.append(element('p', 'panel-description', parallel.verification.message));
     const probe = button('測試兩個聊天室同時回覆', 'secondary-button full-width', () => send('testConcurrency'));
     probe.disabled = state.busy || !state.connection?.ready; content.append(probe);
@@ -413,3 +420,5 @@ $('approve').addEventListener('click', () => { if (!approval) return; $('approve
   else send('approval', { id: approval.id, approved: true, scope: $('grantSession').checked ? 'session' : 'once' });
 });
 send('ready');
+
+for (const control of document.querySelectorAll('button, select')) if (!control.title) control.title = control.getAttribute('aria-label') || control.textContent.trim();

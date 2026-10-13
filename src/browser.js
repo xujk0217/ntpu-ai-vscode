@@ -26,6 +26,10 @@ function installStreamObserver(bindingName) {
     if (!relevant) return originalFetch.apply(this, args);
     // Keep the website's Stop action and the local Stop action connected.
     const options = { ...(args[1] || {}) };
+    let conversation;
+    try { conversation = JSON.parse(options.body).session_id; } catch {}
+    if (typeof conversation === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(conversation))
+      await window[state.binding]({ id, kind: 'conversation', sessionId: conversation }).catch(() => {});
     const originalSignal = options.signal;
     const controller = new AbortController();
     state.controller = controller;
@@ -124,7 +128,7 @@ class BrowserBridge {
     this.loginWindowClosed = false;
     this.loginNoticeAt = 0;
     this.loginAcknowledged = false;
-    this.channels = new Set(); this.ownsContext = true;
+    this.channels = new Set(); this.ownedConversations = new Set(); this.ownsContext = true;
     this.binding = 'ntpuLocal_' + randomUUID().replaceAll('-', '');
     this.profile = options.profile || PROFILE;
   }
@@ -317,7 +321,7 @@ class BrowserBridge {
     const abort = () => { this._fail(new Error('已停止')); void this._abortPage(); };
     options.signal?.addEventListener('abort', abort, { once: true });
     this.pending = { id, resolve, reject, timer, text: '', model: null,
-      onToken: options.onToken, onJudge: options.onJudge, onOpen: options.onOpen, signal: options.signal, abort };
+      ownsConversation: options.newConversation !== false, onToken: options.onToken, onJudge: options.onJudge, onOpen: options.onOpen, signal: options.signal, abort };
     try {
       await this.page.evaluate(requestId => { window.__ntpuLocalBridge.active = requestId; }, id);
       if (options.signal?.aborted) abort();
@@ -343,6 +347,7 @@ class BrowserBridge {
   _receive(payload) {
     const pending = this.pending;
     if (!pending || payload?.id !== pending.id) return;
+    if (payload.kind === 'conversation') { if (pending.ownsConversation && typeof payload.sessionId === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(payload.sessionId)) this.ownedConversations.add(payload.sessionId); return; }
     if (payload.kind === 'opened') { pending.onOpen?.(); return; }
     if (payload.kind === 'failure') {
       const suffix = [401, 403].includes(payload.status) ? ' 請回瀏覽器重新登入或完成驗證。' :
@@ -381,10 +386,41 @@ class BrowserBridge {
     await this.page.evaluate(() => { window.__ntpuLocalBridge?.cancel?.(); window.__ntpuLocalBridge?.controller?.abort(); }).catch(() => {});
   }
 
-  async close() {
+  async cleanupConversations() {
+    if (this.options.cleanupConversations === false || !this.ownedConversations.size) return { deleted: 0, failed: 0 };
+    let deleted = 0, failed = 0;
+    if (this.pending || !this.page || this.page.isClosed()) return { deleted, failed: this.ownedConversations.size };
+    for (const sid of [...this.ownedConversations]) {
+      if (!/^[a-zA-Z0-9_-]{1,200}$/.test(sid)) { failed++; continue; }
+      const selector = `.conv-del-btn[data-del-sid="${sid}"]`;
+      const dialog = async event => { if (event.type() === 'confirm' && /刪除此對話|Delete this conversation/i.test(event.message())) await event.accept(); else await event.dismiss(); };
+      this.page.on('dialog', dialog);
+      try {
+        await this.page.waitForFunction(() => !document.getElementById('sendBtn')?.classList.contains('stop'), null, { timeout: 10000 });
+        // Refresh the site's normal history list without extracting credentials.
+        await this.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        const button = this.page.locator(selector);
+        await button.waitFor({ state: 'attached', timeout: 8000 });
+        const response = this.page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.origin === this.origin && url.pathname === '/reset' && url.searchParams.get('session_id') === sid && response.request().method() === 'POST';
+        }, { timeout: 15000 });
+        response.catch(() => {});
+        // The button is normally shown on hover; use the site's own click handler.
+        await button.evaluate(element => element.click());
+        if (!(await response).ok()) throw new Error('網站拒絕對話清理');
+        this.ownedConversations.delete(sid); deleted++;
+      } catch { failed++; }
+      finally { this.page.off('dialog', dialog); }
+    }
+    return { deleted, failed };
+  }
+
+  async close({ cleanup = true } = {}) {
     if (this.opening) await this.opening.catch(() => {});
     this._fail(new Error('已停止'));
     await this._abortPage();
+    if (cleanup) { const result = await this.cleanupConversations(); if (result.failed) this.options.onCleanupFailure?.(result.failed); }
     await Promise.allSettled([...this.channels].map(channel => channel.close()));
     const context = this.context;
     const page = this.page;

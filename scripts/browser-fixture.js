@@ -9,16 +9,23 @@ const { BrowserBridge } = require('../src/browser');
 const { probeConcurrency } = require('../src/browser/concurrency-probe');
 const { assets, testUI } = require('./ui-fixture');
 
-const html = `<!doctype html><html><body>
+const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
 <div id="auth-overlay" class="hidden" style="display:none"></div><span id="user-email">Fixture</span>
 <button id="newChatBtn">New</button><span id="newCount">0</span><textarea id="input"></textarea><button id="sendBtn">Send</button>
 <input id="fileInput" type="file"><div id="attachPreview"></div>
+<div id="history"><button class="conv-del-btn" data-del-sid="unrelated">Existing conversation</button></div>
 <script>
-document.getElementById('newChatBtn').onclick=()=>{document.getElementById('newCount').textContent=Number(document.getElementById('newCount').textContent)+1};
+let sid = 'initial';
+function stored(){return JSON.parse(localStorage.getItem('fixture-conversations')||'[]')}
+function refresh(){for(const id of stored())addConversation(id)}
+window.addEventListener('focus',refresh);
+function addConversation(id){if(document.querySelector('[data-del-sid="'+id+'"]'))return;const button=document.createElement('button');button.className='conv-del-btn';button.dataset.delSid=id;button.textContent='Delete';button.onclick=async()=>{if(!confirm('確定要刪除此對話？刪除後無法復原。'))return;const response=await fetch('/reset?session_id='+encodeURIComponent(id),{method:'POST'});if(response.ok){localStorage.setItem('fixture-conversations',JSON.stringify(stored().filter(s=>s!==id)));button.remove()}};document.getElementById('history').append(button)}
+refresh();
+document.getElementById('newChatBtn').onclick=()=>{sid=crypto.randomUUID();document.getElementById('newCount').textContent=Number(document.getElementById('newCount').textContent)+1};
 document.getElementById('fileInput').onchange=async()=>{await fetch('/upload',{method:'POST',body:'fixture'});document.getElementById('attachPreview').innerHTML='<span class="attach-chip-badge">fixture</span>'};
 document.getElementById('sendBtn').onclick=async()=>{
  const button=document.getElementById('sendBtn');button.classList.add('stop');
- try{const response=await fetch('/chat/stream',{method:'POST',body:document.getElementById('input').value});await response.text()}catch{}finally{button.classList.remove('stop')}
+ try{localStorage.setItem('fixture-conversations',JSON.stringify([...new Set([...stored(),sid])]));addConversation(sid);const response=await fetch('/chat/stream',{method:'POST',body:JSON.stringify({session_id:sid,message:document.getElementById('input').value})});await response.text()}catch{}finally{button.classList.remove('stop')}
 };
 </script></body></html>`;
 async function main() {
@@ -26,15 +33,17 @@ async function main() {
   const sockets = new Set();
   const ui = await assets();
   let requiresLogin = false;
-  let activeStreams = 0, peakStreams = 0;
+  let activeStreams = 0, peakStreams = 0; const deletedIds = []; let failReset = false;
   const loginHtml = '<!doctype html><html><body><div id="auth-overlay">Fixture login</div><form action="/fixture-login" method="post"><input id="fixture-user" name="user"><button id="fixture-submit">Login</button></form></body></html>';
   const server = http.createServer((request, response) => {
     if (request.url === '/fixture-login') { response.writeHead(303, { location: '/', 'set-cookie': 'fixture_session=synthetic; HttpOnly; SameSite=Lax; Path=/' }); response.end(); return; }
     if (requiresLogin && !request.headers.cookie?.includes('fixture_session=synthetic')) { response.writeHead(200, { 'content-type': 'text/html' }); response.end(loginHtml); return; }
     if (ui.has(request.url)) { const [type, body] = ui.get(request.url); response.writeHead(200, { 'content-type': type }); response.end(body); return; }
+    if (request.url.startsWith('/reset?')) { const id = new URL(request.url, 'http://fixture').searchParams.get('session_id'); if (!failReset) deletedIds.push(id); response.writeHead(failReset ? 503 : 200); response.end('{}'); return; }
     if (request.url === '/upload') { response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}'); return; }
     if (request.url !== '/chat/stream') { response.writeHead(200, { 'content-type': 'text/html' }); response.end(html); return; }
     let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => {
+      body = JSON.parse(body).message;
       activeStreams++; peakStreams = Math.max(peakStreams, activeStreams);
       response.writeHead(200, { 'content-type': 'text/event-stream' }); response.flushHeaders();
       response.write('data: {"type":"judge","model":"fixture"}\n\n');
@@ -58,6 +67,11 @@ async function main() {
     assert.equal((await bridge.chat('first', { newConversation: true })).text, 'mock-response');
     assert.equal((await bridge.chat('second', { newConversation: false })).text, 'mock-response');
     assert.equal(await bridge.page.locator('#newCount').textContent(), '1');
+    assert.equal(bridge.ownedConversations.size, 1);
+    failReset = true; assert.equal((await bridge.cleanupConversations()).failed, 1); assert.equal(bridge.ownedConversations.size, 1);
+    failReset = false; assert.deepEqual(await bridge.cleanupConversations(), { deleted: 1, failed: 0 });
+    assert.equal(await bridge.page.locator('[data-del-sid="unrelated"]').count(), 1); assert.equal(deletedIds.includes('unrelated'), false);
+    await bridge.chat('after-cleanup', { newConversation: true });
     const image = { name: 'fixture.png', mimeType: 'image/png', approved: true, buffer: Buffer.from('synthetic fixture bytes') };
     assert.equal((await bridge.chat('attachment', { newConversation: false, attachment: image })).text, 'mock-response');
     const controller = new AbortController();

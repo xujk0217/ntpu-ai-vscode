@@ -17,8 +17,8 @@ function readonly(base) {
   } };
 }
 class AgentWorkers {
-  constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, onEvent = () => {}, runner = runAgent }) {
-    Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, onEvent, runner });
+  constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
+    Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, onEvent, onBeforeCleanup, runner });
     this.jobs = new Map(); this.closed = false;
   }
   catalog() { return this.base.catalog().concat(DEFINITIONS); }
@@ -69,8 +69,9 @@ class AgentWorkers {
       job.status = job.controller.signal.aborted ? 'interrupted' : result.completed ? 'done' : 'error';
     } catch (error) { job.status = job.controller.signal.aborted ? 'interrupted' : 'error'; job.result = redact(error.message); }
     finally {
-      await channel?.close().catch(() => {});
       this.signal.removeEventListener('abort', job.abort); job.endedAt = Date.now(); this.emit(job);
+      let saved = true; try { await this.onBeforeCleanup(); } catch { saved = false; job.status = 'error'; job.result = (job.result || '') + '\n本機保存失敗，已保留校方對話。'; this.emit(job); }
+      await channel?.close({ cleanup: saved }).catch(() => {});
     }
   }
   async collect(ids) {

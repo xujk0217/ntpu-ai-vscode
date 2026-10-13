@@ -1,14 +1,12 @@
 # 開發與問題回報
 
-目前儲存庫由 xujk0217 維護，不新增其他協作者。
-
 ## 本地開發
 
 1. 安裝 Node.js 20.9 以上、Chrome 與 VS Code。
 2. 執行 `npm ci`、`npm run build`。
 3. 在 VS Code 開啟本專案，按 F5 啟動 Extension Development Host。
 4. 執行 `npm test` 確認主機權限、工具與 Agent 迴圈。
-5. `npm run package` 產生 macOS arm64 VSIX。
+5. `npm run package` 在目前目標平台產生 VSIX；四平台產物由 CI 建立。
 
 `npm run smoke` 與 `npm run mcp:smoke` 會使用真實第三方服務，受登入及用量限制影響。同一 Chrome profile 不可同時由擴充功能和 smoke 使用。
 

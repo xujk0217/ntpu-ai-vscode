@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -232,6 +232,12 @@
           "default": 2,
           "scope": "application",
           "description": "最多同時模型請求數。未驗證、登入失效或超過一天時使用 1。"
+        },
+        "ntpuAI.browser.cleanupTaskConversations": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "本機儲存任務後，透過校方網站刪除擴充套件自己建立的任務對話。校方後端保留政策仍適用；不刪除原有對話。"
         }
       }
     }
