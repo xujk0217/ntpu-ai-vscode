@@ -19,7 +19,7 @@ Assistant [首頁](https://aia.ntpu.ai/) 目前列出 21 個單位；回答以�
 
 - [x] 官方服務 preset、UI、skill、來源保存與真正 MCP 查詢。
 - [ ] OS sandbox 主機執行邊界、stdio MCP、設定與隔離測試。
-- [ ] 本機圖片／PDF OCR、阻擋流程、設定與假秘密測試。
+- [x] 本機圖片／PDF OCR、阻擋流程、設定與假秘密測試。
 - [ ] Mac 真實 SSO／NTPU Agent、其他平台驗收指南。
 - [ ] CI、套件、README、測試紀錄與分段提交。
 
@@ -32,3 +32,7 @@ Mac arm64 的專用 Chrome 於 2026-10-13 真正呼叫 NTPU AI，回覆包含指
 官方 MCP 的 get_center_info、find_research_experts(Agentic AI)、search_documents(LLM) 實際回傳資料與 provenance。此驗證尚不代表新沙箱內的完整 Agent 任務已成功。
 
 Docker 桌面啟動工具逾時，CLI 曾顯示 starting；macOS sandbox-exec 啟動測試未成功。OS 沙箱與 OCR 尚未完成，不能以此宣稱隔離驗收通過。
+
+## 本輪進度
+
+已完成側欄瀏覽器、設定分區、macOS／Linux OS 沙箱後端與附件 OCR。Mac 真實沙箱讀寫／網路與 stdio MCP、真實 OCR 已通過。Windows 沙箱仍阻止執行；Linux／Intel Mac 待 CI 及人工桌面驗收。真實 NTPU Agent 在背景與原生視窗皆收到 HTTP 502，因此本輪完整任務仍未驗收；既有登入還原與背景畫面已可用。詳見 [實作與限制](BROWSER_SURFACE_AND_SECURITY.md)。

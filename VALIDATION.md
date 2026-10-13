@@ -75,3 +75,13 @@ NTPU 公開網頁目前未提供原生 thinking／reasoning_effort 或任意模�
 ## 0.4.2 聊天紀錄管理
 
 65／65 本機 tests、build、Chrome localhost 列表 fixture、VSIX 成功。原生 VS Code 重新載入範例視窗後確認聊天紀錄、勾選、批次按鈕與每筆 ⋯ 選單。code commit `75eeb7c` 的 [CI 38398505182](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38398505182) 四平台 × Node 20／22 全部 8／8 成功，各 65 項測試、build、真實瀏覽器 localhost／Webview fixture、sharp 自檢與 VSIX；全程沒有真正 NTPU AI 請求。
+
+## 0.5.0 開發驗收（2026-10-13，Mac arm64）
+
+- 77 個單元／整合測試通過；涵蓋 OCR 末頁秘密、缺頁、清理、SSO HTTPS 面板输入與忙碌鎖定。
+- 真實 Chrome localhost Mock：側欄畫面、輸入、設定分區、串流、附件、取消與 Profile 保留通過。
+- 真實 macOS Seatbelt：工作區外檔案及 `.env` 讀取禁止，工作區寫入允許；運作中的 localhost HTTP 不可存取，stdio MCP 初始化／工具呼叫通過。
+- 真實 Tesseract／Poppler：乾淨圖片／PDF 通過，合成憑證圖片／PDF 拒絕，原文不保存。
+- 真正 NTPU 背景模式還原既有登入並產生畫面；本輪 Agent 任務在背景及原生視窗皆收到 HTTP 502。未重做全新 SSO／CAPTCHA。
+- Windows Shell／stdio 仍阻止執行。Windows、Linux、Intel Mac 桌面 SSO 尚待人工驗收。新多平台 CI 結果需另行確認。
+- 依賴弱點與 OCR 漏辨範圍見 [安全實作說明](docs/BROWSER_SURFACE_AND_SECURITY.md)。
