@@ -286,13 +286,12 @@ function renderDrawer() {
     const needsLogin = ['required', 'signed_out'].includes(state.connection?.authentication);
     accountHeader.append(element('strong', '', 'NTPU AI 帳號'), element('span', 'badge' + (state.connection?.ready ? ' connected' : ''), state.connection?.ready ? '已登入' : needsLogin ? '未登入' : '未連線'));
     account.append(accountHeader, element('p', 'panel-description', state.connection?.message || '登入後即可使用 NTPU AI 模型。'));
-    if (!state.connection?.ready && !needsLogin) account.append(element('p', 'panel-description', '關閉專用瀏覽器只會中斷連線。既有登入會在重新連線後確認。'));
+    if (!state.connection?.ready && !needsLogin) account.append(element('p', 'panel-description', '登入或安全驗證需要人工操作時，會在 VS Code 顯示登入頁；一般連線在背景執行。'));
     account.append(button(state.connection?.ready ? '登出' : needsLogin ? '登入 NTPU AI' : '重新連線 NTPU AI', state.connection?.ready ? 'secondary-button account-logout' : 'secondary-button', () => {
       send(state.connection?.ready ? 'logout' : 'login');
     }, state.connection?.ready ? 'close' : 'connect'));
     account.lastChild.disabled = state.busy;
     content.append(account);
-    content.append(button('開啟側欄小瀏覽器', 'secondary-button full-width', () => { $('drawer').hidden = true; toggleBrowser(true); }, 'globe'));
     const browser = capabilities.browser || {};
     content.append(element('h3', '', '瀏覽器'));
     const browserChoice = element('select', 'history-search'); browserChoice.setAttribute('aria-label', 'Browser');
@@ -301,8 +300,7 @@ function renderDrawer() {
     const advanced = element('details', 'settings-advanced'); advanced.append(element('summary', '', '進階：執行檔與專用 Profile')); content.append(advanced);
     const customPath = element('input', 'browser-path'); customPath.placeholder = 'Custom Browser Path'; customPath.setAttribute('aria-label', 'Custom Browser Path'); customPath.value = browser.customPath || ''; customPath.disabled = state.busy; advanced.append(customPath);
     const profileLocation = element('input', 'browser-path'); profileLocation.placeholder = 'Browser Profile Location · 預設使用私有儲存區'; profileLocation.setAttribute('aria-label', 'Browser Profile Location'); profileLocation.value = browser.profileLocation || ''; profileLocation.disabled = state.busy; advanced.append(profileLocation);
-    const background = element('label', 'privacy-option'); const headless = element('input'); headless.type = 'checkbox'; headless.checked = !!browser.headless; headless.disabled = state.busy; background.append(headless, element('span', '', '背景瀏覽器 · 透過側欄操作')); content.append(background);
-    const apply = button('更換瀏覽器並連線', 'secondary-button full-width', () => send('browserUpdate', { browser: browserChoice.value, customPath: customPath.value, profileLocation: profileLocation.value, headless: headless.checked })); apply.disabled = state.busy; content.append(apply);
+    const apply = button('更換瀏覽器並連線', 'secondary-button full-width', () => send('browserUpdate', { browser: browserChoice.value, customPath: customPath.value, profileLocation: profileLocation.value })); apply.disabled = state.busy; content.append(apply);
     const reconnect = button('重新連線', 'secondary-button full-width', () => send('reconnectBrowser')); reconnect.disabled = state.busy; content.append(reconnect);
     content.append(element('p', 'panel-description', (browser.info?.message || '尚未啟動可控制的瀏覽器') + '\nExtension Host：' + (browser.host || '') + (browser.remoteName ? ' · 工作區連線：' + browser.remoteName : '') + (browser.info?.profile ? '\n專用 Profile：' + browser.info.profile : '')));
   } else {

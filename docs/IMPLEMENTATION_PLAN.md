@@ -1,5 +1,10 @@
 # Local-first Memory、資料防護與跨平台重構
 
+## 0.5.2 清除過時瀏覽器控制項（2026-10-13）
+
+- 0.5.1 發佈後的介面檢查發現連線設定仍留有已移除的小瀏覽器入口與無作用的背景模式勾選。
+- 移除舊控制項並改正提示，避免使用者點到失效入口或誤以為還要開桌面瀏覽器。78 項 unit tests、本機真實 Chrome headless／Webview fixture 與 macOS arm64 VSIX 均通過；學校 SSO 未重驗。
+
 ## 0.5.1 VS Code 內真人登入與背景連線（2026-10-13）
 
 - 使用者指定登入過程由 VS Code 內操作，不開啟桌面瀏覽器視窗；平時隱藏 Browser UI，由 NTPU AI 專用 Playwright Profile 在 Extension Host 背景連線。

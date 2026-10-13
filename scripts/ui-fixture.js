@@ -31,6 +31,8 @@ async function testUI(page, origin) {
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /已登入/);
+  assert.equal(await page.getByRole('button', { name: '開啟側欄小瀏覽器' }).count(), 0);
+  assert.equal(await page.getByText('背景瀏覽器 · 透過側欄操作').count(), 0);
   await fs.mkdir(path.join(__dirname, '..', '.local'), { recursive: true });
   await page.screenshot({ path: path.join(__dirname, '..', '.local', 'connection-ui.png') });
   await page.locator('.settings-advanced > summary').first().click();
