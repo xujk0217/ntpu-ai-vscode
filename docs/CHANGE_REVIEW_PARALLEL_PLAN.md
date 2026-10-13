@@ -31,4 +31,6 @@
 - [x] 本機唯讀工具批次與 worker orchestration。
 - [x] AI4X 實際公開查詢及使用說明。
 - [x] README、macOS 套件與本機安裝；多平台 CI 設定完成。
-- [ ] 發布前確認多平台 CI 通過及四平台 VSIX 產物。
+- [x] 八項多平台 CI 全通過，四平台 VSIX 版本／來源確認完成，公開發布 v0.6.0。
+
+驗證：[CI](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38437760641) · [0.6.0 Release](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.6.0)。
