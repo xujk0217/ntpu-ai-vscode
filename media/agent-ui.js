@@ -13,6 +13,7 @@ const send = (kind, extra = {}) => vscode.postMessage({ kind, ...extra });
 let state = { busy: false, options: { agent: 'build', depth: 'standard', permission: 'ask', web: true, skills: [] } };
 let session = { messages: [], changes: [] }, sessions = [], capabilities = { skills: [], servers: [], tools: [] }, approval = null, tab = 'sessions';
 let includeEditor = true;
+let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false;
 const nodes = new Map();
 const names = { list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
@@ -111,6 +112,7 @@ function renderSession(value) {
   session = value; nodes.clear(); $('messages').replaceChildren();
   $('rename').textContent = value.title;
   if (!value.messages.length) $('messages').append(empty()); else value.messages.forEach(message => addMessage(message));
+  if (value.hasMore) $('messages').prepend(button('載入較早訊息（' + value.before + ' 則）', 'secondary-button history-more', () => send('historyPage', { before: value.before })));
   renderPlan(value.plan || []); renderChanges(value.changes || []); $('messages').scrollTop = $('messages').scrollHeight;
 }
 function renderPlan(steps) {
@@ -179,18 +181,31 @@ function renderApproval(value) {
   renderState(state);
 }
 
-function openDrawer(nextTab) { tab = nextTab; $('drawer').hidden = false; renderDrawer(); }
+function openDrawer(nextTab) { tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
 function renderDrawer() {
-  $('drawerTitle').textContent = { sessions: '工作階段', skills: 'Skills', tools: '工具與設定' }[tab];
+  $('drawerTitle').textContent = { sessions: '工作階段', skills: 'Skills', tools: '工具與設定', memory: '記憶與隱私' }[tab];
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === tab));
   const content = $('drawerContent'); content.replaceChildren();
   if (tab === 'sessions') {
     content.append(button('新工作階段', 'primary-button full-width', () => { send('new'); $('drawer').hidden = true; }, 'plus'));
-    for (const item of sessions) {
-      const row = button('', 'session-row' + (item.id === session.id ? ' current' : ''), () => { if (!state.busy) { send('switch', { id: item.id }); $('drawer').hidden = true; } });
-      row.append(element('strong', '', item.title), element('span', '', new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(item.updatedAt)));
-      row.disabled = state.busy; content.append(row);
+    const search = element('input', 'history-search'); search.placeholder = '搜尋工作階段與任務'; search.value = sessionQuery;
+    search.addEventListener('input', () => { sessionQuery = search.value; filterSessions(); }); content.append(search);
+    const archived = element('label', 'privacy-option'); const show = element('input'); show.type = 'checkbox'; show.checked = includeArchived;
+    show.addEventListener('change', () => { includeArchived = show.checked; filterSessions(); }); archived.append(show, element('span', '', '顯示封存工作階段')); content.append(archived);
+    const list = element('div', 'session-list'); content.append(list);
+    function filterSessions() {
+      list.replaceChildren();
+      for (const item of sessions.filter(item => (includeArchived || !item.archived) && ((item.title || '') + ' ' + (item.searchText || '')).toLowerCase().includes(sessionQuery.toLowerCase()))) {
+        const card = element('div', 'session-item');
+        const row = button('', 'session-row' + (item.id === session.id ? ' current' : ''), () => { if (!state.busy) { send('switch', { id: item.id }); $('drawer').hidden = true; } });
+        row.append(element('strong', '', item.title), element('span', '', new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(item.updatedAt) + (item.pending ? ' · ' + item.pending + ' 個未完成任務' : '') + (item.archived ? ' · 已封存' : '')));
+        row.disabled = state.busy;
+        const actions = element('div', 'session-actions');
+        actions.append(button(item.archived ? '取消封存' : '封存', 'text-button', () => send('archiveSession', { id: item.id })), button('刪除', 'text-button', () => send('deleteSession', { id: item.id })));
+        card.append(row, actions); list.append(card);
+      }
     }
+    filterSessions();
   } else if (tab === 'skills') {
     content.append(element('p', 'panel-description', '把重複的工作方式寫成 SKILL.md。選取的 skills 會帶入這個工作階段；agent 也可以按需載入。'));
     content.append(button('重新掃描 skills', 'secondary-button full-width', () => send('refreshSkills'), 'spark'));
@@ -203,6 +218,31 @@ function renderDrawer() {
     }
     if (capabilities.skillErrors?.length) content.append(element('p', 'warning-text', capabilities.skillErrors.join('\n')));
     content.append(element('p', 'panel-footnote', '支援 .agents/skills、.opencode/skills、.claude/skills，以及 ~/.ntpu-ai-coder/skills。'));
+  } else if (tab === 'memory') {
+    content.append(element('p', 'panel-description', '歷史與檢查點保存在本機。相關記憶會帶入模型請求；舊紀錄不代表目前檔案或測試仍然相同。'));
+    for (const [key, label, checked] of [['memory.enableProject', '啟用 Project Memory', memory.enabled], ['memory.autoUpdate', '任務結束後自動整理記憶', memory.autoUpdate]]) {
+      const row = element('label', 'privacy-option'), check = element('input'); check.type = 'checkbox'; check.checked = checked !== false; check.disabled = state.busy;
+      check.addEventListener('change', () => send('privacySetting', { key, value: check.checked })); row.append(check, element('span', '', label)); content.append(row);
+    }
+    content.append(element('p', 'panel-description', '敏感路徑保護與秘密遮蔽由主機強制啟用；完整存取也不能繞過。圖片／PDF 請在上傳確認前自行檢查。'));
+    content.append(button('設定需確認的檔案規則', 'secondary-button full-width', () => send('privacySettings')));
+    content.append(element('h3', '', '專案記憶'));
+    content.append(button('新增記憶', 'secondary-button full-width', () => send('editMemory')));
+    const labels = { summary: '摘要', architecture: '架構', decision: '決策', preference: '偏好', pending: '待辦', issue: '問題', completed: '完成紀錄', verification: '驗證紀錄', observed: '已讀取' };
+    for (const entry of memory.project?.entries || []) {
+      const card = element('div', 'memory-card'); card.append(element('strong', '', (labels[entry.kind] || entry.kind || '記憶') + (entry.stale ? ' · 舊證據' : '')), element('p', 'memory-text', entry.text));
+      const source = entry.source || {}; card.append(element('p', 'memory-source', (source.taskId ? 'Task ' + source.taskId + (source.path ? ' · ' + source.path : '') : '手動編輯') + ' · ' + new Date(source.verifiedAt || source.userEditedAt || memory.project.updatedAt || 0).toLocaleString('zh-TW')));
+      const actions = element('div', 'panel-actions'); actions.append(button('編輯', 'text-button', () => send('editMemory', { id: entry.id })), button('刪除', 'text-button', () => send('deleteMemory', { id: entry.id }))); card.append(actions); content.append(card);
+    }
+    if (!memory.project?.entries?.length) content.append(element('p', 'panel-description', '尚無專案記憶。成功的工具紀錄會在任務結束後整理，也可手動新增。'));
+    content.append(element('h3', '', '未完成任務'));
+    for (const task of (memory.tasks || []).filter(task => task.status !== 'completed')) {
+      const card = element('div', 'memory-card'); card.append(element('strong', '', task.request), element('p', 'memory-text', task.status + ' · ' + (task.result || '可從本機檢查點接續')),
+        button('接續任務', 'secondary-button', () => { send('resumeTask', { id: task.id }); $('drawer').hidden = true; })); content.append(card);
+    }
+    content.append(element('p', 'panel-footnote', '儲存位置：' + (memory.storage || '載入中') + '\n最近更新：' + (memory.project?.updatedAt ? new Date(memory.project.updatedAt).toLocaleString('zh-TW') : '尚無') + '\n刪除本機記憶不等於刪除校方伺服器資料。'));
+    for (const [text, kind] of [['重新整理記憶', 'refreshMemory'], ['匯出完整 Session', 'export'], ['備份全部本機記憶', 'backupMemory'], ['還原備份', 'restoreMemory'], ['清空此專案記憶', 'clearMemory']]) content.append(button(text, 'secondary-button full-width', () => send(kind)));
+    if (memory.error) content.append(element('p', 'warning-text', memory.error));
   } else {
     const account = element('section', 'account-card');
     const accountHeader = element('div', 'account-heading');
@@ -237,6 +277,8 @@ function renderDrawer() {
 window.addEventListener('message', event => {
   const message = event.data;
   if (message.kind === 'session') renderSession(message.session);
+  else if (message.kind === 'historyPage' && message.sessionId === session.id) { renderSession({ ...session, messages: [...message.messages, ...session.messages], before: message.before, hasMore: message.hasMore }); $('messages').scrollTop = 0; }
+  else if (message.kind === 'memory') { memory = message; if (!$('drawer').hidden && tab === 'memory') renderDrawer(); }
   else if (message.kind === 'message') { session.messages.push(message.message); addMessage(message.message); }
   else if (message.kind === 'patch') { const index = session.messages.findIndex(item => item.id === message.message.id); if (index >= 0) session.messages[index] = message.message; addMessage(message.message, true); }
   else if (message.kind === 'state') renderState(message);
@@ -259,7 +301,7 @@ for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('cha
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));
 $('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('tools')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
 $('closeDrawer').addEventListener('click', () => { $('drawer').hidden = true; });
-document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { tab = item.dataset.tab; renderDrawer(); }));
+document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });

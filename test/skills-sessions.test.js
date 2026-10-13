@@ -23,6 +23,7 @@ test('sessions survive serialization while full access and interrupted actions r
   const restored = new SessionStore(store.serialize()).get(session.id);
   assert.equal(restored.workspace, 'file:///project');
   assert.equal(restored.options.permission, 'ask');
-  assert.equal(restored.messages.length, 1);
+  assert.equal(restored.messages.length, 2);
+  assert.equal(restored.messages[1].interrupted, true);
   assert.equal(restored.messages[0].status, 'interrupted');
 });

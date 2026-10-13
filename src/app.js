@@ -96,7 +96,7 @@ class AgentApp {
     void this.refreshArtifacts();
     this.post({ kind: 'session', session: { id: this.session.id, title: this.session.title,
       ...this.store.page(this.session), changes: this.session.changes || [], plan: this.session.plan || [] } });
-    this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
+    this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
     this.post({ kind: 'approval', approval: this.gate.state() }); this.state(); this.capabilities();
   }
   add(role, text, extra = {}) {
@@ -165,13 +165,13 @@ class AgentApp {
     switch (message.kind) {
       case 'ready': await this.ready; this.render(); break;
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
-      case 'memory': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
+      case 'memory': case 'resumeTask': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
       case 'login': await this.login(); break;
       case 'logout': await this.logout(); break;
       case 'status': await this.checkConnection(); break;
       case 'ask': if (typeof message.text === 'string') await this.ask(message.text, message.includeEditor !== false); break;
       case 'stop': this.stop(); break;
-      case 'cancelQueue': { const queued = this.queue.find(item => item.id === message.id); if (queued) this.patch(queued.messageId, { queued: false, canceled: true }); this.queue = this.queue.filter(item => item.id !== message.id); this.state(); break; }
+      case 'cancelQueue': { const task = this.session.tasks?.find(item => item.id === message.id); if (task) { task.status = 'stopped'; task.result = '已取消佇列'; task.endedAt = Date.now(); } const queued = this.queue.find(item => item.id === message.id); if (queued) this.patch(queued.messageId, { queued: false, canceled: true }); this.queue = this.queue.filter(item => item.id !== message.id); this.state(); break; }
       case 'new': if (!this.busy() && !this.gate.pending) { await this.save(); this.session = this.store.create(this.workspace()?.uri.toString() || ''); this.contextFiles = []; this.attachment = null; this.streamId = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'switch': if (!this.busy() && !this.gate.pending && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'rename': await this.rename(); break;
@@ -203,6 +203,7 @@ class AgentApp {
       case 'addMcp': await this.addServer(); break;
       case 'importMcp': await this.importServers(); break;
       case 'settings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI'); break;
+      case 'privacySettings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI.privacy'); break;
       case 'terminalSettings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI.terminal'); break;
       case 'chooseWorkspace': await this.chooseWorkspace(); break;
     }
@@ -260,7 +261,8 @@ class AgentApp {
     const slash = request.match(/^\/(build|plan|review|research|ask)\b\s*/);
     if (slash && !this.busy()) { this.session.options.agent = slash[1]; request = request.slice(slash[0].length) || '請依目前專案提供協助。'; }
     if (this.queue.length >= 5) throw new Error('佇列最多保留五個提問。');
-    const item = { id: randomUUID(), request, includeEditor, sessionId: this.session.id, attachment: this.attachment, files: [...this.contextFiles] };
+    const item = { id: randomUUID(), createdAt: Date.now(), request, includeEditor, sessionId: this.session.id, attachment: this.attachment, files: [...this.contextFiles] };
+    this.session.tasks ||= []; this.session.tasks.push({ id: item.id, request, createdAt: item.createdAt, status: 'queued', records: [], files: [], pending: [] });
     this.attachment = null; this.contextFiles = [];
     const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name } : null });
     item.messageId = user.id;
@@ -271,12 +273,12 @@ class AgentApp {
 
   async run(item) {
     const root = this.workspace();
-    if (!root) { this.notice('請開啟這個工作階段的專案資料夾，或建立新的工作階段。', 'error'); return; }
+    if (!root) { const task = this.session.tasks.find(task => task.id === item.id); task.status = 'blocked'; task.result = '尚未開啟工作區'; task.endedAt = Date.now(); this.notice('請開啟這個工作階段的專案資料夾，或建立新的工作階段。', 'error'); await this.save(); return; }
     if (!vscode.workspace.isTrusted) throw new Error('請先信任目前工作區。');
     if (root.uri.scheme !== 'file') throw new Error('目前 Extension Host 只能操作本機 file 工作區；遠端資料夾可離線瀏覽歷史，但不會用本機路徑執行遠端任務。');
     this.controller = new AbortController(); const signal = this.controller.signal;
-    const task = { id: item.id, request: item.request, startedAt: Date.now(), status: 'running', records: [], files: [], pending: [] };
-    this.session.tasks ||= []; this.session.tasks.push(task);
+    const task = this.session.tasks.find(task => task.id === item.id);
+    task.startedAt = Date.now(); task.status = 'running';
     this.patch(item.messageId, { queued: false }); this.state();
     try {
       await this.save();
@@ -308,6 +310,7 @@ class AgentApp {
       const depthSteps = { quick: 12, standard: 50, deep: 100 };
       const resume = this.session.checkpoint && /^(?:請)?(?:繼續|接著|continue\b|resume\b)/i.test(item.request);
       const taskRequest = resume ? this.session.checkpoint.request + '\n\nUSER FOLLOW-UP:\n' + item.request : item.request;
+      if (!resume) { this.session.plan = []; this.post({ kind: 'plan', steps: [] }); }
       const initialRecords = resume ? sanitize(this.session.checkpoint.records).map(record => ({ ...record, historical: true })) : [];
       if (resume) initialRecords.push({ type: 'resume_validation', instruction: 'Checkpoint evidence is historical. Re-read affected files and verify workspace state before editing or claiming completed verification. File snapshots have been reset.' });
       this.session.checkpoint = { request: taskRequest, records: initialRecords };
@@ -347,7 +350,7 @@ class AgentApp {
         await this.save();
       } catch (error) { this.persistenceError = redact(error.message); }
       this.controller = null; this.activePolicy = null; this.state(); this.persist();
-      this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
+      this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
     }
     const next = this.queue.shift(); if (next) await this.run(next);
   }
@@ -369,7 +372,7 @@ class AgentApp {
       }
     }
   }
-  stop() { for (const item of this.queue) this.patch(item.messageId, { queued: false, canceled: true }); this.queue = []; this.controller?.abort(); this.state(); }
+  stop() { for (const item of this.queue) { this.patch(item.messageId, { queued: false, canceled: true }); const task = this.session.tasks?.find(task => task.id === item.id); if (task) { task.status = 'stopped'; task.result = '已取消佇列'; task.endedAt = Date.now(); } } this.queue = []; this.controller?.abort(); this.state(); }
 
   async addContext() {
     const root = this.workspace(); if (!root) throw new Error('請先開啟專案。');
@@ -501,10 +504,10 @@ class AgentApp {
     } else if (!/^[a-z]+:/i.test(url)) await this.openFile(url);
   }
   async exportSession() {
-    const target = await vscode.window.showSaveDialog({ title: '匯出工作階段', defaultUri: this.workspace() ? vscode.Uri.joinPath(this.workspace().uri, 'NTPU-AI-session.md') : undefined, filters: { Markdown: ['md'] } });
+    const target = await vscode.window.showSaveDialog({ title: '匯出工作階段', defaultUri: vscode.Uri.joinPath(this.context.globalStorageUri, 'NTPU-AI-session.md'), filters: { Markdown: ['md'] } });
     if (!target) return;
-    const text = '# ' + this.session.title + '\n\n' + this.session.messages.filter(message => ['user', 'assistant'].includes(message.role)).map(message =>
-      `## ${message.role === 'user' ? '使用者' : 'NTPU AI'}\n\n${message.text}\n`).join('\n');
+    const text = '# ' + this.session.title + '\n\n' + this.session.messages.map(message =>
+      `## ${message.role === 'user' ? '使用者' : 'NTPU AI'}\n\n${message.text || JSON.stringify({ name: message.name, args: message.args, result: message.result })}\n`).join('\n');
     await vscode.workspace.fs.writeFile(target, Buffer.from(redact(text))); await vscode.window.showTextDocument(target);
   }
 
@@ -583,7 +586,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { this.stop(); clearInterval(this.poller); clearTimeout(this.saveTimer); await this.save(); await this.bridge?.close(); await this.mcp.close(); }
+  async dispose() { await this.ready; this.stop(); clearInterval(this.poller); clearTimeout(this.saveTimer); await this.save(); await this.bridge?.close(); await this.mcp.close(); }
 }
 
 module.exports = { AgentApp };

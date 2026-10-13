@@ -138,6 +138,27 @@
             ]
           },
           "markdownDescription": "自訂指令開頭或以 / 包住的 ^ 開頭正規表示式。true 自動核准；false 必須核准且優先於完整存取。例：\"npm run build\": true、\"rm\": false。非完整存取模式的複合指令及 shell 展開仍需核准。"
+        },
+        "ntpuAI.memory.enableProject": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "將相關 Project Memory 帶入模型脈絡；本機 Session 歷史仍持續保存。"
+        },
+        "ntpuAI.memory.autoUpdate": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "根據實際工具結果更新專案記憶，不發送額外模型請求。"
+        },
+        "ntpuAI.privacy.reviewPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "description": "傳送前需單次核准的相對路徑 glob。Protected 路徑與秘密遮蔽無法透過此設定停用。"
         }
       }
     }

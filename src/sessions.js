@@ -8,7 +8,7 @@ class SessionStore {
     this.sessions = Array.isArray(saved) ? sanitize(saved.filter(item => item?.id && Array.isArray(item.messages))) : [];
     for (const session of this.sessions) {
       session.options = { ...DEFAULT_OPTIONS, ...session.options, permission: 'ask' };
-      session.messages = session.messages.filter(item => item?.role !== 'stream');
+      session.messages = session.messages.map(item => item?.role === 'stream' ? { ...item, role: 'notice', interrupted: true } : item);
       for (const message of session.messages) if (message.role === 'user' && message.queued) { message.queued = false; message.canceled = true; }
       for (const message of session.messages) if (message.role === 'tool' && ['running', 'approval'].includes(message.status)) {
         message.status = 'interrupted'; message.result = '擴充功能重新載入，操作已中斷。';
@@ -24,7 +24,7 @@ class SessionStore {
   add(session, message) { const item = sanitize({ id: randomUUID(), at: Date.now(), ...message }); session.messages.push(item); session.updatedAt = Date.now(); return item; }
   update(session, id, patch) { const item = session.messages.find(message => message.id === id); if (item) Object.assign(item, sanitize(patch)); return item; }
   serialize() {
-    return sanitize(this.sessions.map(session => ({ ...session, messages: session.messages.filter(item => item.role !== 'stream'),
+    return sanitize(this.sessions.map(session => ({ ...session, messages: session.messages.map(item => item.role === 'stream' ? { ...item, role: 'notice', interrupted: true } : item),
       turns: session.turns || [], changes: session.changes || [] }))); 
   }
 }
