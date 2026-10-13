@@ -16,7 +16,7 @@ const { MemoryStore } = require('./memory/store');
 const { ContextManager, summarize, updateMemory } = require('./memory/context');
 const { MemoryActions } = require('./memory/actions');
 const { SkillCatalog } = require('./skills');
-const { McpManager, EXA, validateServer } = require('./mcp');
+const { McpManager, EXA, BUILTINS, validateServer } = require('./mcp');
 const { imageMime, thumbnail } = require('./visuals');
 const { sanitize, redact, classifyPath, classifyContent } = require('./security/guard');
 
@@ -183,7 +183,7 @@ class AgentApp {
     const config = vscode.workspace.getConfiguration('ntpuAI');
     this.post({ kind: 'capabilities', browser: { selection: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''),
       profileLocation: config.get('browserProfilePath', ''), info: this.bridge?.manager.info, host: process.platform + ' ' + process.arch, remoteName: vscode.env?.remoteName || '' }, skills: this.skills.list(), skillErrors: this.skills.errors,
-      servers: [EXA, ...this.servers].map(server => ({ name: server.name, type: server.type,
+      servers: [...BUILTINS, ...this.servers.filter(server => !BUILTINS.some(item => item.name === server.name))].map(server => ({ name: server.name, label: server.label, type: server.type,
         target: server.url || [server.command, ...(server.args || [])].join(' '), builtin: !!server.builtin,
         ...connected.find(state => state.name === server.name) })),
       tools: this.mcp.catalog().map(({ name, description, server }) => ({ name, description, server })),
@@ -232,6 +232,7 @@ class AgentApp {
       case 'openArtifact': await this.openArtifact(message.id); break;
       case 'saveArtifact': await this.saveArtifact(message.id); break;
       case 'connectMcp': await this.connectServer(message.name); break;
+      case 'officialAssistant': await vscode.env.openExternal(vscode.Uri.parse('https://aia.ntpu.ai/')); break;
       case 'disconnectMcp': if (!this.busy()) await this.mcp.disconnect(message.name); break;
       case 'addMcp': await this.addServer(); break;
       case 'importMcp': await this.importServers(); break;
@@ -565,7 +566,7 @@ class AgentApp {
 
   async connectServer(name) {
     if (this.busy()) return;
-    const server = name === 'exa' ? EXA : this.servers.find(server => server.name === name);
+    const server = BUILTINS.find(server => server.name === name) || this.servers.find(server => server.name === name);
     if (!server) throw new Error('找不到這個 MCP 設定。');
     if (!server.builtin) {
       const detail = server.type === 'stdio' ? '將以你的使用者權限啟動：\n' + [server.command, ...(server.args || [])].join(' ') : '將連線至：\n' + server.url;
@@ -579,7 +580,7 @@ class AgentApp {
     const choice = await vscode.window.showQuickPick([{ label: 'HTTP / HTTPS', type: 'http' }, { label: '本地 stdio', type: 'stdio' }], { title: '新增 MCP server' });
     if (!choice) return;
     const name = await vscode.window.showInputBox({ title: 'MCP 名稱', prompt: '英數字、底線或連字號' }); if (!name) return;
-    if (name === 'exa' || this.servers.some(server => server.name === name)) throw new Error('名稱已存在。');
+    if (BUILTINS.some(server => server.name === name) || this.servers.some(server => server.name === name)) throw new Error('名稱已存在。');
     const config = { name, type: choice.type };
     if (choice.type === 'http') {
       config.url = await vscode.window.showInputBox({ title: 'MCP endpoint URL', placeHolder: 'https://example.com/mcp' }); if (!config.url) return;
@@ -625,7 +626,7 @@ class AgentApp {
         const reference = `ntpuAI.mcp.${name}.header.${header}`;
         await this.context.secrets.store(reference, secret); server.headerSecrets[header] = reference;
       }
-      if (name !== 'exa') this.servers = this.servers.filter(item => item.name !== name).concat(server);
+      if (!BUILTINS.some(item => item.name === name)) this.servers = this.servers.filter(item => item.name !== name).concat(server);
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }

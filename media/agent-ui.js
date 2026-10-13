@@ -299,7 +299,7 @@ function renderDrawer() {
     content.append(element('p', 'panel-description', '搜尋、網頁讀取與擴充工具由本地 agent 執行。NTPU AI 負責理解需求和決定下一步。'));
     for (const server of capabilities.servers) {
       const card = element('div', 'server-card'); const heading = element('div', 'server-heading');
-      heading.append(icon('connect'), element('strong', '', server.name), element('span', 'badge' + (server.connected ? ' connected' : ''), server.connecting ? '連線中…' : server.connected ? server.tools + ' 個工具' : server.builtin ? '免金鑰 · 有限額' : '未連線'));
+      heading.append(icon('connect'), element('strong', '', server.label || server.name), element('span', 'badge' + (server.connected ? ' connected' : ''), server.connecting ? '連線中…' : server.connected ? server.tools + ' 個工具' : server.builtin ? '免金鑰 · 唯讀' : '未連線'));
       card.append(heading, element('p', 'server-target', server.target));
       if (server.error) card.append(element('p', 'warning-text', server.error));
       const connect = button(server.connecting ? '連線中…' : server.connected ? '中斷連線' : '連線', 'secondary-button', event => { event.currentTarget.disabled = true; event.currentTarget.textContent = '處理中…'; send(server.connected ? 'disconnectMcp' : 'connectMcp', { name: server.name }); }, server.connected ? 'close' : 'connect');
@@ -307,6 +307,7 @@ function renderDrawer() {
       content.append(card);
     }
     const actions = element('div', 'panel-actions'); actions.append(button('新增 MCP', 'secondary-button', () => send('addMcp'), 'plus'), button('匯入設定', 'secondary-button', () => send('importMcp'), 'file')); content.append(actions);
+    content.append(element('h3', '', '官方校務問答'), element('p', 'panel-description', '體育、通識、語言中心與各行政單位問題可直接使用官方 NTPU AI Assistant；此入口不會自動傳送目前聊天或專案內容。'), button('開啟 NTPU AI Assistant', 'secondary-button full-width', () => send('officialAssistant'), 'globe'));
     if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.server), element('p', '', tool.description)); list.append(row); } content.append(list); }
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));

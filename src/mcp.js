@@ -7,6 +7,8 @@ const { createHash } = require('node:crypto');
 const { inspectOutboundPayload, sanitize, redact } = require('./security/guard');
 
 const EXA = { name: 'exa', type: 'http', url: 'https://mcp.exa.ai/mcp', builtin: true, readOnly: true };
+const AI4X = { name: 'ntpu_ai4x', label: 'NTPU AI4X · 官方研究資料', type: 'http', url: 'https://ai4x.mcp.ntpu.ai/mcp', builtin: true, readOnly: true };
+const BUILTINS = [EXA, AI4X];
 function validateServer(config) {
   if (!config || !/^[a-zA-Z0-9_-]{1,48}$/.test(config.name || '')) throw new Error('MCP 名稱必須是 1–48 字的英數字、底線或連字號。');
   if (config.type === 'http' || config.type === 'sse') {
@@ -119,4 +121,4 @@ class McpManager {
   }
   async close() { for (const name of [...this.connections.keys()]) await this.disconnect(name); }
 }
-module.exports = { McpManager, EXA, validateServer, alias };
+module.exports = { McpManager, EXA, AI4X, BUILTINS, validateServer, alias };
