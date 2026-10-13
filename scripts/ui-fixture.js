@@ -48,6 +48,11 @@ async function testUI(page, origin) {
   await page.waitForFunction(() => document.querySelector('.session-row').disabled);
   await page.locator('#closeDrawer').click(); await send({ ...state, connection: { ready: false, message: '尚未登入' } });
   await page.waitForFunction(() => !document.getElementById('connectionActions').hidden);
+  await page.locator('#settings').click();
+  assert.match(await page.locator('.account-card').textContent(), /未連線/);
+  assert.equal(await page.getByRole('button', { name: '重新連線 NTPU AI', exact: true }).count(), 1);
+  await send({ ...state, connection: { ready: false, authentication: 'required', message: '網站要求登入' } });
+  assert.match(await page.locator('.account-card').textContent(), /未登入/);
   assert.deepEqual(errors, []);
 }
 module.exports = { assets, testUI };

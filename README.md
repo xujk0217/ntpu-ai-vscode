@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.4.2 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.4.3 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.4.2 安裝檔 |
+| 系統 | 0.4.3 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-win32-x64-0.4.2.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-darwin-arm64-0.4.2.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-darwin-x64-0.4.2.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.2/ntpu-ai-coder-linux-x64-0.4.2.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.3/ntpu-ai-coder-win32-x64-0.4.3.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.3/ntpu-ai-coder-darwin-arm64-0.4.3.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.3/ntpu-ai-coder-darwin-x64-0.4.3.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.4.3/ntpu-ai-coder-linux-x64-0.4.3.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -74,6 +74,8 @@
 每個 VS Code 使用者任務會建立一個 NTPU AI 網頁對話；同一任務的 agent 後續輪次會沿用該對話，下一個 VS Code 任務才建立新的 NTPU AI 對話。
 
 專用瀏覽器需保持開啟；同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
+
+關閉專用瀏覽器只會中斷連線，設定頁會顯示 **未連線**；重新連線後才確認網站是否仍登入。關閉操作不清除登入資料。只有網站要求登入或你按下登出，介面才顯示 **未登入**。學校端登入過期、切換瀏覽器或改用另一個 Profile 時，仍可能需要重新登入。
 
 ## 完整任務流程
 
@@ -301,7 +303,7 @@ npm run package
 - GitHub Actions：Windows x64、macOS arm64／x64、Linux x64，Node 20／22，unit、build、localhost 瀏覽器整合與平台 VSIX artifact。
 - `npm run package -- --target <target>`：原生 sharp 經實際 PNG 驗證後打包；要求 host 與 target 相同。在對應平台 CI 安裝其 optional dependencies，拒絕將 macOS 套件直接改標成 Windows／Linux。
 
-0.4.2 架構、遷移、測試與交付狀態：[docs/REFACTOR_REPORT.md](docs/REFACTOR_REPORT.md)。歷史驗證結果：[VALIDATION.md](VALIDATION.md)。開發說明：[CONTRIBUTING.md](CONTRIBUTING.md)。
+0.4.3 架構、遷移、測試與交付狀態：[docs/REFACTOR_REPORT.md](docs/REFACTOR_REPORT.md)。歷史驗證結果：[VALIDATION.md](VALIDATION.md)。開發說明：[CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### 主要設定
 

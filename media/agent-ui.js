@@ -141,7 +141,7 @@ function renderState(value) {
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
   $('workspace').querySelector('span').textContent = state.workspace;
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
-  $('connectionLabel').textContent = state.connection?.ready ? '已連線' : '連線 NTPU AI';
+  $('connectionLabel').textContent = state.connection?.ready ? '已連線' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '連線 NTPU AI';
   $('connectionActions').hidden = !!state.connection?.ready;
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
@@ -277,9 +277,11 @@ function renderDrawer() {
   } else {
     const account = element('section', 'account-card');
     const accountHeader = element('div', 'account-heading');
-    accountHeader.append(element('strong', '', 'NTPU AI 帳號'), element('span', 'badge' + (state.connection?.ready ? ' connected' : ''), state.connection?.ready ? '已登入' : '未登入'));
+    const needsLogin = ['required', 'signed_out'].includes(state.connection?.authentication);
+    accountHeader.append(element('strong', '', 'NTPU AI 帳號'), element('span', 'badge' + (state.connection?.ready ? ' connected' : ''), state.connection?.ready ? '已登入' : needsLogin ? '未登入' : '未連線'));
     account.append(accountHeader, element('p', 'panel-description', state.connection?.message || '登入後即可使用 NTPU AI 模型。'));
-    account.append(button(state.connection?.ready ? '登出' : '登入 NTPU AI', state.connection?.ready ? 'secondary-button account-logout' : 'secondary-button', () => {
+    if (!state.connection?.ready && !needsLogin) account.append(element('p', 'panel-description', '關閉專用瀏覽器只會中斷連線。既有登入會在重新連線後確認。'));
+    account.append(button(state.connection?.ready ? '登出' : needsLogin ? '登入 NTPU AI' : '重新連線 NTPU AI', state.connection?.ready ? 'secondary-button account-logout' : 'secondary-button', () => {
       send(state.connection?.ready ? 'logout' : 'login');
     }, state.connection?.ready ? 'close' : 'connect'));
     account.lastChild.disabled = state.busy;

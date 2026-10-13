@@ -134,17 +134,17 @@ class BrowserBridge {
   }
 
   async status() {
-    if (!this.page || this.page.isClosed()) return { ready: false, message: '尚未開啟登入瀏覽器' };
+    if (!this.page || this.page.isClosed()) return { ready: false, authentication: 'unknown', message: '瀏覽器未連線。重新連線後會確認既有登入狀態；關閉瀏覽器不會清除登入資料。' };
     const url = this.page.url();
-    if (!url.startsWith(this.origin + '/')) return { ready: false, message: '請在專用 Chrome 完成學校登入，並返回 NTPU AI。' };
+    if (!url.startsWith(this.origin + '/')) return { ready: false, authentication: 'unknown', message: '登入頁面正在切換，請完成學校登入並返回 NTPU AI。' };
     return this.page.evaluate(() => {
       const overlay = document.getElementById('auth-overlay');
       const input = document.getElementById('input');
       const hidden = overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none');
       const ready = !!(hidden && input && document.getElementById('sendBtn'));
-      return { ready, message: ready ? `已連線：${document.getElementById('user-email')?.textContent || 'NTPU AI'}` :
+      return { ready, authentication: ready ? 'authenticated' : overlay && !hidden ? 'required' : 'unknown', message: ready ? `已連線：${document.getElementById('user-email')?.textContent || 'NTPU AI'}` :
         '請在專用 Chrome 使用學校帳號登入，或完成安全驗證後按「以訪客身分試用」。' };
-    }).catch(() => ({ ready: false, message: '登入頁面正在切換，請稍候再檢查。' }));
+    }).catch(() => ({ ready: false, authentication: 'unknown', message: '登入頁面正在切換，請稍候再檢查。' }));
   }
 
   async logout() {

@@ -166,7 +166,7 @@ class AgentApp {
       { modal: true }, '登出');
     if (choice !== '登出') return;
     await this.getBridge().logout();
-    this.connection = { ready: false, message: '已登出 NTPU AI' };
+    this.connection = { ready: false, authentication: 'signed_out', message: '已登出 NTPU AI' };
     this.post({ kind: 'connection', connection: this.connection });
     this.state();
   }

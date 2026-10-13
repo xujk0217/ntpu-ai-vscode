@@ -32,3 +32,12 @@ test('logout refuses to clear credentials while an agent request is active', asy
   bridge.pending = { id: 'active' };
   await assert.rejects(bridge.logout(), /停止目前執行中的任務/);
 });
+
+test('a closed browser reports unknown authentication without clearing login credentials', async () => {
+  const bridge = new BrowserBridge();
+  let clears = 0; bridge.context = { clearCookies: async () => { clears++; } };
+  bridge.page = { isClosed: () => true };
+  const status = await bridge.status();
+  assert.equal(status.ready, false); assert.equal(status.authentication, 'unknown'); assert.match(status.message, /不會清除/);
+  assert.equal(clears, 0);
+});
