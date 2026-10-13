@@ -4,7 +4,6 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { diffLines } = require('diff');
 const { BrowserBridge } = require('./browser');
 const { PreviewProvider, WorkspaceTools } = require('./tools');
 const { safePath, hash, diskText, isBlocked } = require('./workspace');
@@ -21,11 +20,13 @@ const { imageMime, thumbnail } = require('./visuals');
 const { sanitize, redact, classifyPath, classifyContent } = require('./security/guard');
 const { scanner } = require('./security/attachments');
 const { SandboxExecutor } = require('./security/sandbox');
+const { ChangeReview } = require('./change-review');
 
 class AgentApp {
   constructor(context) {
     this.context = context; this.view = null; this.bridge = null; this.controller = null;
     this.previews = new PreviewProvider();
+    this.changeReview = new ChangeReview(this, vscode);
     this.store = new SessionStore(context.workspaceState.get('ntpuAI.sessions.v2', []));
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
     this.session = this.store.get(context.workspaceState.get('ntpuAI.activeSession')) || this.store.sessions[0] || this.store.create(workspace);
@@ -118,7 +119,7 @@ class AgentApp {
     for (const message of this.session.messages) if (message.thumbnailData) message.imageUri = message.thumbnailData;
     void this.refreshArtifacts();
     this.post({ kind: 'session', session: { id: this.session.id, title: this.session.title,
-      ...this.store.page(this.session), changes: this.session.changes || [], plan: this.session.plan || [] } });
+      ...this.store.page(this.session), changes: this.changeReview.view(), plan: this.session.plan || [] } });
     this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed' && !task.resolvedBy).length })) });
     this.post({ kind: 'approval', approval: this.gate.state() }); this.state(); this.capabilities();
   }
@@ -270,6 +271,7 @@ class AgentApp {
       case 'removeAttachment': this.attachment = null; this.state(); break;
       case 'change': await this.showChange(message.id); break;
       case 'revert': await this.revert(message.id); break;
+      case 'reviewChange': await this.changeReview.act(message); break;
       case 'export': await this.memoryActions.handle({ kind: 'exportSession', id: this.session.id }); break;
       case 'refreshSkills': await this.refreshSkills(); break;
       case 'openSkill': { const skill = this.skills.load(message.name); await vscode.window.showTextDocument(vscode.Uri.file(skill.file)); break; }
@@ -329,6 +331,7 @@ class AgentApp {
     return redact(pieces.join('\n\n'));
   }
   async ask(request, includeEditor = true) {
+    if (this.changeReview.applying) throw new Error('正在處理變更，請稍候再送出任務。');
     await this.ready;
     request = redact(request.trim()); if (!request) return;
     if (request.length > 20000) throw new Error('提問超過 20000 字。');
@@ -380,7 +383,7 @@ class AgentApp {
           reviewPaths: config.get('privacy.reviewPaths', []),
           onPlan: steps => { this.session.plan = steps; this.post({ kind: 'plan', steps }); this.persist(); },
           onSkill: name => { if (!this.session.options.skills.includes(name)) this.post({ kind: 'skillLoaded', name }); },
-          onArtifact: artifact => this.artifact(artifact), onChange: change => this.changed(change),
+          onArtifact: artifact => this.artifact(artifact), onChange: change => this.changed({ ...change, taskId: item.id }),
           onCommandOutput: output => { if (this.activeToolId) this.patch(this.activeToolId, { liveOutput: output }); } });
       const depthSteps = { quick: 12, standard: 50, deep: 100 };
       const resume = this.session.checkpoint && /^(?:請)?(?:繼續|接著|continue\b|resume\b)/i.test(item.request);
@@ -538,33 +541,17 @@ class AgentApp {
     return result;
   }
   changed(change) {
-    const parts = change.binary ? [] : diffLines(change.before || '', change.after || '');
-    change.added = parts.filter(part => part.added).reduce((sum, part) => sum + part.count, 0);
-    change.removed = parts.filter(part => part.removed).reduce((sum, part) => sum + part.count, 0);
-    this.session.changes ||= []; this.session.changes.push(change);
-    this.post({ kind: 'changes', changes: this.session.changes }); this.persist();
+    this.changeReview.capture(change); this.postChanges(); this.persist();
   }
+  postChanges() { this.post({ kind: 'changes', changes: this.changeReview.view() }); }
   async showChange(id) {
-    const change = this.session.changes?.find(item => item.id === id); if (!change) return;
+    const change = this.changeReview.find(id); if (!change) return;
     if (change.binary) { await this.openFile(change.path); return; }
     await vscode.commands.executeCommand('vscode.diff', this.previews.put('before/' + change.path, change.before || ''),
       this.previews.put('after/' + change.path, change.after), 'NTPU AI 修改：' + change.path, { preview: true });
   }
   async revert(id) {
-    if (this.busy()) return;
-    const change = this.session.changes?.find(item => item.id === id); if (!change || change.reverted) return;
-    if (String(change.before).includes('[REDACTED') || String(change.after).includes('[REDACTED')) throw new Error('快照包含遮蔽內容，請在編輯器手動回復，避免覆蓋秘密。');
-    const root = this.workspace(); if (!root) throw new Error('請先開啟這個工作階段的專案。');
-    const absolute = await safePath(root.uri.fsPath, change.path); const uri = vscode.Uri.file(absolute);
-    const current = change.binary ? await fs.readFile(absolute) : (await vscode.workspace.openTextDocument(uri)).getText();
-    if (hash(current) !== change.afterHash) throw new Error('檔案在 AI 修改後又有變動，因此沒有回復，避免覆蓋新的修改。');
-    if (change.created) await vscode.workspace.fs.delete(uri, { useTrash: true });
-    else {
-      const document = await vscode.workspace.openTextDocument(uri); const edit = new vscode.WorkspaceEdit();
-      edit.replace(uri, new vscode.Range(document.positionAt(0), document.positionAt(current.length)), change.before);
-      if (!(await vscode.workspace.applyEdit(edit)) || !(await document.save())) throw new Error('無法回復檔案。');
-    }
-    change.reverted = true; this.post({ kind: 'changes', changes: this.session.changes }); this.persist();
+    await this.changeReview.act({ id, action: 'revert' });
   }
   async openFile(relative) {
     if (typeof relative !== 'string') return;

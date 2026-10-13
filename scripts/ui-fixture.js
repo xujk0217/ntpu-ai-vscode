@@ -42,6 +42,21 @@ async function testUI(page, origin) {
   await send({ kind: 'prefill', text: '已有草稿' });
   await page.waitForFunction(() => !document.getElementById('send').disabled);
   await page.locator('#prompt').fill('');
+  await send({ kind: 'changes', changes: [{ id: 'review-file', path: 'main.js', added: 2, removed: 2,
+    hunks: [{ id: 'h1', line: 1, added: 1, removed: 1, before: 'old\n', after: 'new\n' }] }] });
+  await page.locator('#changes > summary').click();
+  await page.locator('.change-file > summary .change-state').click();
+  await page.locator('.change-hunk > summary').click();
+  await page.getByRole('button', { name: '保留這段', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'reviewChange', id: 'review-file', action: 'accept', hunkId: 'h1' });
+  await page.getByRole('button', { name: '撤回這段', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'reviewChange', id: 'review-file', action: 'revert', hunkId: 'h1' });
+  await page.getByRole('button', { name: '撤回檔案', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'reviewChange', id: 'review-file', action: 'revert' });
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'change-review-ui.png') });
+  await send({ ...state, busy: true }); await page.waitForFunction(() => document.querySelector('.change-controls button')?.disabled);
+  assert.equal(await page.getByRole('button', { name: '撤回檔案', exact: true }).isDisabled(), true);
+  await send(state); await send({ kind: 'changes', changes: [] });
   await page.locator('.history-more').click();
   assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'historyPage')), true);
   await page.locator('#settings').click();

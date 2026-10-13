@@ -122,15 +122,46 @@ function renderPlan(steps) {
   for (const step of steps) { const row = element('div', 'plan-step ' + step.status); row.append(icon(step.status === 'completed' ? 'check' : step.status === 'in_progress' ? 'spark' : 'clock'), element('span', '', step.title)); $('planSteps').append(row); }
 }
 function renderChanges(changes) {
+  const openFiles = new Set([...$('changeRows').querySelectorAll('.change-file[open]')].map(node => node.dataset.id));
+  const openHunks = new Set([...$('changeRows').querySelectorAll('.change-hunk[open]')].map(node => node.dataset.id));
   $('changes').hidden = !changes.length; $('changeRows').replaceChildren();
   const active = changes.filter(change => !change.reverted);
   $('changesTitle').textContent = `檔案變更 · ${new Set(active.map(change => change.path)).size}`;
   $('changeStats').textContent = active.length && active.every(item => item.binary) ? active.length + ' 張圖片' : '+' + active.reduce((sum, item) => sum + (item.added || 0), 0) + ' −' + active.reduce((sum, item) => sum + (item.removed || 0), 0);
-  for (const change of changes.slice(-12)) {
-    const row = element('div', 'change-row' + (change.reverted ? ' reverted' : ''));
+  $('changeRows').append(element('p', 'change-explanation', '變更已套用。可保留檔案，或展開後撤回其中一段；停止任務後即可操作。'));
+  for (const change of changes) {
+    const card = element('details', 'change-file' + (change.reverted ? ' reverted' : ''));
+    card.dataset.id = change.id; card.open = openFiles.has(change.id);
+    const row = element('summary', 'change-row');
     row.append(icon(change.binary ? 'image' : 'file'), button(change.path, 'change-name', () => send('change', { id: change.id })),
-      element('span', 'added', change.reverted ? '已回復' : change.binary ? 'PNG' : '+' + change.added), element('span', 'removed', change.reverted || change.binary ? '' : '−' + change.removed));
-    const undo = iconButton('undo', '回復這次修改', () => send('revert', { id: change.id })); undo.disabled = state.busy || change.reverted; row.append(undo); $('changeRows').append(row);
+      element('span', 'change-state', change.reverted ? '已撤回' : change.accepted ? '已保留' : '已套用'),
+      element('span', 'added', change.reverted ? '' : change.binary ? 'PNG' : '+' + change.added), element('span', 'removed', change.reverted || change.binary ? '' : '−' + change.removed));
+    card.append(row);
+    const controls = element('div', 'change-controls');
+    for (const [action, label] of [['accept', '保留檔案'], ['revert', '撤回檔案']]) {
+      const control = button(label, action === 'revert' ? 'text-button danger-text' : 'text-button', () => send('reviewChange', { id: change.id, action }));
+      control.disabled = state.busy || change.reverted || action === 'accept' && change.accepted || action === 'revert' && change.protected;
+      controls.append(control);
+    }
+    card.append(controls);
+    for (const part of change.reverted ? [] : change.hunks || []) {
+      const detail = element('details', 'change-hunk');
+      detail.dataset.id = part.id; detail.open = openHunks.has(part.id);
+      detail.append(element('summary', '', `第 ${part.line} 行 · +${part.added} −${part.removed}` + (part.accepted ? ' · 已保留' : '')));
+      const preview = element('div', 'hunk-preview');
+      if (part.before) preview.append(element('pre', 'hunk-removed', '− ' + part.before));
+      if (part.after) preview.append(element('pre', 'hunk-added', '+ ' + part.after));
+      if (part.truncated) preview.append(element('span', 'change-state', '預覽已截短；檔案名稱可開啟完整 diff。'));
+      detail.append(preview);
+      const actions = element('div', 'change-controls');
+      for (const [action, label] of [['accept', '保留這段'], ['revert', '撤回這段']]) {
+        const control = button(label, action === 'revert' ? 'text-button danger-text' : 'text-button', () => send('reviewChange', { id: change.id, action, hunkId: part.id }));
+        control.disabled = state.busy || action === 'accept' && (part.accepted || change.accepted) || action === 'revert' && change.protected;
+        actions.append(control);
+      }
+      detail.append(actions); card.append(detail);
+    }
+    $('changeRows').append(card);
   }
 }
 
@@ -159,6 +190,7 @@ function renderState(value) {
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
   $('stop').hidden = !state.busy; updateComposer();
+  if (busyChanged) renderChanges(session.changes || []);
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
   if (!$('drawer').hidden && ['tools', 'connection', 'security'].includes(tab) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
   if (!$('drawer').hidden && tab === 'sessions' && busyChanged) renderDrawer();
