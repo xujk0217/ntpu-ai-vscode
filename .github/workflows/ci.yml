@@ -3,18 +3,43 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  test:
-    runs-on: macos-latest
-    timeout-minutes: 10
+  test-and-package:
+    name: ${{ matrix.platform.target }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+        platform:
+          - {runner: windows-2022, target: win32-x64, browser: edge}
+          - {runner: macos-15, target: darwin-arm64, browser: chrome}
+          - {runner: macos-15-intel, target: darwin-x64, browser: chrome}
+          - {runner: ubuntu-22.04, target: linux-x64, browser: chromium}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - run: npm ci --include=optional
       - run: npm test
       - run: npm run build
+      - name: Install Chromium for local website fixture (Linux)
+        if: runner.os == 'Linux'
+        run: npx playwright-core install --with-deps chromium
+      - name: Exercise BrowserBridge against localhost (no school account)
+        run: npm run browser:fixture
+        env:
+          NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}
+      - run: npm run package -- --target ${{ matrix.platform.target }}
+      - uses: actions/upload-artifact@v4
+        if: matrix.node == '22'
+        with:
+          name: ntpu-ai-agent-${{ matrix.platform.target }}
+          path: '*.vsix'
+          if-no-files-found: error

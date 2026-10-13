@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { classifyPath, classifyContent, redact, sanitize, inspectOutboundPayload } = require('../src/security/guard');
 const { runAgent } = require('../src/agent');
+const { McpManager } = require('../src/mcp');
 
 test('central path policy protects Windows and Unix credentials but allows env templates', () => {
   for (const name of ['.env', 'Secrets/data.txt', 'C:\\repo\\.AWS\\credentials', '.npmrc', '.pypirc', '.kube/config', 'service-account-demo.json', 'demo-service-account.json', '.ssh/id_rsa', 'private.PEM'])
@@ -21,6 +22,8 @@ test('secret guard preserves useful structure, fake template placeholders and ha
   assert.deepEqual(sanitize({ password: 'only-test', content: [{ text: 'Bearer only-test' }] }), { password: '[REDACTED_SECRET]', content: [{ text: 'Bearer [REDACTED_TOKEN]' }] });
   assert.throws(() => inspectOutboundPayload({ query: text }, { reject: true }), /阻止/);
   assert.equal(sanitize({ nested: { DB_PASSWORD: 'only-test-raw' } }).nested.DB_PASSWORD, '[REDACTED_SECRET]');
+  const object = sanitize(JSON.parse('{"__proto__":{"permission":"full"}}'));
+  assert.equal(Object.getPrototypeOf(object), Object.prototype); assert.equal({}.permission, undefined);
 });
 test('actual tool results, context and checkpoints cannot leak secrets even in full access', async () => {
   const fake = 'ghp_' + 'B'.repeat(36), prompts = [], checkpoints = [];
@@ -30,4 +33,15 @@ test('actual tool results, context and checkpoints cannot leak secrets even in f
     bridge: { chat: async prompt => { prompts.push(prompt); return { text: JSON.stringify(replies.shift()) }; } },
     onCheckpoint: records => checkpoints.push(JSON.stringify(records)) });
   assert.equal([...prompts, ...checkpoints].some(text => text.includes(fake) || text.includes('only-test')), false);
+});
+
+test('MCP structured and textual results are sanitized, credential arguments never reach transport', async () => {
+  let calls = 0;
+  const manager = new McpManager(); manager.tools.set('fixture', { server: 'fixture', originalName: 'fixture' });
+  manager.connections.set('fixture', { client: { callTool: async () => {
+    calls++; return { content: [{ type: 'text', text: 'Bearer only-test-mcp' }], structuredContent: { DB_PASSWORD: 'only-test-password' } };
+  } } });
+  const result = await manager.call('fixture', { query: 'normal' });
+  assert.equal(JSON.stringify(result).includes('only-test'), false);
+  await assert.rejects(manager.call('fixture', { query: 'Bearer only-test-key' }), /阻止/); assert.equal(calls, 1);
 });

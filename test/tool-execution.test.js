@@ -104,3 +104,17 @@ test('real terminal output is sanitized before model results and live history re
   assert.equal(result.ok, true); assert.equal(JSON.stringify([result, output]).includes('only-test-token'), false);
   assert.equal(JSON.stringify([result, output]).includes('only-test-key'), false);
 });
+
+test('search hides secrets and Review files still require consent under full access', async t => {
+  const root = await fixture(t); const mock = mockVscode();
+  await fs.writeFile(path.join(root, 'config.js'), 'API_KEY=only-test-search');
+  await fs.writeFile(path.join(root, 'private.csv'), 'API_KEY=only-test-private');
+  mock.RelativePattern = class {};
+  mock.workspace.findFiles = async () => ['config.js', 'private.csv', '.env'].map(name => mock.Uri.file(path.join(root, name)));
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async () => undefined,
+    { policy: new PermissionPolicy({ mode: 'full' }) });
+  const result = await tools.execute('search_text', { query: 'API_KEY' });
+  assert.equal(result.matches.length, 1); assert.equal(JSON.stringify(result).includes('only-test'), false);
+  assert.equal((await tools.execute('read_file', { path: 'private.csv' })).ok, false);
+});

@@ -173,7 +173,7 @@ function renderApproval(value) {
   $('drawer').hidden = true;
   $('approvalTitle').textContent = value.title; $('approvalDetail').textContent = value.detail;
   $('approve').textContent = value.accept; $('approve').disabled = false; $('deny').disabled = false; $('grantSession').checked = false;
-  $('grantLabel').hidden = !value.tool;
+  $('grantLabel').hidden = !value.tool || value.tool.startsWith('mcp_');
   $('grantText').textContent = value.tool === 'run_command' ? '本工作階段允許所有終端機指令' : ['write_file', 'edit_file'].includes(value.tool) ? '本工作階段自動允許此修改工具' : '本工作階段允許此工具的後續呼叫';
   $('approvalImage').hidden = !value.previewUri; if (value.previewUri) $('approvalImage').src = value.previewUri;
   $('questionAnswer').hidden = value.type !== 'question'; $('questionAnswer').value = ''; $('questionOptions').replaceChildren();
@@ -207,7 +207,7 @@ function renderDrawer() {
     }
     filterSessions();
   } else if (tab === 'skills') {
-    content.append(element('p', 'panel-description', '把重複的工作方式寫成 SKILL.md。選取的 skills 會帶入這個工作階段；agent 也可以按需載入。'));
+    content.append(element('p', 'panel-description', '把重複的工作方式寫成 SKILL.md。所有已發現的 skills 預設都可按需載入；勾選只代表在這個工作階段預載。'));
     content.append(button('重新掃描 skills', 'secondary-button full-width', () => send('refreshSkills'), 'spark'));
     content.append(button('加入使用者 skills 資料夾', 'secondary-button full-width', () => send('addSkillDirectory'), 'plus'));
     for (const skill of capabilities.skills) {

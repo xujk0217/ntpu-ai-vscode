@@ -1,5 +1,6 @@
 'use strict';
 const { BrowserBridge } = require('../src/browser');
+const { redact, sanitize } = require('../src/security/guard');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -15,15 +16,15 @@ const bridge = new BrowserBridge();
   while (!stopped && Date.now() < deadline) {
     const status = await bridge.status();
     if (status.ready) {
-      console.log('READY: ' + status.message);
+      console.log('READY: 網站可用（不記錄帳號識別資訊）');
       const result = await bridge.chat('請只輸出 JavaScript 程式碼，不要說明：建立函式 add(a, b)，回傳 a + b。', {
-        onToken: token => process.stdout.write(token),
-        onJudge: judge => console.log('\nMODEL: ' + JSON.stringify(judge)),
+        onToken: token => void token,
+        onJudge: judge => console.log('MODEL_OBSERVED'),
       });
       const evidenceDir = path.join(__dirname, '..', '.local');
       await fs.mkdir(evidenceDir, { recursive: true });
       await fs.writeFile(path.join(evidenceDir, 'browser-smoke.json'), JSON.stringify({
-        timestamp: new Date().toISOString(), model: result.model, text: result.text,
+        timestamp: new Date().toISOString(), model: result.model, text: redact(result.text),
         completed: true, transport: 'site-ui-with-observed-sse',
       }, null, 2), { mode: 0o600 });
       console.log('\nSMOKE_OK');
@@ -34,4 +35,4 @@ const bridge = new BrowserBridge();
   }
   await bridge.close();
   throw new Error('等待登入逾時；本次未完成網站回答驗證。');
-})().catch(async error => { console.error(error.message); await bridge.close(); process.exitCode = 1; });
+})().catch(async error => { console.error(redact(error.message)); await bridge.close(); process.exitCode = 1; });

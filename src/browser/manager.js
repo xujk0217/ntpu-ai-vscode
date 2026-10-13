@@ -95,7 +95,8 @@ class BrowserManager {
     const suffix = candidate.id === 'custom' ? '-' + createHash('sha256').update(candidate.executablePath).digest('hex').slice(0, 12) : '';
     const full = await this.resolve(p.join(resolved, candidate.id + suffix));
     const normal = await Promise.all(this.normalProfiles().map(value => this.resolve(value)));
-    const boundaries = [...normal, ...(this.options.workspaces || []).map(value => p.resolve(value))];
+    const boundaries = [...normal, ...(this.options.workspaces || []).map(value => p.resolve(value)),
+      ...(this.options.storageRoot ? [await this.resolve(p.join(this.options.storageRoot, 'agent-memory'))] : [])];
     const overlaps = (a, b) => {
       if (this.platform === 'win32') { a = a.toLowerCase(); b = b.toLowerCase(); }
       const rel = p.relative(a, b); return rel === '' || (!rel.startsWith('..' + p.sep) && rel !== '..' && !p.isAbsolute(rel));

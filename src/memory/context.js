@@ -9,10 +9,12 @@ function terms(text) {
 class MemoryRetriever {
   retrieve(request, items, limit = 8) {
     const query = terms(request);
-    return items.map((item, index) => {
+    return items.map(item => {
       const content = JSON.stringify(item).toLowerCase();
       const relevance = query.reduce((score, term) => score + (content.includes(term) ? 3 : 0), 0);
-      return { item, score: relevance + (item.status && item.status !== 'completed' ? 2 : 0) + 1 / (index + 1) };
+      const timestamp = item.endedAt || item.updatedAt || item.startedAt || item.source?.verifiedAt || item.source?.userEditedAt || 0;
+      const recency = 1 / (1 + Math.max(0, Date.now() - timestamp) / (7 * 86400000));
+      return { item, score: relevance + (item.status && item.status !== 'completed' ? 2 : 0) + recency };
     }).filter(match => match.score > 1).sort((a, b) => b.score - a.score).slice(0, limit).map(match => match.item);
   }
 }
@@ -20,11 +22,11 @@ class ContextManager {
   constructor(retriever = new MemoryRetriever()) { this.retriever = retriever; }
   compose({ request, session, project, tasks = [], workspaceContext = '', budget = 12000 }) {
     const candidates = [
-      ['CURRENT WORKSPACE (verify against disk)', workspaceContext],
-      ['PROJECT MEMORY (historical evidence; re-verify files, dependencies and tests)', JSON.stringify(this.retriever.retrieve(request, (project?.entries || []).filter(entry => !entry.stale)))],
+      ['PROJECT MEMORY (historical evidence; re-verify files, dependencies and tests)', JSON.stringify([...new Map([...(project?.entries || []).filter(entry => !entry.stale && ['summary', 'architecture', 'preference'].includes(entry.kind)), ...this.retriever.retrieve(request, (project?.entries || []).filter(entry => !entry.stale))].map(entry => [entry.id || entry.text, entry])).values()])],
       ['SESSION SUMMARY', session.summary || ''],
       ['RELEVANT PREVIOUS TASKS (do not assume checkpoint files unchanged)', JSON.stringify(this.retriever.retrieve(request, tasks))],
       ['RECENT CONVERSATION', JSON.stringify(session.messages.filter(message => ['user', 'assistant'].includes(message.role)).slice(-8).map(message => ({ role: message.role, text: message.text?.slice(0, 1600) })))],
+      ['CURRENT WORKSPACE (verify against disk)', workspaceContext],
     ];
     let text = '', omitted = [];
     for (const [label, data] of candidates) {

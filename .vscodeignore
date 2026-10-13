@@ -12,3 +12,14 @@ media/chat.js
 media/chat.css
 media/agent-ui.js
 src/extension.js
+
+.gitignore
+.github/**
+docs/LOCAL_FIRST_REQUIREMENTS.md
+docs/IMPLEMENTATION_PLAN.md
+agent-memory/**
+browser-profiles/**
+.ntpu-ai-coder/**
+NTPU-memory-backup*.json
+NTPU-AI-session*.md
+docs/BROWSER_PLATFORM_REQUIREMENTS.md

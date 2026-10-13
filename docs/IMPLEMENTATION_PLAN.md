@@ -2,7 +2,7 @@
 
 ## 需求來源
 
-完整記憶與防護規格見 [LOCAL_FIRST_REQUIREMENTS.md](LOCAL_FIRST_REQUIREMENTS.md)。本文件追蹤實作與驗證，不能將尚未執行的 CI 或網站測試記為成功。
+完整記憶與防護規格見 [LOCAL_FIRST_REQUIREMENTS.md](LOCAL_FIRST_REQUIREMENTS.md)，追加瀏覽器與平台要求見 [BROWSER_PLATFORM_REQUIREMENTS.md](BROWSER_PLATFORM_REQUIREMENTS.md)。本文件追蹤實作與驗證，不能將尚未執行的 CI 或網站測試記為成功。
 
 ## 跨平台追加規格
 
@@ -50,3 +50,7 @@ Schema 1、每 Session 原子 JSON snapshot、fsync／rename、跨視窗寫入�
 ### 段落 5 證據
 
 BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium、Custom，跨平台資料路徑、各瀏覽器獨立 profile、拒絕一般 profile／工作區／symlink 別名、遠端／WSL／無 GUI 明確錯誤。保留串流、取消、附件、每任務暫時對話。Browser 設定透過 Configuration API，更換前保存 Session。9 個瀏覽器／App mock 測試通過；macOS arm64 真實 Chrome headed／headless + localhost fixture 實際驗證串流、附件、取消、profile 重開保存，全程沒有 NTPU AI 請求。Windows／Linux 實機仍待 CI。
+
+### 段落 6：本機驗證與 CI 待驗收
+
+本機 npm ci／build／57 項 tests／darwin-arm64 VSIX 成功。localhost 真實 Chrome 與新版 Webview 測試通過，沒有 NTPU AI 請求。新增 8 工作 CI 與四種平台 artifacts；將在 GitHub 實際執行後追加結果。交付細節與限制見 REFACTOR_REPORT.md。

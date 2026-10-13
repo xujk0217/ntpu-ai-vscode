@@ -10,3 +10,16 @@ media/chat.bundle.js
 *.pem
 *.key
 browser-profile/
+
+browser-profiles/
+agent-memory/
+.ntpu-ai-coder/
+NTPU-memory-backup*.json
+NTPU-AI-session*.md
+*.p12
+*.pfx
+.npmrc
+.pypirc
+.ssh/
+.aws/
+.kube/

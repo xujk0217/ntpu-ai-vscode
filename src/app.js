@@ -37,7 +37,7 @@ class AgentApp {
     this.skills = new SkillCatalog(path.join(context.extensionPath, 'skills'), vscode.workspace.getConfiguration('ntpuAI').get('skillDirectories', []));
     this.mcp = new McpManager({ secrets: context.secrets, onState: () => this.capabilities(), onContent: content => this.mcpContent(content) });
     this.servers = context.globalState.get('ntpuAI.mcpServers', []);
-    this.poller = setInterval(() => { if (this.bridge?.page && !this.bridge.page.isClosed()) void this.checkConnection(); }, 4000);
+    this.poller = setInterval(() => { if (this.bridge && !this.bridge.opening) void this.checkConnection().catch(() => {}); }, 4000);
     this.poller.unref();
     context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('ntpu-ai-preview', this.previews));
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.state()));
@@ -211,7 +211,7 @@ class AgentApp {
       case 'option': await this.setOption(message.key, message.value); break;
       case 'approval': {
         const pending = this.gate.pending;
-        if (pending?.id === message.id && message.approved === true && message.scope === 'session' && pending.detail.tool) this.activePolicy?.grant(pending.detail.tool);
+        if (pending?.id === message.id && message.approved === true && message.scope === 'session' && pending.detail.tool && !pending.detail.tool.startsWith('mcp_')) this.activePolicy?.grant(pending.detail.tool);
         if (typeof message.approved === 'boolean') this.gate.decide(message.id, message.approved);
         break;
       }
@@ -250,7 +250,7 @@ class AgentApp {
     if (key === 'skills') { if (!Array.isArray(value)) return; value = value.filter(name => this.skills.items.has(name)).slice(0, 4); }
     if (!allowed[key] && !['web', 'skills'].includes(key)) return;
     if (key === 'permission' && value === 'full') {
-      const answer = await this.gate.request({ title: '啟用完整存取？', detail: '這個工作階段將自動修改工作區檔案、執行終端機指令及呼叫外部工具。終端機與 MCP 以你的使用者權限執行。Plan／Review 的唯讀限制仍適用。', accept: '啟用完整存取' }, new AbortController().signal);
+      const answer = await this.gate.request({ title: '啟用完整存取？', detail: '這個工作階段將自動修改工作區檔案、執行允許的終端機與內建工具。敏感資料與自訂 MCP 仍需確認。終端機與 MCP 以你的使用者權限執行。Plan／Review 的唯讀限制仍適用。', accept: '啟用完整存取' }, new AbortController().signal);
       if (answer !== '啟用完整存取') { this.state(); return; }
     }
     this.session.options[key] = value; this.policies.delete(this.session.id); this.state(); this.persist();
@@ -324,7 +324,7 @@ class AgentApp {
       const workspaceContext = await this.editorContext(root, item.includeEditor, item.files);
       const project = vscode.workspace.getConfiguration('ntpuAI').get('memory.enableProject', true) ? await this.store.project(this.session.workspace) : null;
       const context = this.contextManager.compose({ request: item.request, session: this.session, project,
-        tasks: this.store.projectTasks(this.session.workspace), workspaceContext, budget: Math.min(18000, Math.floor(vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) * 0.3)) }).text;
+        tasks: this.store.projectTasks(this.session.workspace).filter(task => task.id !== item.id), workspaceContext, budget: Math.min(18000, Math.floor(vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) * 0.3)) }).text;
       let policy = this.policies.get(this.session.id);
       if (!policy || policy.mode !== this.session.options.permission || policy.agent !== this.session.options.agent) {
         policy = new PermissionPolicy({ mode: this.session.options.permission, agent: this.session.options.agent }); this.policies.set(this.session.id, policy);

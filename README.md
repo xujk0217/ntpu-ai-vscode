@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.3.3 · 狀態：實驗版 · 已實際使用的平台：macOS Apple Silicon**
+**版本：0.4.0 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -15,6 +15,8 @@
 - [完整任務流程](#完整任務流程)
 - [Agent 模式](#agent-模式)
 - [工具紀錄與介面](#工具紀錄與介面)
+- [本機記憶與隱私](#本機記憶與隱私)
+- [瀏覽器與平台](#瀏覽器與平台)
 - [權限與終端機規則](#權限與終端機規則)
 - [Skills](#skills)
 - [MCP 與網路搜尋](#mcp-與網路搜尋)
@@ -39,34 +41,39 @@
 ### 系統需求
 
 - VS Code 1.95 以上。
-- Google Chrome。
+- 已安裝 Google Chrome、Microsoft Edge 或 Chromium。自訂模式需 Chromium 系執行檔。
 - NTPU AI 允許使用的帳號或訪客資格。
-- 預先打包的 VSIX 目前以 macOS arm64 為目標。其他平台尚未驗證。
+- 目標平台：Windows x64、macOS arm64／x64、Linux x64（Ubuntu／Debian）。Linux 互動登入需要桌面顯示環境。實際驗證範圍見下方平台表與驗收文件。
 
 ### 安裝
 
-從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 下載 `ntpu-ai-coder-darwin-arm64-0.3.3.vsix`，在 VS Code 執行 **Extensions: Install from VSIX**，或：
+從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-```sh
-code --install-extension ntpu-ai-coder-darwin-arm64-0.3.3.vsix --force
-```
+| 系統 | VSIX target |
+| --- | --- |
+| Windows x64 | win32-x64 |
+| macOS Apple Silicon | darwin-arm64 |
+| macOS Intel | darwin-x64 |
+| Linux x64（glibc） | linux-x64 |
+
+下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
 已開啟的視窗請執行 **Developer: Reload Window**。
 
 ### 登入
 
 1. 開啟專案資料夾，點 Activity Bar 的 **NTPU AI**，或執行 **NTPU AI: 開啟程式助理**。
-2. 點 **連線 NTPU AI**，在擴充功能開啟的專用 Chrome 內完成學校 SSO 與機器人辨識。
+2. 點 **連線 NTPU AI**，在擴充功能開啟的專用瀏覽器內完成學校 SSO 與機器人辨識。
 3. 回到側欄，連線狀態應顯示 **已連線**。
 4. 以 Build 模式輸入任務，按送出或 `Cmd+Enter`／`Ctrl+Enter`。
 
-登入保留在專用 Chrome profile（預設 `~/.ntpu-ai-coder/browser-profile`），後續可沿用，不必每次登入。這不是 VS Code 帳號登入，也不與日常 Chrome 自動共享 Cookie。工作階段過期時需在專用 Chrome 重新登入。機器人辨識由使用者完成。
+登入保留在獨立 browser profile。VS Code 預設路徑為 `globalStorageUri/browser-profiles/<browser>`，不同瀏覽器與不同 Custom 執行檔互相隔離。這不是 VS Code 帳號登入；工作階段過期時，在專用瀏覽器重新登入並完成機器人辨識。0.3.x 舊 Chrome profile 仍保留在原路徑，不複製 Cookie；升級後的新隔離位置需要重新登入一次。
 
 未登入時，主介面會顯示 **連線 NTPU AI**。登入後，主介面會收起連線狀態；到右上角 **設定 → 工具／設定** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
 
 每個 VS Code 使用者任務會建立一個 NTPU AI 網頁對話；同一任務的 agent 後續輪次會沿用該對話，下一個 VS Code 任務才建立新的 NTPU AI 對話。
 
-專用 Chrome 需保持開啟；同一個 profile 不可同時供兩個擴充功能視窗或 smoke 程式使用。
+專用瀏覽器需保持開啟；同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
 
 ## 完整任務流程
 
@@ -110,9 +117,54 @@ Build 會修復一般文字回覆造成的工具格式偏差；未完成的計�
 - 檔案變更可開啟 diff 或回復；後續有新修改時會拒絕覆蓋。回復新檔使用系統垃圾桶。
 - 提問可附目前檔案／選取內容、額外專案檔、圖片或 PDF。
 - 忙碌時可排入下一個提問，最多五項；停止會取消目前工作與佇列。
-- 同一工作區保存最多 25 個工作階段；可切換、命名及匯出對話。
+- 完整本機歷史不再以 25 個 Session／100 則訊息截斷；一次顯示 50 則，支援載入較早訊息、搜尋、封存、刪除、重新命名與完整匯出。
 
 這是自行實作的 VS Code webview，參考 Codex／Copilot 的互動方式，並非直接搬入它們的產品 runtime。
+
+## 本機記憶與隱私
+
+右上齒輪 → **記憶** 可管理三層資料：
+
+- **Project Memory**：跨 Session 共用的架構、決策、偏好、待辦與實際工具證據。每筆可查看 Task ID、路徑、確認時間與 stale 標記，並手動新增、編輯或刪除。
+- **Session Memory**：完整對話、工具結果、計畫、修改快照、任務列表及摘要，可離線瀏覽與切換。
+- **Task Memory**：每次使用者提問的需求、狀態、開始／結束時間、工具實際結果、修改路徑、驗證及檢查點。未完成任務可從記憶頁點 **接續任務**；恢復時重新讀取檔案，舊證據不作為目前檔案的保證。
+
+資料位於 VS Code 的私有 `globalStorageUri/agent-memory`，使用有 Schema 版本的 JSON snapshots、fsync／原子 rename、寫入佇列與跨視窗鎖。並行寫入不同版本時，保留衝突副本並報錯，避免默默覆蓋。沒有新增資料庫或向量服務依賴。
+
+舊版 `workspaceState` 先建立遮蔽後備份，再保留 Session ID 遷移；成功後移除舊欄位。無法轉換的資料仍留在遷移備份，並顯示錯誤。此流程無法恢復舊版本已截掉的歷史。資料夾包含 `sessions/`、`projects/`、`backups/`、`conflicts/`；完整匯出預設在私人儲存區，備份還原以新 Session ID 匯入，不覆蓋現有紀錄。
+
+**完整保存不等於完整傳送。** Context Manager 依關鍵字、中文片語、檔案與未完成狀態挑選相關 Project Memory、Session 摘要、先前 Task 和最近對話；字元預算優先保留當前需求、主機規則與工具結果。資料僅從本機恢復，不需讀取舊帳號的 NTPU AI 網頁聊天。自動摘要根據實際工具結果建立，不在背景另呼叫模型；可停用 Project Memory／自動更新，也可手動重新整理。
+
+主機端敏感資料政策：
+
+| 分類 | 行為 |
+| --- | --- |
+| Protected | `.env`、私鑰、`.npmrc`、`.pypirc`、雲端／SSH／Kube 憑證與受保護資料目錄禁止 Agent 檔案存取，完整存取也不能繞過 |
+| Review Required | CSV、部分私人設定及 `privacy.reviewPaths` 自訂 glob，納入脈絡／工具讀取前需要單次確認 |
+| Normal | 一般程式碼依原權限使用；內容仍通過秘密偵測與遮蔽 |
+
+`.env.example`／sample／template 允許讀取，但真實格式的秘密仍會遮蔽。共用 guard 覆蓋 Editor、檔案、搜尋、Terminal、MCP、模型請求、歷史、Project／Task、Checkpoint、diff 與匯出。辨識已知 API key、私鑰、Bearer、JWT、密碼／secret 欄位、資料庫字串、URL 帳密和敏感 query，保留其他程式結構。外部查詢含已知秘密會拒絕，文字結果在送模型及寫入磁碟前遮蔽。
+
+含秘密的既有檔案會拒絕 Agent 改寫；含遮蔽值的舊快照也不允許直接回復，避免把 `[REDACTED]` 覆蓋到憑證。圖片與 PDF 無法用文字 guard 辨識其中的秘密，上傳必須再次確認目的地與內容。使用者附件預覽不保存為 Session 的永久圖片；輸出圖片快取仍是私人本機資料。
+
+## 瀏覽器與平台
+
+齒輪 → **工具／設定** 提供 Browser、Custom Browser Path、Browser Profile Location、連線結果及重新連線。Auto 先嘗試受支援的系統預設瀏覽器；預設為 Safari／Firefox 或不可用時，選擇已安裝的 Chrome、Edge、Chromium。只有 Playwright 成功啟動並能操作 Chromium 頁面，才顯示可控制。明確失敗時會顯示原因與替代選項，不會僅開 URL 就宣稱成功。
+
+可手動選擇 Chrome／Edge／Chromium，或設定 Custom 的執行檔絕對路徑。程式不自動下載日常瀏覽器。Chromium 也可由開發者執行 `npx playwright-core install chromium` 安裝後偵測；登入驗證仍由使用者完成。所有啟動保留 Chromium sandbox，不使用 remote debugging attach 或一般瀏覽器 Profile。
+
+Extension 使用 VS Code 本機私有儲存；獨立 BrowserManager 的預設資料根目錄則依平台選擇：
+
+| 系統 | 資料目錄與驗證狀態 |
+| --- | --- |
+| Windows x64 | `%LOCALAPPDATA%/NTPU AI Agent`；Edge 偵測／控制已通過 mock，實機驗證以 CI 紀錄為準 |
+| macOS arm64 | `~/Library/Application Support/NTPU AI Agent`；真實 Chrome headed／headless 的 localhost 整合測試通過 |
+| macOS x64 | 同 macOS 路徑；獨立 CI 目標，尚未在使用者 Intel 裝置驗證 |
+| Linux x64 | `$XDG_DATA_HOME/ntpu-ai-agent` 或 `~/.local/share/ntpu-ai-agent`；Chromium mock 通過，實機驗證以 CI 紀錄為準 |
+
+Unix 目錄／檔案用 0700／0600；Windows 依私有應用資料目錄的使用者 ACL。拒絕 Profile 指向日常 Chrome／Edge／Chromium 資料、家目錄、專案或其 symlink 別名。瀏覽器原生 profile lock 衝突會明確報錯；不刪除瀏覽器的鎖來強制取得日常 profile。
+
+Extension 優先在本機 UI Host 執行。Remote SSH／Dev Container／WSL 不等同使用者桌面：本機歷史可讀，但此版本不支援對遠端工作區執行檔案／終端機任務；遠端 Host／WSL 不會假裝已連上本機圖形瀏覽器。Linux 無 DISPLAY／WAYLAND 顯示環境也會清楚報錯。其他 ARM64 平台、Alpine／musl 與 Attach Existing Browser 尚未支援。
 
 ## 權限與終端機規則
 
@@ -122,9 +174,9 @@ Build 會修復一般文字回覆造成的工具格式偏差；未完成的計�
 | --- | --- |
 | 要求核准 | 自動讀取專案、使用 skills 與基本唯讀指令；修改、未允許指令、網路及外部工具先核准 |
 | 協助核准 | 自動修改工作區、公開搜尋／讀取網頁、圖片分析及符合規則的指令；其他操作核准 |
-| 完整存取 | 自動執行目前 Agent 允許的工具；明確要求核准的指令規則仍適用 |
+| 完整存取 | 自動執行目前 Agent 允許的內建工具；敏感資料／附件、自訂 MCP 個別核准與明確指令規則仍適用 |
 
-核准卡支援單次核准，或在此工作階段允許同一工具。重新載入擴充功能恢復「要求核准」。完整存取切換時會說明範圍並確認。
+核准卡支援單次核准，或在此工作階段允許同一工具。資料確認與自訂 MCP 僅授權單次呼叫。重新載入擴充功能恢復「要求核准」。完整存取切換時會說明範圍並確認。
 
 檔案工具限制於選定工作區，檢查符號連結、秘密檔案及修改衝突。Shell 與 stdio MCP 以你的 OS 帳號權限執行，**沒有 OS 隔離沙箱**。
 
@@ -132,7 +184,7 @@ Build 會修復一般文字回覆造成的工具格式偏差；未完成的計�
 
 工具設定面板的 **設定指令自動核准**可開啟 VS Code 使用者設定。這些設定只在 application／user 層級生效，不能由專案設定授權。
 
-內建的基本指令包含：`pwd`、`whoami`、`ls` 與少數列目錄 flags、`node --version`、`npm --version`、`python3 --version`、`git --version`、有限的 `git status` 與安全 diff 格式。
+內建的基本指令包含：`pwd`、`whoami`、`ls` 與少數列目錄 flags、`node --version`、`npm --version`、`python3 --version`、`git --version`、有限的 `git status` 與安全 diff 格式。Windows 另外支援 `cd`、`ver`、有限 `dir`、`python --version`／`py --version`，主機會告知模型目前使用 cmd.exe。
 
 自訂範例：
 
@@ -207,13 +259,13 @@ NTPU 模型本身不必具備搜尋工具。地球按鈕啟用本地 `web_search
 
 ## 資料處理與限制
 
-提問、專案片段、附件與工具結果會交給 NTPU AI；查詢會送往 Exa，自訂工具輸入送往設定的 MCP。登入 Cookie 留在專用 Chrome，不擷取學校密碼或匯出 Cookie。
+提問、專案片段、附件與工具結果會交給 NTPU AI；查詢會送往 Exa，自訂工具輸入送往設定的 MCP。登入 Cookie 留在專用瀏覽器，不擷取學校密碼或匯出 Cookie。
 
-工作階段、近期修改快照及圖片快取保存在本機 VS Code 資料區；Chrome profile 保存在獨立目錄。`.local`、登入資料、node_modules 與 VSIX 不會提交到本儲存庫。
+工作階段、Project／Task Memory、遮蔽後快照及圖片快取保存在本機 VS Code 私有資料區；各瀏覽器 profile 保存在獨立目錄。`.local`、登入資料、node_modules 與 VSIX 不會提交到本儲存庫。
 
-網站每個工具輪次建立新對話，提交本地組合的脈絡，因此網站歷史可能出現多個工作對話。脈絡有字元預算，舊結果可能省略，需要時模型重新讀取檔案。
+每個使用者任務建立一個暫時 NTPU AI 對話，同一任務多輪沿用；後續任務由本機脈絡接續，不依賴前次網站對話。未自行呼叫遠端刪除 API，也不聲稱刪除本機資料能清除校方留存。
 
-限制包括：網站改版、登入過期、限流、模型未遵守 JSON 協定、指令 60 秒限制及工具輪數限制。失敗或逾時不自動重送網站請求。大型專案、其他平台、全部 PDF 模型路由與第三方 MCP 未全面驗證。
+限制包括：網站改版、登入過期、限流、模型未遵守 JSON 協定、指令 60 秒限制及工具輪數限制。失敗或逾時不自動重送網站請求。超大 JSON Session 的 snapshot 寫入成本、學校 SSO／驗證網站變動、全部 PDF 模型路由及第三方 MCP 行為未全面驗證。文字秘密偵測是已知格式／上下文規則，無法保證辨識任意私人資訊或圖片憑證。Shell／stdio MCP 具有使用者 OS 權限，可自行讀取檔案或連網；Host guard 不能取代完整 OS sandbox。
 
 ## 開發與測試
 
@@ -231,16 +283,23 @@ npm run package
 - `npm test`：主機 Agent、權限、檔案、SSE、MCP、skills 與影像測試。
 - `npm run smoke`：真實 NTPU 網頁連線；需要正常登入，會使用網站用量。
 - `npm run mcp:smoke`：真實 Exa MCP 搜尋。
-- GitHub Actions：Node 20 的測試與 UI build。
+- `npm run browser:fixture`：localhost mock 網站＋真實瀏覽器／Webview，不需 NTPU 帳號，不耗學校用量。
+- GitHub Actions：Windows x64、macOS arm64／x64、Linux x64，Node 20／22，unit、build、localhost 瀏覽器整合與平台 VSIX artifact。
+- `npm run package -- --target <target>`：原生 sharp 經實際 PNG 驗證後打包；要求 host 與 target 相同。在對應平台 CI 安裝其 optional dependencies，拒絕將 macOS 套件直接改標成 Windows／Linux。
 
-驗證範圍與結果：[VALIDATION.md](VALIDATION.md)。開發說明：[CONTRIBUTING.md](CONTRIBUTING.md)。
+0.4.0 架構、遷移、測試與交付狀態：[docs/REFACTOR_REPORT.md](docs/REFACTOR_REPORT.md)。歷史驗證結果：[VALIDATION.md](VALIDATION.md)。開發說明：[CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### 主要設定
 
 | 設定（前綴 ntpuAI） | 預設 | 用途 |
 | --- | --- | --- |
-| chromePath | 自動偵測 | Chrome 執行檔 |
-| browserProfilePath | 使用者專用目錄 | 登入 profile |
+| browser | auto | auto／chrome／edge／chromium／custom |
+| customBrowserPath | 空白 | 自訂 Chromium 執行檔 |
+| chromePath | 空白 | 舊版相容設定，請改用 customBrowserPath |
+| browserProfilePath | 私有儲存區 | 各瀏覽器 profile 的獨立根目錄 |
+| memory.enableProject | true | 帶入 Project Memory |
+| memory.autoUpdate | true | 根據工具結果整理記憶 |
+| privacy.reviewPaths | [] | 傳送前確認的額外路徑 glob |
 | maxSteps | 50 | 每次任務工具輪數，上限 100 |
 | responseTimeoutSeconds | 240 | 每次模型回答等待時間 |
 | contextCharacters | 64000 | 本地模型脈絡字元預算 |

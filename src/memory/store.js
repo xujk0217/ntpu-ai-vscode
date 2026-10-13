@@ -112,6 +112,11 @@ class MemoryStore {
   save(session) {
     const snapshot = sanitize(session); const baseRevision = session.revision || 0;
     return this.exclusive(async () => {
+      const currentIndex = await this.read(path.join(this.directory, 'index.json'));
+      if (currentIndex?.deleted?.includes(session.id)) {
+        await atomicJson(path.join(this.directory, 'conflicts', session.id + '-' + randomUUID() + '.json'), snapshot);
+        throw new Error('Session 已由另一個視窗刪除；已保留衝突副本，不會重新建立被刪除的工作階段。');
+      }
       const disk = await this.read(this.file(session.id));
       // Multiple windows may hold stale sessions. Preserve the incoming revision
       // as a conflict copy, never overwrite another writer's history.

@@ -46,8 +46,8 @@ function sanitize(value) {
   if (Array.isArray(value)) return value.map(sanitize);
   const out = {};
   for (const [key, item] of Object.entries(value)) {
-    if (typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key|database[_-]?url|connection[_-]?string|^token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item) out[key] = '[REDACTED_SECRET]';
-    else out[key] = sanitize(item);
+    const cleaned = typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key|database[_-]?url|connection[_-]?string|^token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item ? '[REDACTED_SECRET]' : sanitize(item);
+    Object.defineProperty(out, key, { value: cleaned, enumerable: true, configurable: true, writable: true });
   }
   return out;
 }

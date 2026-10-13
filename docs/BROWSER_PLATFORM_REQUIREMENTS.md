@@ -1,0 +1,52 @@
+# 十一、跨瀏覽器與跨作業系統支援
+
+在 Local-first Memory 與 Sensitive Data Protection 重構的基礎上，實作 Browser Compatibility 與 Cross-platform Support。
+
+## 11.1 Browser Selection
+
+將 `src/browser.js` 的 Chrome channel 固定啟動機制重構，支援 Auto、Google Chrome、Microsoft Edge、Chromium 及使用者指定執行檔的 Custom Chromium-based Browser。
+
+Auto 優先選擇已確認受支援的系統預設瀏覽器；預設為 Firefox、Safari 或其他未支援瀏覽器時，偵測 Chrome、Edge、Chromium，並向使用者說明選擇結果。必須確認 Playwright 能成功控制瀏覽器，不能只以預設瀏覽器開啟 URL 就宣稱自動化完成。
+
+瀏覽器偵測、啟動、錯誤處理須抽離 BrowserBridge，建立可測試的 Browser Launcher／Manager；保留登入、網站狀態、串流監聽、附件上傳與取消請求。
+
+## 11.2 Browser Profile 與 Security
+
+1. 預設獨立 Browser Profile，使用各作業系統適合的私人應用資料目錄。
+2. 不使用 Chrome／Edge 的一般 Profile，各瀏覽器互相隔離。
+3. 不記錄帳號驗證資料，不匯出 Cookie、Token 或驗證憑證。
+4. 切換瀏覽器不得刪除 Local-first Session、Task Checkpoint 或 Project Memory。
+5. 啟動失敗須說明原因與替代瀏覽器選項。
+6. Attach Existing Browser 如實作，必須是獨立、明確警告的進階模式，不能預設啟用。
+7. 不得用遠端偵錯繞過瀏覽器對預設 Profile 的保護。
+8. Browser Profile 與 Agent Memory 不得意外提交到 Git。
+
+## 11.3 Cross-platform Support
+
+目標：Windows x64、macOS arm64／x64、Linux x64（優先 Ubuntu／Debian）。其他 ARM64 為後續擴充。
+
+檢查並修正平台／CPU 判斷、路徑差異、執行檔偵測、Profile 路徑、權限與鎖定、Shell／Terminal 相容性、Symlink／穿越／敏感路徑、sharp 原生依賴與打包、Playwright 安裝／啟動、Extension Host 與 OS 整合。不得降低敏感資料防護。
+
+Remote SSH、Dev Container、WSL 須區分 Extension Host 與使用者桌面位置，不假設遠端主機能啟動本機圖形瀏覽器。
+
+## 11.4 Browser Settings UI
+
+沿用既有風格，新增 Browser（Auto／Chrome／Edge／Chromium／Custom）、Custom Browser Path、Browser Profile Location、Browser Connection Status、Reconnect／Change Browser。透過 VS Code Configuration API，切換時保留尚未儲存的 Session、Checkpoint 與 Project Memory。
+
+## 11.5 Build 與 CI
+
+Windows／macOS／Linux CI、Node.js 相容性檢查、Unit Tests、Build Verification，以及不需真實 NTPU 帳號的 Mock Browser Tests。
+
+VSIX 按原生依賴的平台產生；只有證明安全且相容才可 Universal。不得繼續將 darwin-arm64 硬編碼為唯一目標。
+
+## 11.6 驗收
+
+- Windows 偵測並啟動 Edge、macOS 使用 Chrome、Linux 使用受支援 Chromium 系瀏覽器。
+- 手動選擇已安裝瀏覽器；Profile 保存登入狀態。
+- BrowserBridge 串流與工具迴圈維持可用。
+- 換瀏覽器不影響本機聊天記憶。
+- 敏感檔案防護涵蓋 Windows／Unix 路徑。
+- 多平台 unit／build／VSIX 通過。
+- 未實際驗證的平台清楚標示尚未驗證。
+
+交付實際程式碼、設定、測試、CI、README，不只提供方案；不繞過登入、驗證碼或用量限制。

@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
 const { BrowserBridge } = require('../src/browser');
+const { assets, testUI } = require('./ui-fixture');
 
 const html = `<!doctype html><html><body>
 <div id="auth-overlay" class="hidden" style="display:none"></div><span id="user-email">Fixture</span>
@@ -22,7 +23,9 @@ document.getElementById('sendBtn').onclick=async()=>{
 async function main() {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ntpu-browser-fixture-'));
   const sockets = new Set();
+  const ui = await assets();
   const server = http.createServer((request, response) => {
+    if (ui.has(request.url)) { const [type, body] = ui.get(request.url); response.writeHead(200, { 'content-type': type }); response.end(body); return; }
     if (request.url === '/upload') { response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}'); return; }
     if (request.url !== '/chat/stream') { response.writeHead(200, { 'content-type': 'text/html' }); response.end(html); return; }
     let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => {
@@ -55,7 +58,8 @@ async function main() {
     const selected = bridge.manager.info.label;
     await bridge.close(); bridge = new BrowserBridge(options); await bridge.open();
     assert.equal(await bridge.page.evaluate(() => document.cookie.includes('fixture_state=synthetic')), true);
-    console.log('Local mock website passed: ' + selected + '; streaming, task reuse, upload, cancel, persistent profile. No NTPU AI requests.');
+    await testUI(bridge.page, origin);
+    console.log('Local mock website passed: ' + selected + '; streaming, task reuse, upload, cancel, persistent profile, memory/settings UI. No NTPU AI requests.');
   } finally {
     await bridge.close(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve));
     await fs.rm(directory, { recursive: true, force: true });

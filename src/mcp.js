@@ -90,7 +90,9 @@ class McpManager {
     const tool = this.tools.get(name);
     if (!tool) throw new Error('此 MCP 工具尚未連線。');
     const connection = this.connections.get(tool.server);
-    const result = await connection.client.callTool({ name: tool.originalName, arguments: args }, undefined, { signal, timeout: 60000 });
+    let result;
+    try { result = await connection.client.callTool({ name: tool.originalName, arguments: args }, undefined, { signal, timeout: 60000 }); }
+    catch (error) { throw new Error(redact(error.message)); }
     let structuredContent = result.structuredContent;
     if (structuredContent && JSON.stringify(structuredContent).length > 18000) structuredContent = { truncated: true, text: JSON.stringify(structuredContent).slice(0, 18000) };
     return sanitize({ ok: !result.isError, server: tool.server, content: await this.onContent(sanitize(result.content || [])), structuredContent });

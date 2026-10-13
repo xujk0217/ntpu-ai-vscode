@@ -41,6 +41,7 @@ test('atomic queued writes, orphan recovery and conflict preservation prevent si
   await assert.rejects(other.save(stale), /另一個視窗/); assert.equal((await fs.readdir(path.join(store.directory, 'conflicts'))).length, 1);
   const indexFile = path.join(store.directory, 'index.json'); const index = JSON.parse(await fs.readFile(indexFile, 'utf8')); index.sessions = []; await fs.writeFile(indexFile, JSON.stringify(index));
   assert.equal((await new MemoryStore(store.directory).initialize()).sessions.length, 1);
+  await store.remove(session.id); await assert.rejects(other.save(stale), /刪除/);
 });
 test('project memories are isolated, evidence updates are idempotent and plans never become accomplishments', async t => {
   const { store } = await fixture(t); const session = store.create('file:///one');

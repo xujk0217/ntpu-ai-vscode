@@ -93,7 +93,7 @@ class WorkspaceTools {
       if (!['write_file', 'edit_file', 'run_command', 'create_visual'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
-    catch (error) { if (this.signal.aborted) throw error; return { ok: false, error: error.message }; }
+    catch (error) { if (this.signal.aborted) throw error; return sanitize({ ok: false, error: error.message }); }
   }
 
   async files(glob = '**/*', limit = 250) {
