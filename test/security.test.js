@@ -46,3 +46,17 @@ test('MCP structured and textual results are sanitized, credential arguments nev
   assert.equal(JSON.stringify(result).includes('only-test'), false);
   await assert.rejects(manager.call('fixture', { query: 'Bearer only-test-key' }), /阻止/); assert.equal(calls, 1);
 });
+
+test('cookie headers and structured cookie collections cannot enter prompts or saved memory', () => {
+  const payload = { headers: { Cookie: 'sid=only-test-session; other=only-test-other' },
+    cookies: [{ name: 'sid', value: 'only-test-cookie', domain: 'example.test' }],
+    details: { 'set-cookie': 'sid=only-test-cookie; HttpOnly' } };
+  const clean = sanitize(payload);
+  assert.equal(JSON.stringify(clean).includes('only-test'), false);
+  assert.equal(classifyContent(payload).detected, true);
+  assert.throws(() => inspectOutboundPayload(payload, { reject: true }), /阻止/);
+  const text = 'Cookie: sid=only-test-session; other=only-test-other\nSet-Cookie: sid=only-test-cookie; HttpOnly\n{"cookie":"sid=only-test-cookie; path=/"}';
+  assert.equal(redact(text).includes('only-test'), false);
+  assert.equal(redact(redact(text)), redact(text));
+  assert.deepEqual(sanitize(clean), clean);
+});

@@ -1,4 +1,4 @@
-# 0.4.0 重構交付與驗收
+# 0.4.1 重構交付與驗收
 
 ## 架構
 
@@ -46,7 +46,7 @@
 
 Protected 路徑涵蓋 `.env`、私鑰、雲端／SSH／Kube 設定、受保護記憶／profile 目錄；可讀的 env 範本仍檢查內容。Review 路徑／附件先單次確認；full access 不繞過。所有 prompt 在 BrowserBridge 前再次檢查，包含模型直接視覺工具。
 
-文字秘密會遮蔽；外部查詢／工具參數若包含秘密會拒絕。原檔含秘密時禁止 Agent 改寫；redacted diff 不允許回復到檔案。資料權限沒有取消工作區邊界或 symlink 規則。
+文字秘密與結構化 Cookie 集合／Cookie 標頭會遮蔽；外部查詢／工具參數若包含秘密會拒絕。原檔含秘密時禁止 Agent 改寫；redacted diff 不允許回復到檔案。資料權限沒有取消工作區邊界或 symlink 規則。
 
 Shell／stdio MCP 使用 OS 權限，能自行讀取檔案或連網；本機 guard 只保護主機掌控的資料流，不能阻止所有惡意程式自行外傳。秘密偵測依已知格式與欄位，未知編碼／任意私人內容可能漏判。圖片／PDF／輸出圖片快取沒有 OCR 防護，必須由使用者檢查附件；不宣稱上傳或刪除能清除校方資料。
 
@@ -56,9 +56,9 @@ macOS arm64，Node 26.0.0：
 
 - `npm ci --include=optional --offline`：成功（使用本機套件快取）。
 - `npm run build`：成功。
-- `npm test`：59 項通過，涵蓋歷史超過原本上限、重開、遷移備份／冪等、revision／衝突、專案隔離、跨帳號 mock、checkpoint、分頁／備份還原、路徑／秘密、真實 stdout 遮蔽、原 Agent、MCP、圖像。
+- `npm test`：60 項通過，涵蓋歷史超過原本上限、重開、遷移備份／冪等、revision／衝突、專案隔離、跨帳號 mock、checkpoint、分頁／備份還原、路徑／秘密、真實 stdout 遮蔽、原 Agent、MCP、圖像。
 - localhost fixture：真實 Chrome headed／headless 啟動、串流、每 Task 對話重用、附件、停止、profile 保存通過；新版 Webview 無 pageerror，檢查歷史分頁、登入狀態位置、Browser 設定草稿、Project Memory 顯示。
-- `npm run package`：darwin-arm64 0.4.0 VSIX 打包成功，sharp 實際產生並解析 PNG。
+- `npm run package`：darwin-arm64 0.4.1 VSIX 打包成功，sharp 實際產生並解析 PNG。
 
 此次重構驗證未使用真實 NTPU AI 帳號、未消耗學校模型用量。其他平台的真實瀏覽器結果見下列 CI 紀錄；mock 平台判斷與真實啟動分開驗證。
 
@@ -86,3 +86,7 @@ fixture 使用本機模擬網站與假的登入 cookie，實際驗證 Playwright
 未來 Provider 只需實作 `chat(prompt, options)` 相容界面；MemoryStore／ContextManager／Guard 不依賴 NTPU 帳號。MemoryRetriever 可替換語意檢索，仍須經 Outbound Guard。對接其他 Agent Runtime 時，保留主機權限、資料防護和 checkpoint 提交邊界。
 
 參考：[Playwright BrowserType](https://playwright.dev/docs/api/class-browsertype)、[sharp 安裝與跨平台依賴](https://sharp.pixelplumbing.com/install/)、[GitHub hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
+
+## 0.4.1 防護補強
+
+補上 Cookie／Set-Cookie 文字及結構化集合的遮蔽，含冪等與外傳拒絕回歸測試。本機 60 項測試與 build 成功；沿用同一四平台 CI 流程，修正版套件驗證連結見 GitHub Release。0.4.0 已在原生 VS Code 驗證舊歷史與記憶／Browser 設定頁啟動。

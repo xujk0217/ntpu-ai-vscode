@@ -1,5 +1,10 @@
 # 更新紀錄
 
+## 0.4.1
+
+- 補強結構化 Cookie 集合、Cookie／Set-Cookie 標頭遮蔽，避免 MCP 結果、模型脈絡或本機保存帶入登入資料。
+- 增加假 Cookie 回歸測試；其餘功能與升級方式同 0.4.0。
+
 ## 0.4.0
 
 - Local-first Project／Session／Task 記憶：完整歷史、分頁、原子保存、舊資料備份遷移、跨帳號接續、可恢復 checkpoint。

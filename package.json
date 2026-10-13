@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -111,7 +111,7 @@
           "default": 64000,
           "minimum": 16000,
           "maximum": 100000,
-          "description": "本地保留的對話與工具結果字元預算。"
+          "description": "每次模型請求的上下文字元預算；本機完整歷史不會因此截斷。"
         },
         "ntpuAI.skillDirectories": {
           "type": "array",

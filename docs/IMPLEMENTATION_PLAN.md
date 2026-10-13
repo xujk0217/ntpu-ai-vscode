@@ -58,3 +58,7 @@ BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium�
 ### 最後的恢復驗證
 
 補齊無工具輸出的初始 Task checkpoint（Task ID／完整恢復需求），同模式成功接續後標記舊中斷任務 resolvedBy、Project Pending stale；保留舊執行歷史。從真實完整 package.json 讀取整理依賴，來源帶 Task／路徑／時間；重複更新不重複新增，更新檔案後舊觀測 stale。新增回歸測試，總計 59 項。
+
+### Cookie 防護補強
+
+最終資料流核對補上 Cookie／Set-Cookie 標頭與結構化集合的主機遮蔽，阻止外傳並保持重複遮蔽的冪等性。60 項測試與 build 成功，版本 0.4.1 重新執行四平台 CI／打包。

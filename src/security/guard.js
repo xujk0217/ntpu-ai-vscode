@@ -23,6 +23,10 @@ function classifyPath(input, reviewPaths = []) {
 function redact(text) {
   if (typeof text !== 'string') return text;
   return text
+    .replace(/^([ \t]*(?:cookie|cookies|set-cookie|set_cookie)[ \t]*[:=][ \t]*)([^\r\n]+)/gim,
+      (match, prefix, value) => value.trim().startsWith('[REDACTED') ? match : prefix + '[REDACTED_COOKIE]')
+    .replace(/(["'](?:cookie|cookies|set-cookie|set_cookie)["']\s*:\s*)(["'])([^\r\n]*?)\2/gi,
+      (match, prefix, quote, value) => value.startsWith('[REDACTED') ? match : prefix + quote + '[REDACTED_COOKIE]' + quote)
     .replace(/-----BEGIN (?:[A-Z ]*PRIVATE KEY)-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[REDACTED_PRIVATE_KEY]')
     .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '[REDACTED_CLOUD_KEY]')
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{25,})\b/g, '[REDACTED_API_KEY]')
@@ -48,7 +52,9 @@ function sanitize(value) {
   if (Array.isArray(value)) return value.map(sanitize);
   const out = {};
   for (const [key, item] of Object.entries(value)) {
-    const cleaned = typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key|database[_-]?url|connection[_-]?string|private[_-]?key|token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item ? '[REDACTED_SECRET]' : sanitize(item);
+    const cookie = /(?:^|[_-])(?:cookies?|set[_-]?cookie)$/i.test(key) && item != null && item !== '';
+    const cleaned = cookie ? (typeof item === 'string' && item.startsWith('[REDACTED') ? item : '[REDACTED_COOKIE]') :
+      typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|aws_secret_access_key|database[_-]?url|connection[_-]?string|private[_-]?key|token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item ? '[REDACTED_SECRET]' : sanitize(item);
     Object.defineProperty(out, key, { value: cleaned, enumerable: true, configurable: true, writable: true });
   }
   return out;
