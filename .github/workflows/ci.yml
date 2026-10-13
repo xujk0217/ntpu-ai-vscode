@@ -48,7 +48,10 @@ jobs:
         run: npm run browser:fixture
         env:
           NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}
+      # sandbox-runtime declares Node >=22.12; Node 20 still runs tests/build/fixtures,
+      # while the distributable VSIX is packaged once per OS on the supported Node 22 lane.
       - run: npm run package -- --target ${{ matrix.platform.target }}
+        if: matrix.node == '22'
       - uses: actions/upload-artifact@v4
         if: matrix.node == '22'
         with:
