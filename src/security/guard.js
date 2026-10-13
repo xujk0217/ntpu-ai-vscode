@@ -4,11 +4,11 @@
 // credential formats and field context, not entropy alone (UUIDs/hashes are safe).
 function classifyPath(input, reviewPaths = []) {
   const value = String(input).replaceAll('\\', '/').toLowerCase();
-  const parts = value.split('/');
-  const protectedPath = parts.some(name => ['.git', 'node_modules', '.venv', 'venv', '.local', '.ssh', '.aws', '.kube', '.codex', 'secrets', 'credentials', 'browser-profile', 'browser-profiles', 'agent-memory'].includes(name) ||
+  const parts = value.split('/').map(part => part.replace(/[. ]+$/, ''));
+  const protectedPath = parts.some(name => ['.git', 'node_modules', '.venv', 'venv', '.local', '.ssh', '.aws', '.azure', '.gcloud', '.kube', '.codex', 'secrets', 'credentials', 'browser-profile', 'browser-profiles', 'agent-memory'].includes(name) ||
     (/^\.env(?:\.|$)/.test(name) && !/^\.env\.(example|sample|template)$/.test(name)) ||
     /\.(pem|key|p12|pfx|keystore)$/.test(name) || /^(id_rsa|id_ed25519|id_ecdsa|id_dsa)(?:\.|$)/.test(name) ||
-    /^(\.npmrc|\.pypirc|credentials|secrets)(?:\.|$)/.test(name) ||
+    /^(\.npmrc|\.pypirc|\.git-credentials|cookies|login data|credentials|secrets)(?:\.|$)/.test(name) ||
     /^(service-account.*\.json|.*-service-account\.json)$/.test(name));
   if (protectedPath) return { level: 'protected', reason: '憑證、私鑰或受保護資料目錄' };
   const patterns = ['**/*.csv', '**/appsettings*.json', '**/config.local.*', ...reviewPaths];
@@ -30,8 +30,8 @@ function redact(text) {
     .replace(/\bBearer\s+(?!\[REDACTED)[A-Za-z0-9._~+\/-]+={0,2}/gi, 'Bearer [REDACTED_TOKEN]')
     .replace(/\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^\s"'<>]+/gi, '[REDACTED_CONNECTION_STRING]')
     .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[REDACTED_CREDENTIALS]@')
-    .replace(/([?&](?:access_token|token|api[_-]?key|secret|password|signature|sig|code)=)[^&#\s"']+/gi, '$1[REDACTED_SECRET]')
-    .replace(/((?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret|aws_secret_access_key|authorization|database_url|connection_string)(?:["']?)\s*[:=]\s*)(["']?)([^\r\n,;"'}]+)(["']?)/gi,
+    .replace(/([?&](?:access_token|token|api[_-]?key|secret|password|signature|sig|code|x-amz-(?:signature|credential|security-token)|x-goog-(?:signature|credential))=)[^&#\s"']+/gi, '$1[REDACTED_SECRET]')
+    .replace(/((?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret|token|aws_secret_access_key|authorization|database_url|connection[_-]?string)(?:["']?)\s*[:=]\s*)(["']?)([^\r\n,;"'}]+)(["']?)/gi,
       (match, prefix, quote, value, ending) => {
         const trimmed = value.trim();
         if (!trimmed || trimmed.startsWith('[REDACTED') || /^(?:null|undefined|true|false|process\.env\.|os\.environ|\$\{|<|your[_-]|example|placeholder|test[_-]|fake[_-])/i.test(trimmed)) return match;
@@ -46,7 +46,7 @@ function sanitize(value) {
   if (Array.isArray(value)) return value.map(sanitize);
   const out = {};
   for (const [key, item] of Object.entries(value)) {
-    if (typeof item === 'string' && /^(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key)$/i.test(key) && !item.startsWith('[REDACTED')) out[key] = '[REDACTED_SECRET]';
+    if (typeof item === 'string' && /(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|aws_secret_access_key|database[_-]?url|connection[_-]?string|^token)$/i.test(key) && !item.startsWith('[REDACTED') && redact(key + '=' + item) !== key + '=' + item) out[key] = '[REDACTED_SECRET]';
     else out[key] = sanitize(item);
   }
   return out;

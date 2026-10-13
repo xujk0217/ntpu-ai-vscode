@@ -20,6 +20,7 @@ test('secret guard preserves useful structure, fake template placeholders and ha
   assert.equal(classifyContent('API_KEY=example-value\nconst id = "a9ed4f1e-c2c4-420a-8bcd-c08a884967ab";').detected, false);
   assert.deepEqual(sanitize({ password: 'only-test', content: [{ text: 'Bearer only-test' }] }), { password: '[REDACTED_SECRET]', content: [{ text: 'Bearer [REDACTED_TOKEN]' }] });
   assert.throws(() => inspectOutboundPayload({ query: text }, { reject: true }), /阻止/);
+  assert.equal(sanitize({ nested: { DB_PASSWORD: 'only-test-raw' } }).nested.DB_PASSWORD, '[REDACTED_SECRET]');
 });
 test('actual tool results, context and checkpoints cannot leak secrets even in full access', async () => {
   const fake = 'ghp_' + 'B'.repeat(36), prompts = [], checkpoints = [];

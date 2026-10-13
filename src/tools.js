@@ -302,13 +302,13 @@ class WorkspaceTools {
     return new Promise((resolve, reject) => {
       const child = spawn(args.command, { shell: true, cwd, windowsHide: true, detached: process.platform !== 'win32' });
       let output = '', total = 0, timedOut = false, lastOutput = 0;
-      const consume = data => { const text = data.toString(); total += text.length; output = (output + text).slice(-14000);
-        if (Date.now() - lastOutput > 200) { lastOutput = Date.now(); this.options.onCommandOutput?.(redact(output)); } };
+      const consume = data => { const text = data.toString(); total += text.length; output = (output + text).slice(0, 1024 * 1024);
+        if (Date.now() - lastOutput > 200) { lastOutput = Date.now(); const lastLine = output.lastIndexOf('\n'); if (lastLine >= 0) this.options.onCommandOutput?.(redact(output.slice(0, lastLine + 1)).slice(-14000)); } };
       child.stdout.on('data', consume);
       child.stderr.on('data', consume);
       const kill = () => {
         try {
-          if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+          if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
           else process.kill(-child.pid, 'SIGTERM');
         } catch {}
         const force = setTimeout(() => { try { if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL'); } catch {} }, 1500);
@@ -322,7 +322,7 @@ class WorkspaceTools {
         cleanup();
         if (this.signal.aborted) return reject(new Error('已停止'));
         resolve({ ok: exitCode === 0 && !timedOut, exit_code: exitCode, signal, timed_out: timedOut,
-          output, truncated: total > 14000, approval: !autoApproved ? '使用者核准' : this.policy.mode === 'full' && !approvalInfo.explicit ? '完整存取' : approvalInfo.reason, matched_rule: approvalInfo.rule });
+          output: redact(output).slice(0, 14000), truncated: total > 14000, approval: !autoApproved ? '使用者核准' : this.policy.mode === 'full' && !approvalInfo.explicit ? '完整存取' : approvalInfo.reason, matched_rule: approvalInfo.rule });
       });
       if (this.signal.aborted) kill();
     });

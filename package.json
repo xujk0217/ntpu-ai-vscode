@@ -2,12 +2,12 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
     "vscode": "^1.95.0",
-    "node": ">=20"
+    "node": ">=20.9"
   },
   "categories": [
     "AI",
@@ -83,13 +83,14 @@
           "type": "string",
           "default": "",
           "scope": "application",
-          "description": "Chrome 執行檔路徑；留空自動偵測。"
+          "description": "Chrome 執行檔路徑；留空自動偵測。",
+          "deprecationMessage": "請改用 ntpuAI.browser=custom 與 ntpuAI.customBrowserPath。舊設定仍相容。"
         },
         "ntpuAI.browserProfilePath": {
           "type": "string",
           "default": "",
           "scope": "application",
-          "description": "專用瀏覽器設定檔路徑；留空使用 ~/.ntpu-ai-coder/browser-profile。"
+          "description": "獨立 browser-profiles 根目錄；留空使用 VS Code 私有儲存區。根目錄下依瀏覽器隔離，不允許日常瀏覽器或專案資料目錄。"
         },
         "ntpuAI.maxSteps": {
           "type": "integer",
@@ -159,16 +160,43 @@
           "default": [],
           "scope": "application",
           "description": "傳送前需單次核准的相對路徑 glob。Protected 路徑與秘密遮蔽無法透過此設定停用。"
+        },
+        "ntpuAI.browser": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "chrome",
+            "edge",
+            "chromium",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "自動偵測並確認 Playwright 控制成功",
+            "Google Chrome",
+            "Microsoft Edge",
+            "Chromium",
+            "自訂 Chromium 執行檔"
+          ],
+          "default": "auto",
+          "scope": "application",
+          "description": "瀏覽器選擇；不同瀏覽器的專用 profile 相互隔離。"
+        },
+        "ntpuAI.customBrowserPath": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "Custom 模式的 Chromium 瀏覽器執行檔絕對路徑。"
         }
       }
     }
   },
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node scripts/test.js",
     "smoke": "node scripts/browser-smoke.js",
-    "package": "npm run build && vsce package --allow-missing-repository --target darwin-arm64",
+    "package": "npm run build && node scripts/package.js",
     "build": "node scripts/build-ui.js",
-    "mcp:smoke": "node scripts/mcp-smoke.js"
+    "mcp:smoke": "node scripts/mcp-smoke.js",
+    "browser:fixture": "node scripts/browser-fixture.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
@@ -193,5 +221,8 @@
   "homepage": "https://github.com/xujk0217/ntpu-ai-vscode#readme",
   "bugs": {
     "url": "https://github.com/xujk0217/ntpu-ai-vscode/issues"
-  }
+  },
+  "extensionKind": [
+    "ui"
+  ]
 }

@@ -8,7 +8,6 @@ const { inspectOutboundPayload, sanitize, redact } = require('./security/guard')
 
 const EXA = { name: 'exa', type: 'http', url: 'https://mcp.exa.ai/mcp', builtin: true, readOnly: true };
 function validateServer(config) {
-  inspectOutboundPayload({ url: config?.url, command: config?.command, args: config?.args }, { reject: true });
   if (!config || !/^[a-zA-Z0-9_-]{1,48}$/.test(config.name || '')) throw new Error('MCP 名稱必須是 1–48 字的英數字、底線或連字號。');
   if (config.type === 'http' || config.type === 'sse') {
     const url = new URL(config.url);
@@ -18,6 +17,7 @@ function validateServer(config) {
     if (typeof config.command !== 'string' || !config.command || !Array.isArray(config.args || []) ||
       (config.args || []).some(argument => typeof argument !== 'string')) throw new Error('stdio MCP 需要 command 與字串 args。');
   } else throw new Error('MCP transport 需要 http、sse 或 stdio。');
+  inspectOutboundPayload({ url: config?.url, command: config?.command, args: config?.args }, { reject: true });
   return config;
 }
 function alias(server, name) {

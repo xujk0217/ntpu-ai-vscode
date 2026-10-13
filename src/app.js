@@ -42,6 +42,13 @@ class AgentApp {
     context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('ntpu-ai-preview', this.previews));
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.state()));
     this.ready = this.initializeMemory();
+    const configurationListener = vscode.workspace.onDidChangeConfiguration?.(event => {
+      if (['browser', 'customBrowserPath', 'chromePath', 'browserProfilePath'].some(key => event.affectsConfiguration('ntpuAI.' + key)) && !this.browserUpdating) {
+        if (this.busy()) this.browserConfigurationChanged = true;
+        else void this.reconnectBrowser(false).catch(error => this.notice(redact(error.message), 'error'));
+      }
+    });
+    if (configurationListener) context.subscriptions.push(configurationListener);
   }
 
   async initializeMemory() {
@@ -120,7 +127,10 @@ class AgentApp {
   getBridge() {
     if (!this.bridge) {
       const config = vscode.workspace.getConfiguration('ntpuAI');
-      this.bridge = new BrowserBridge({ chromePath: config.get('chromePath') || undefined, profile: config.get('browserProfilePath') || undefined });
+      this.bridge = new BrowserBridge({ browser: config.get('browser', 'auto') === 'auto' && config.get('chromePath') ? 'custom' : config.get('browser', 'auto'),
+        customPath: config.get('customBrowserPath') || config.get('chromePath') || '', profile: config.get('browserProfilePath') || undefined,
+        storageRoot: this.context.globalStorageUri.fsPath, workspaces: vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath) || [],
+        remote: this.context.globalStorageUri.scheme === 'vscode-remote' || this.context.extension?.extensionKind === 2 && !!vscode.env?.remoteName });
     }
     return this.bridge;
   }
@@ -128,7 +138,26 @@ class AgentApp {
     if (this.busy()) return;
     this.progress = '正在開啟登入瀏覽器'; this.state();
     await this.getBridge().open(); await this.checkConnection();
-    this.progress = '就緒'; this.state();
+    this.progress = '就緒'; this.state(); this.capabilities();
+  }
+  async reconnectBrowser(open = true) {
+    await this.ready; if (this.busy()) throw new Error('請先停止任務再更換瀏覽器。');
+    await this.save(); await this.bridge?.close(); this.bridge = null;
+    this.connection = { ready: false, message: '瀏覽器設定已更新，請重新連線。' }; this.state(); this.capabilities();
+    if (open) await this.login();
+  }
+  async updateBrowser(message) {
+    if (this.busy()) return;
+    if (!['auto', 'chrome', 'edge', 'chromium', 'custom'].includes(message.browser) || typeof message.customPath !== 'string' || typeof message.profileLocation !== 'string') return;
+    this.browserUpdating = true;
+    try {
+      const config = vscode.workspace.getConfiguration('ntpuAI');
+      await config.update('browser', message.browser, vscode.ConfigurationTarget.Global);
+      await config.update('customBrowserPath', message.customPath, vscode.ConfigurationTarget.Global);
+      await config.update('browserProfilePath', message.profileLocation, vscode.ConfigurationTarget.Global);
+      await config.update('chromePath', '', vscode.ConfigurationTarget.Global);
+    } finally { this.browserUpdating = false; }
+    await this.reconnectBrowser(true);
   }
   async logout() {
     if (this.busy()) return;
@@ -151,7 +180,9 @@ class AgentApp {
   }
   capabilities() {
     const connected = this.mcp.states();
-    this.post({ kind: 'capabilities', skills: this.skills.list(), skillErrors: this.skills.errors,
+    const config = vscode.workspace.getConfiguration('ntpuAI');
+    this.post({ kind: 'capabilities', browser: { selection: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''),
+      profileLocation: config.get('browserProfilePath', ''), info: this.bridge?.manager.info, host: process.platform + ' ' + process.arch, remoteName: vscode.env?.remoteName || '' }, skills: this.skills.list(), skillErrors: this.skills.errors,
       servers: [EXA, ...this.servers].map(server => ({ name: server.name, type: server.type,
         target: server.url || [server.command, ...(server.args || [])].join(' '), builtin: !!server.builtin,
         ...connected.find(state => state.name === server.name) })),
@@ -167,6 +198,8 @@ class AgentApp {
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
       case 'memory': case 'resumeTask': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
       case 'login': await this.login(); break;
+      case 'browserUpdate': await this.updateBrowser(message); break;
+      case 'reconnectBrowser': await this.reconnectBrowser(true); break;
       case 'logout': await this.logout(); break;
       case 'status': await this.checkConnection(); break;
       case 'ask': if (typeof message.text === 'string') await this.ask(message.text, message.includeEditor !== false); break;
@@ -349,7 +382,9 @@ class AgentApp {
         if (privacy.get('memory.enableProject', true) && privacy.get('memory.autoUpdate', true)) await updateMemory(this.store, this.session, task);
         await this.save();
       } catch (error) { this.persistenceError = redact(error.message); }
-      this.controller = null; this.activePolicy = null; this.state(); this.persist();
+      this.controller = null; this.activePolicy = null;
+      if (this.browserConfigurationChanged) { this.browserConfigurationChanged = false; await this.reconnectBrowser(false); }
+      this.state(); this.persist();
       this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed').length })) });
     }
     const next = this.queue.shift(); if (next) await this.run(next);

@@ -102,7 +102,7 @@ class MemoryStore {
     const session = new SessionStore([data.session]).get(id);
     if (!session) throw new Error('Session 資料不完整，已保留原始檔案。');
     session.tasks ||= [];
-    for (const task of session.tasks) if (task.status === 'running') task.status = 'interrupted';
+    for (const task of session.tasks) if (['running', 'queued'].includes(task.status)) task.status = 'interrupted';
     this.loaded.set(id, session); return session;
   }
   add(session, message) {

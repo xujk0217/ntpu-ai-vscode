@@ -22,7 +22,7 @@
 - [x] 2. 統一敏感路徑、內容遮蔽、傳輸與保存邊界；安全測試。
 - [x] 3. 原子本機持久化、舊資料備份／遷移、Project／Session／Task、檢索與上下文管理；記憶測試。
 - [x] 4. 整合 Agent、離線歷史、分頁、封存／刪除／匯出／備份還原、Project Memory 與 Privacy UI。
-- [ ] 5. Browser Manager、隔離 profile、跨平台設定與 shell／路徑防護；mock browser tests。
+- [x] 5. Browser Manager、隔離 profile、跨平台設定與 shell／路徑防護；mock browser tests。
 - [ ] 6. 多平台 CI／VSIX、README／驗收文件、最終 build 與必要整合測試。
 
 ## 初始實作盤點
@@ -46,3 +46,7 @@ Schema 1、每 Session 原子 JSON snapshot、fsync／rename、跨視窗寫入�
 ### 段落 4 證據
 
 新增記憶與隱私頁：Project Memory 類型／來源／時間／stale、編輯刪除、離線歷史、Session 搜尋封存刪除、50 則分頁、完整匯出、備份與不覆蓋還原、未完成 Task 接續。app 真實初始化與 Account A／B mock 切換測試通過，checkpoint／歷史不依賴遠端帳號。build 通過；未使用真實 NTPU 帳號。
+
+### 段落 5 證據
+
+BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium、Custom，跨平台資料路徑、各瀏覽器獨立 profile、拒絕一般 profile／工作區／symlink 別名、遠端／WSL／無 GUI 明確錯誤。保留串流、取消、附件、每任務暫時對話。Browser 設定透過 Configuration API，更換前保存 Session。9 個瀏覽器／App mock 測試通過；macOS arm64 真實 Chrome headed／headless + localhost fixture 實際驗證串流、附件、取消、profile 重開保存，全程沒有 NTPU AI 請求。Windows／Linux 實機仍待 CI。

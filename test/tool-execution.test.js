@@ -79,7 +79,7 @@ test('an actual basic command runs without approval and streams real output', as
   const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
   const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {},
     async () => { approvals++; return undefined; }, { onCommandOutput: output => outputs.push(output) });
-  const result = await tools.execute('run_command', { command: 'pwd' });
+  const result = await tools.execute('run_command', { command: process.platform === 'win32' ? 'cd' : 'pwd' });
   assert.equal(result.ok, true); assert.equal(result.exit_code, 0); assert.equal(approvals, 0);
   assert.equal(await fs.realpath(result.output.trim()), await fs.realpath(root)); assert.ok(outputs.length); assert.match(result.approval, /唯讀/);
 });
@@ -92,4 +92,15 @@ test('a custom command rule runs an actual process while explicit false requests
   assert.match((await tools.execute('run_command', { command: 'node task.js' })).output, /ACTUAL_COMMAND_OK/);
   assert.equal(approvals, 0); policy.terminal.rules['node task.js'] = false;
   assert.equal((await tools.execute('run_command', { command: 'node task.js' })).denied, true); assert.equal(approvals, 1);
+});
+
+test('real terminal output is sanitized before model results and live history receive it', async t => {
+  const root = await fixture(t), output = [];
+  await fs.writeFile(path.join(root, 'secret-output.js'), 'console.log("Bearer only-test-token"); console.log("API_KEY=only-test-key");');
+  const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async () => undefined,
+    { policy: new PermissionPolicy({ mode: 'full' }), onCommandOutput: value => output.push(value) });
+  const result = await tools.execute('run_command', { command: 'node secret-output.js' });
+  assert.equal(result.ok, true); assert.equal(JSON.stringify([result, output]).includes('only-test-token'), false);
+  assert.equal(JSON.stringify([result, output]).includes('only-test-key'), false);
 });

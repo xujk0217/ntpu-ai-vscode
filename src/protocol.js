@@ -59,7 +59,7 @@ function buildPrompt({ request, context = '', workspace = '', records = [], budg
     standard: 'Inspect relevant context, implement carefully, and perform appropriate verification.',
     deep: 'Inspect dependencies and edge cases, keep a useful task plan for complex work, and verify important assumptions. Do not claim native reasoning parameters were changed.' };
   const catalogText = catalog.map(tool => `${tool.name}: ${tool.description}\n${tool.example || JSON.stringify(tool.inputSchema || {})}`).join('\n');
-  const head = `${RULES}
+  const head = `${RULES}\nHOST OS: ${process.platform}; terminal shell: ${process.platform === 'win32' ? 'cmd.exe' : 'system POSIX shell'}. Use compatible commands.
 
 HOST AGENT: ${agents[profile.agent] || agents.build}
 ANALYSIS STRATEGY: ${depths[profile.depth] || depths.standard}

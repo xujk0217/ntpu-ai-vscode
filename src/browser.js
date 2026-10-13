@@ -1,14 +1,12 @@
 'use strict';
 
-const { chromium } = require('playwright-core');
-const fs = require('node:fs/promises');
-const os = require('node:os');
+const { BrowserManager, dataDirectory } = require('./browser/manager');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { inspectOutboundPayload } = require('./security/guard');
 
 const ORIGIN = 'https://ai.ntpu.edu.tw';
-const PROFILE = path.join(os.homedir(), '.ntpu-ai-coder', 'browser-profile');
+const PROFILE = path.join(dataDirectory(), 'browser-profiles');
 
 // Observe only the site's own UI-initiated request. Cookies and verification stay
 // inside the dedicated browser. No private API credentials are extracted.
@@ -92,6 +90,8 @@ function installStreamObserver(bindingName) {
 class BrowserBridge {
   constructor(options = {}) {
     this.options = options;
+    this.origin = options.origin || ORIGIN;
+    this.manager = options.manager || new BrowserManager({ ...options, profileRoot: options.profile, storageRoot: options.storageRoot });
     this.context = null;
     this.page = null;
     this.pending = null;
@@ -108,23 +108,12 @@ class BrowserBridge {
   }
 
   async _open() {
-    await fs.mkdir(this.profile, { recursive: true, mode: 0o700 });
-    await fs.chmod(this.profile, 0o700).catch(() => {});
     if (this.context) await this.context.close().catch(() => {});
-    try {
-      this.context = await chromium.launchPersistentContext(this.profile, {
-        channel: this.options.chromePath ? undefined : 'chrome',
-        executablePath: this.options.chromePath || undefined,
-        headless: false,
-        chromiumSandbox: true,
-        viewport: null,
-        args: ['--no-first-run', '--no-default-browser-check'],
-      });
-    } catch (error) {
-      throw new Error('無法啟動專用 Chrome。請安裝 Chrome，或設定 ntpuAI.chromePath；也請關閉另一個使用相同設定檔的視窗。\n' + error.message);
-    }
+    const launched = await this.manager.launch({ selection: this.options.browser || (this.options.chromePath ? 'custom' : 'auto'),
+      customPath: this.options.customPath || this.options.chromePath || '', headless: !!this.options.headless });
+    this.context = launched.context; this.page = launched.page; this.profile = launched.info.profile;
     await this.context.exposeBinding(this.binding, (source, payload) => {
-      if (source.page !== this.page || !source.frame.url().startsWith(ORIGIN + '/')) return;
+      if (source.page !== this.page || !source.frame.url().startsWith(this.origin + '/')) return;
       this._receive(payload);
     });
     await this.context.addInitScript(installStreamObserver, this.binding);
@@ -133,7 +122,7 @@ class BrowserBridge {
     this.page.on('framenavigated', frame => {
       if (frame === this.page?.mainFrame() && this.pending) this._fail(new Error('回答期間網頁已離開，請重新確認登入狀態。'));
     });
-    await this.page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
     // The page restores its existing session asynchronously after DOMContentLoaded.
     // Wait for that bootstrap before reporting a false login failure. This only
     // observes normal UI state and never completes a login or CAPTCHA.
@@ -147,7 +136,7 @@ class BrowserBridge {
   async status() {
     if (!this.page || this.page.isClosed()) return { ready: false, message: '尚未開啟登入瀏覽器' };
     const url = this.page.url();
-    if (!url.startsWith(ORIGIN + '/')) return { ready: false, message: '請在專用 Chrome 完成學校登入，並返回 NTPU AI。' };
+    if (!url.startsWith(this.origin + '/')) return { ready: false, message: '請在專用 Chrome 完成學校登入，並返回 NTPU AI。' };
     return this.page.evaluate(() => {
       const overlay = document.getElementById('auth-overlay');
       const input = document.getElementById('input');
@@ -162,10 +151,10 @@ class BrowserBridge {
     if (this.pending) throw new Error('請先停止目前執行中的任務，再登出 NTPU AI。');
     if (!this.context || !this.page || this.page.isClosed()) await this.open();
     await this.context.clearCookies({ domain: /(^|\.)ntpu\.edu\.tw$/ });
-    if (!this.page.url().startsWith(ORIGIN + '/'))
-      await this.page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    if (!this.page.url().startsWith(this.origin + '/'))
+      await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await this.page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); }).catch(() => {});
-    await this.page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
   }
 
   async chat(prompt, options = {}) {
@@ -228,7 +217,7 @@ class BrowserBridge {
   }
 
   async _attach(attachment) {
-    const response = this.page.waitForResponse(result => result.url() === ORIGIN + '/upload' && result.request().method() === 'POST', { timeout: 45000 });
+    const response = this.page.waitForResponse(result => result.url() === this.origin + '/upload' && result.request().method() === 'POST', { timeout: 45000 });
     response.catch(() => {});
     await this.page.locator('#fileInput').setInputFiles({ name: attachment.name,
       mimeType: attachment.mimeType, buffer: attachment.buffer }, { timeout: 10000 });
@@ -282,6 +271,7 @@ class BrowserBridge {
     await this.context?.close().catch(() => {});
     this.context = null;
     this.page = null;
+    if (this.manager.info) this.manager.info.controlled = false;
   }
 }
 

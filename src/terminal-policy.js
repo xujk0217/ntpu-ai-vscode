@@ -9,6 +9,7 @@ function simpleCommand(command) {
 }
 function safeCommand(command) {
   if (!simpleCommand(command)) return false;
+  if (process.platform === 'win32' && /^(?:cd|ver|dir(?: \/[ab]+)?|(?:python|py) --version)$/.test(command.trim())) return true;
   return /^(?:pwd|whoami|ls(?: -(?:[alh1]+))?|(?:node|npm|python3|git) --version|git status(?: --short| --porcelain| -sb)?|git --no-pager diff --no-ext-diff(?: --stat| --name-only)?)$/.test(command.trim());
 }
 function matches(pattern, command) {

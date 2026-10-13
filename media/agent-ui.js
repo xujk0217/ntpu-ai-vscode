@@ -147,7 +147,7 @@ function renderState(value) {
   $('stop').hidden = !state.busy; $('send').title = state.busy ? '排入佇列' : '送出'; $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
   $('sendHint').textContent = state.busy ? '排入佇列' : '⌘ ↵';
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy;
-  if (!$('drawer').hidden && tab === 'tools') renderDrawer();
+  if (!$('drawer').hidden && tab === 'tools' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) renderDrawer();
   $('skillsCount').textContent = state.options.skills?.length ? state.options.skills.length : '';
   $('new').disabled = state.busy || !!approval;
   $('permission').title = { ask: '專案讀取與基本唯讀指令自動；修改、其他指令及外部工具先確認。', assisted: '工作區修改及公開搜尋自動；只有已辨識的唯讀指令自動執行。', full: '工具自動執行。終端機與 MCP 使用你的使用者權限；檔案工具維持工作區範圍。' }[state.options.permission];
@@ -253,6 +253,16 @@ function renderDrawer() {
     }, state.connection?.ready ? 'close' : 'connect'));
     account.lastChild.disabled = state.busy;
     content.append(account);
+    const browser = capabilities.browser || {};
+    content.append(element('h3', '', '瀏覽器'));
+    const browserChoice = element('select', 'history-search'); browserChoice.setAttribute('aria-label', 'Browser');
+    for (const [value, label] of [['auto', 'Auto · 自動偵測'], ['chrome', 'Google Chrome'], ['edge', 'Microsoft Edge'], ['chromium', 'Chromium'], ['custom', 'Custom · 自訂 Chromium']]) { const option = element('option', '', label); option.value = value; browserChoice.append(option); }
+    browserChoice.value = browser.selection || 'auto'; browserChoice.disabled = state.busy; content.append(browserChoice);
+    const customPath = element('input', 'browser-path'); customPath.placeholder = 'Custom Browser Path'; customPath.setAttribute('aria-label', 'Custom Browser Path'); customPath.value = browser.customPath || ''; customPath.disabled = state.busy; content.append(customPath);
+    const profileLocation = element('input', 'browser-path'); profileLocation.placeholder = 'Browser Profile Location · 預設使用私有儲存區'; profileLocation.setAttribute('aria-label', 'Browser Profile Location'); profileLocation.value = browser.profileLocation || ''; profileLocation.disabled = state.busy; content.append(profileLocation);
+    const apply = button('更換瀏覽器並連線', 'secondary-button full-width', () => send('browserUpdate', { browser: browserChoice.value, customPath: customPath.value, profileLocation: profileLocation.value })); apply.disabled = state.busy; content.append(apply);
+    const reconnect = button('重新連線', 'secondary-button full-width', () => send('reconnectBrowser')); reconnect.disabled = state.busy; content.append(reconnect);
+    content.append(element('p', 'panel-description', (browser.info?.message || '尚未啟動可控制的瀏覽器') + '\nExtension Host：' + (browser.host || '') + (browser.remoteName ? ' · 工作區連線：' + browser.remoteName : '') + (browser.info?.profile ? '\n專用 Profile：' + browser.info.profile : '')));
     content.append(element('h3', '', '終端機核准規則'), element('p', 'panel-description', '基本唯讀指令可自動執行。可在使用者設定加入指令開頭或正規表示式；false 規則優先要求核准。'), button('設定指令自動核准', 'secondary-button full-width', () => send('terminalSettings'), 'terminal'));
     content.append(element('h3', '', '外部能力'));
     content.append(element('p', 'panel-description', '搜尋、網頁讀取與擴充工具由本地 agent 執行。NTPU AI 負責理解需求和決定下一步。'));
