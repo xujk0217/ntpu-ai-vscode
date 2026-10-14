@@ -8,8 +8,8 @@
 - 143 單元測試及 build 通過。localhost Webview 驗收包括 260／380／720 px 的右側對齊、Agent 全寬及無橫向溢出；執行紀錄完成收合／異常提示、手動開合保留、長提問完整內容與更新狀態、既有子任務取消／歷史編輯／變更撤回操作。截圖使用合成示範資料。
 - 本輪 UI 驗收沒有傳送新的校方模型請求；先前真人驗收範圍與跨平台 SSO 限制保留於下列紀錄。
 - 追加首頁修正：歷史中的並行診斷通知不再取代四個快捷按鈕；沒有提問但有真實錯誤時，快捷按鈕與錯誤均保留。新診斷結果在工具設定及 VS Code 通知顯示。聊天紀錄常駐新增聊天，編輯模式不重複生成；點擊送出 new 並關閉列表，批次管理與忙碌時的限制保留。
-- 原生 VS Code 已安裝 0.6.6，使用者重開後確認新版訊息呈現、歷史工具群組與異常提醒；設定頁背景已連線、無須重新登入，既有聊天仍可切換。
-- [0.6.6 CI 38571362640](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38571362640)，程式碼提交 `6bd3d70fc8dcddd1bb82914fc013df010ad154bf`：四平台 × Node 20／22 全部八組成功，143 tests、build、localhost BrowserBridge／Webview fixture 與四平台原生 VSIX；Unix Node 22 工作亦包含原生隔離與 OCR fixture。真人跨平台 SSO 與 Windows 完整 OS 沙箱仍待驗收。
+- 原生 VS Code 已安裝 0.6.6，首頁四個快捷按鈕與一般聊天列表的常駐新增入口亦已實際確認；使用者重開後確認新版訊息呈現、歷史工具群組與異常提醒；設定頁背景已連線、無須重新登入，既有聊天仍可切換。
+- [0.6.6 CI 38574116361](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38574116361)，程式碼提交 `b898c2b60629021a4fe19f12b7f49b7e076a8f3e`：四平台 × Node 20／22 全部八組成功，143 tests、build、localhost BrowserBridge／Webview fixture 與四平台原生 VSIX；Unix Node 22 工作亦包含原生隔離與 OCR fixture。真人跨平台 SSO 與 Windows 完整 OS 沙箱仍待驗收。
 
 ## 0.6.5 真實有限負載與一次重要重試（2026-10-14）
 
