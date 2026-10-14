@@ -176,3 +176,14 @@ test('background naming reserves one of four subagent slots until it finishes', 
   assert.throws(() => workers.delegate({ tasks }), /最多 4/); assert.equal(workers.jobs.size, 0);
   naming = false; assert.equal(workers.delegate({ tasks }).tasks.length, 4); await workers.close({ cancel: false }); workers.scheduler.close();
 });
+
+test('failed tool evidence overrides a worker model claiming completion and permits important retry', async () => {
+  let attempts = 0;
+  const workers = new AgentWorkers({ base: { catalog: () => [] }, bridge: { createChannel: async () => ({ close: async () => {} }) }, scheduler: new RequestScheduler(2),
+    modelBudget: new ModelBudget(20), signal: signal(), createTools: () => ({ catalog: () => [] }),
+    runner: async options => { attempts++; options.onFinal('model says complete'); options.onCheckpoint([{ type: 'tool', name: 'read_file', result: { ok: attempts > 1 } }]); return { completed: true }; } });
+  const original = workers.delegate({ tasks: [{ title: 'read required file', role: 'explore', request: 'read' }] }).tasks[0];
+  await workers.collect([original.id]); assert.equal(workers.jobs.get(original.id).status, 'error');
+  const retry = workers.retryTask({ id: original.id, reason: 'Evidence is required' }).tasks[0]; await workers.collect([retry.id]); assert.equal(workers.jobs.get(retry.id).status, 'done');
+  assert.equal(workers.jobs.get(original.id).status, 'error'); await workers.close({ cancel: false }); workers.scheduler.close();
+});

@@ -49,7 +49,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       consecutiveFailures++;
       records.push({ type: 'request_error', message: redact(error.message), attempt: consecutiveFailures, instruction: 'No tool executed from this failed response. Continue from saved evidence; verify ambiguous external results before using them.' });
       await checkpoint();
-      if (consecutiveFailures >= 3) throw new Error('NTPU AI 連續三次無法完成模型請求，暫判服務不可用。已保留任務檢查點：' + redact(error.message));
+      if (consecutiveFailures >= 3) throw Object.assign(new Error('NTPU AI 連續三次無法完成模型請求，暫判服務不可用。已保留任務檢查點：' + redact(error.message)), { serviceLimited: true });
       onActivity(`回答未完成，排回共用佇列（恢復 ${consecutiveFailures}/2）`);
       onStream('');
       continue;

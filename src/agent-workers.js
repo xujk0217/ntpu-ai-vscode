@@ -88,7 +88,10 @@ class AgentWorkers {
         onCheckpoint: records => { job.records = sanitize(records).slice(-8); this.emit(job); },
         onFinal: text => { job.result = redact(text).slice(0, 10000); },
       });
-      job.status = job.controller.signal.aborted ? 'interrupted' : result.completed ? 'done' : 'error';
+      const evidence = job.records.filter(record => record.type === 'tool');
+      const onlyFailedTools = evidence.some(record => record.result?.ok === false || record.result?.denied) && !evidence.some(record => record.result?.ok === true);
+      job.status = job.controller.signal.aborted ? 'interrupted' : result.completed && !onlyFailedTools ? 'done' : 'error';
+      if (onlyFailedTools) job.result = (job.result || '') + '\n工具證據只有失敗結果，子任務未完成。';
     } catch (error) {
       job.serviceLimited = isServiceLimit(error);
       // Channel startup can fail before a model call reaches the scheduler.
