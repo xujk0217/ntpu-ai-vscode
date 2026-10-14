@@ -74,5 +74,12 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   await reopened.login();
   assert.equal(loginWindows, 1, 'explicit login opens the native login window');
   assert.equal(reopened.connection.loginWindow, true);
+  bridge.mode = 'background'; bridge.status = async () => ({ ready: true });
+  let unavailableCalls = 0;
+  bridge.chat = async () => { if (++unavailableCalls === 1) await reopened.ask('後續排隊提問', false); throw new Error('timeout'); };
+  await reopened.ask('檢查普通逾時', false);
+  assert.equal(unavailableCalls, 3); assert.equal(reopened.adaptive.blocked, true);
+  assert.equal(reopened.queue.length, 0); assert.equal(reopened.session.tasks.at(-1).status, 'stopped');
+  assert.equal(reopened.session.tasks.at(-2).status, 'blocked'); assert.equal(reopened.session.checkpoint.records.filter(record => record.type === 'request_error').length, 3);
   await reopened.dispose();
 });

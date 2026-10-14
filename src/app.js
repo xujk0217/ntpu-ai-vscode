@@ -543,9 +543,10 @@ class AgentApp {
       }
       this.progress = result.completed ? '已完成' : '已停止，等待下一個指示';
     } catch (error) {
-      task.status = signal.aborted ? 'stopped' : 'failed'; task.result = redact(error.message);
+      if (isServiceLimit(error) && !this.adaptive.blocked) { this.adaptive.block(error); this.stop(); }
+      task.status = this.adaptive.blocked ? 'blocked' : signal.aborted ? 'stopped' : 'failed'; task.result = redact(error.message);
       if (this.streamId) { this.patch(this.streamId, { role: 'notice', text: '回覆未完成。' }); this.streamId = null; }
-      this.notice(signal.aborted ? '已停止。已套用的修改會保留。' : error.message, signal.aborted ? 'notice' : 'error');
+      this.notice(this.adaptive.blocked ? error.message : signal.aborted ? '已停止。已套用的修改會保留。' : error.message, this.adaptive.blocked || !signal.aborted ? 'error' : 'notice');
       this.progress = signal.aborted ? '已停止' : '需要處理';
     } finally {
       await naming; this.namingActive = false;
