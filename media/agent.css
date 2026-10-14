@@ -79,3 +79,45 @@
 .login-notice.needs-login > svg{color:var(--vscode-editorWarning-foreground,var(--muted))}
 .login-primary{margin-top:10px;padding:7px 12px;border:0;border-radius:5px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:500;cursor:pointer}
 .login-primary:hover{background:var(--vscode-button-hoverBackground)}.login-primary:disabled{opacity:.6;cursor:default}
+
+/* Conversation hierarchy: right-aligned user bubbles, full-width Agent prose. */
+.conversation{padding:14px 10px 10px;scroll-padding-bottom:12px}
+.message{margin:0 0 22px;max-width:100%}
+.message.user{width:fit-content;max-width:90%;margin:8px 0 22px auto}
+.message.user .message-heading{justify-content:flex-end;margin-bottom:5px;font-size:10px;font-weight:400}
+.message.user .message-heading .icon-button{margin-left:0;order:-1}
+.message.user .user-body{border:1px solid color-mix(in srgb,var(--line) 55%,transparent);border-radius:13px 13px 4px 13px;background:var(--vscode-input-background,var(--raised));padding:10px 12px;font-size:12px;line-height:1.75}
+.message.assistant,.message.stream{width:100%;margin:18px 0 24px}
+.message.assistant .message-heading,.message.stream .message-heading{font-size:10px;font-weight:500;margin-bottom:9px}
+.assistant-mark{border:0;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--vscode-textLink-foreground,var(--muted));border-radius:5px}
+.markdown{font-size:13px;line-height:1.8}.markdown p{margin:9px 0 13px}.markdown li{margin:5px 0}.markdown table{font-size:12px}.markdown pre code{font-size:11px}
+.message.commentary{margin:10px 0 12px;padding-left:9px;border-left:2px solid var(--line)}
+.message.commentary .notice-text{font-size:12px;line-height:1.75;color:var(--vscode-foreground)}
+.message.notice{padding:7px 9px;border-radius:6px;background:var(--raised);margin:10px 0}
+.message.error{padding:10px 12px;border:1px solid color-mix(in srgb,var(--red) 50%,var(--line));border-radius:7px;margin:12px 0;background:var(--raised)}
+.notice-title{display:block;font-size:12px;margin-bottom:5px;color:var(--vscode-errorForeground,var(--red))}
+.message.error .notice-text{border:0;padding:0;font-size:12px;line-height:1.75}
+.message:focus-within .message-heading .icon-button{opacity:1}
+.execution-group{margin:8px 0 14px;border:1px solid var(--line);border-radius:8px;min-width:0;background:color-mix(in srgb,var(--raised) 45%,transparent)}
+.execution-summary{display:flex;align-items:center;gap:6px;padding:9px 10px;list-style:none;cursor:pointer;color:var(--muted);font-size:10px}
+.execution-summary::-webkit-details-marker{display:none}.execution-summary>svg{width:13px;height:13px}
+.execution-label{font-weight:500;font-size:11px}.execution-count{font-size:10px}.execution-state{margin-left:auto;font-size:10px;white-space:nowrap}
+.execution-group.has-issues .execution-state{color:var(--vscode-editorWarning-foreground,var(--red))}
+.execution-group.is-running .execution-state{color:var(--vscode-textLink-foreground,var(--accent))}
+.execution-group[open]>.execution-summary>.tool-chevron{transform:rotate(90deg)}
+.execution-rows{border-top:1px solid var(--line);padding:5px 6px}
+.execution-rows .message.tool{margin:0}.tool-summary{padding:7px 4px;align-items:flex-start}
+.tool-summary>svg{margin-top:1px}.tool-meta{flex-direction:column;align-items:flex-start;gap:3px}
+.tool-meta strong{font-size:11px;white-space:normal;line-height:1.5}.tool-hint{max-width:100%;font-size:10px}
+.tool-status{margin-top:2px;font-size:10px}.tool-detail{margin:3px 2px 9px 20px;padding:10px;border:0;border-left:2px solid var(--line);border-radius:0;background:var(--raised)}
+.tool-output,.command{font-size:11px;line-height:1.7;max-height:280px}.execution-meta,.elapsed{font-size:10px}
+.tool-detail .markdown{font-size:12px}.result-note{font-size:11px;line-height:1.7;margin:5px 0}.result-error{color:var(--vscode-errorForeground,var(--red))}
+.raw-result{margin-top:9px;border-top:1px solid var(--line);padding-top:7px}.raw-result>summary{font-size:10px;color:var(--muted);cursor:pointer}
+#parallelStatus{font-size:10px;line-height:1.6;padding:4px 10px;overflow-wrap:anywhere}
+.progress{border-top:1px solid var(--line);padding:7px 10px;font-size:11px;flex-wrap:wrap;gap:6px}.budget-label{font-size:9px}
+@media(max-width:280px){.conversation{padding-inline:7px}.message.user{max-width:94%}.execution-summary{gap:4px;padding:8px}.execution-count{display:none}.tool-detail{margin-left:12px}.markdown{font-size:12px}}
+@media(hover:none){.message-heading .icon-button{opacity:1}}
+
+.user-body.clamped-request{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}.user-expand{display:flex;margin:5px 0 0 auto;padding:2px 3px;font-size:10px}
+
+#prompt{font-size:13px;line-height:1.7}.control-row select,.model-button{font-size:11px}.scope-button{font-size:11px}.permissions-footer select{font-size:10px}.permissions-footer>span{font-size:9px}.context-chip,.attachment-card{font-size:11px}

@@ -206,6 +206,42 @@ async function testUI(page, origin) {
     { id: 'd6', role: 'assistant', text: '已修正鍵盤輸入的邊界條件。\n\n- 子任務已完成輸入邏輯與樣式檢查。\n- 可在「檔案變更」保留或撤回修改。\n\n*此畫面為文件示範資料。*' }
   ], plan: [], changes: [] } });
   await send({ ...state, sessionTitle: '修正計算機輸入', workspace: 'calculator-demo' });
+  // The user's bubble is right aligned; Agent Markdown uses the full column.
+  const geometry = async () => page.evaluate(() => {
+    const main = document.getElementById('messages'), user = main.querySelector('.message.user'), assistant = main.querySelector('.message.assistant');
+    const u = user.getBoundingClientRect(), a = assistant.getBoundingClientRect();
+    return { userLeft: u.left, agentLeft: a.left, userRight: u.right, agentRight: a.right, overflow: main.scrollWidth > main.clientWidth + 1 };
+  });
+  for (const width of [260, 380, 720]) {
+    await page.setViewportSize({ width, height: 760 }); const g = await geometry();
+    assert.ok(g.userLeft > g.agentLeft); assert.ok(Math.abs(g.userRight - g.agentRight) < 2); assert.equal(g.overflow, false);
+  }
+  await page.setViewportSize({ width: 380, height: 760 });
+  const longPrompt = { id: 'd1', role: 'user', text: '完整提問內容。'.repeat(100) };
+  await send({ kind: 'patch', message: longPrompt });
+  await page.getByRole('button', { name: '展開完整提問', exact: true }).click();
+  await send({ kind: 'patch', message: { ...longPrompt, queued: true } });
+  await page.waitForFunction(() => document.querySelector('.user-expand')?.getAttribute('aria-expanded') === 'true');
+  assert.equal(await page.locator('.user-body').textContent(), longPrompt.text);
+  await page.getByRole('button', { name: '收合提問', exact: true }).click();
+  await send({ kind: 'patch', message: { id: 'd1', role: 'user', text: '檢查計算機輸入與樣式，修正錯誤並整理結果。' } });
+  assert.equal(await page.locator('.execution-group').count(), 1);
+  assert.equal(await page.locator('.execution-group').evaluate(node => node.open), false, 'finished execution rows collapse by default');
+  assert.match(await page.locator('.execution-summary').textContent(), /3 項操作.*已完成/);
+  await page.locator('.execution-summary').click();
+  await page.locator('[data-id="d3"] .tool-summary').click();
+  await send({ kind: 'patch', message: { id: 'd3', role: 'tool', name: 'agent_task', args: { name: '檢查輸入邏輯' }, status: 'done', result: JSON.stringify({ result: '已檢查鍵盤輸入。', evidence: [{ name: 'read_file', result: { ok: true } }] }) } });
+  await page.waitForFunction(() => document.querySelector('[data-id="d3"] .raw-result'));
+  assert.equal(await page.locator('.execution-group').evaluate(node => node.open), true, 'manual reading is preserved across patches');
+  assert.equal(await page.locator('[data-id="d3"] .raw-result').evaluate(node => node.open), false);
+  assert.equal(await page.locator('[data-id="d3"] .markdown').textContent(), '已檢查鍵盤輸入。\n');
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'conversation-detail-ui.png') });
+  await page.locator('.execution-summary').click();
+  await send({ kind: 'patch', message: { id: 'd4', role: 'tool', name: 'agent_task', args: { name: '檢查畫面樣式' }, status: 'error', result: '讀取失敗' } });
+  await page.waitForFunction(() => document.querySelector('.execution-state').textContent.includes('需查看'));
+  assert.match(await page.locator('.execution-summary').textContent(), /1 項需查看/);
+  assert.equal(await page.locator('.execution-group').evaluate(node => node.open), false, 'manual collapse is respected even if an error arrives');
+  await send({ kind: 'patch', message: { id: 'd4', role: 'tool', name: 'agent_task', args: { name: '檢查畫面樣式' }, status: 'done', result: '已檢查 style.css。' } });
   await page.screenshot({ path: path.join(directory, 'docs-chat.png') });
   await send({ kind: 'changes', changes: [{ id: 'doc-file', path: 'script.js', added: 1, removed: 1, hunks: [{ id: 'doc-hunk', line: 24, added: 1, removed: 1, before: 'if (!value) return;\n', after: 'if (value === null) return;\n' }] }] });
   await page.locator('.change-state').waitFor({ state: 'attached' }); await page.locator('#changes').evaluate(node => { node.open = true; }); await page.locator('.change-state').click(); await page.locator('.change-hunk > summary').click();

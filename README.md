@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.5 · 實驗性專案 · MIT License**
+**版本：0.6.6 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -12,7 +12,7 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 <img src="docs/images/chat.png" alt="聊天與 Agent 任務介面" width="380">
 
-聊天標題與設定入口位於同一列；專案資料夾位於輸入框下方。工具與子任務以可展開的執行紀錄呈現，檔案變更提供整份檔案及個別區段的保留／撤回操作。
+聊天標題與設定入口位於同一列；專案資料夾位於輸入框下方。你的提問以靠右泡泡呈現，Agent 回覆使用完整內容寬度；連續工具與子任務集中於可展開的執行紀錄，完成時預設收合、有異常則顯示提醒，檔案變更提供整份檔案及個別區段的保留／撤回操作。
 
 <img src="docs/images/changes.png" alt="檔案與區段變更檢視" width="380">
 
@@ -25,16 +25,16 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 目前透過 GitHub Releases 提供 VSIX，尚未上架 VS Code Marketplace。
 
 1. 安裝 VS Code 1.95 以上，以及 Chrome、Edge 或其他受支援的 Chromium 瀏覽器。
-2. 從 [0.6.5 Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.6.5) 下載符合系統的安裝檔。
+2. 從 [0.6.6 Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.6.6) 下載符合系統的安裝檔。
 3. 在 VS Code 擴充套件頁的 `…` 選單選擇 **Install from VSIX…**，安裝後重新載入視窗。
 4. 開啟專案，進入 **NTPU AI** 側欄，按 **登入**，人工完成校方登入或驗證。成功後可關閉登入視窗，擴充套件會接續背景連線。
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.5.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.5.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.5.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.5.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.6.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.6.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.6.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.6.vsix` |
 
 更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 

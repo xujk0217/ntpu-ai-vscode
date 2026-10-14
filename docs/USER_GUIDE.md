@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.5 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.6.6 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -51,10 +51,10 @@
 
 | 系統 | 0.6.5 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-win32-x64-0.6.5.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-arm64-0.6.5.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-x64-0.6.5.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-linux-x64-0.6.5.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-win32-x64-0.6.6.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-arm64-0.6.6.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-x64-0.6.6.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-linux-x64-0.6.6.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -382,3 +382,7 @@ Agent 可在一個模型回合批次讀取 2–6 個獨立檔案或公開資料�
 工具的一般失敗會回傳給主 Agent，促使其改採安全的可行步驟；重要子任務可透過 `retry_task` 排回 Queue 一次，失敗後由主 Agent 嘗試直接處理。首次提問啟動單次背景取名子任務，只提供遮蔽後提問的前 2000 字，使用相同排程與輪數預算，名稱最多 10 個 Unicode 字元。取名期間占用四個子任務名額之一；失敗保留本地簡短名稱，不會覆蓋使用者手動名稱。取名本身不重試。
 
 未登入時，聊天頁頂部顯示醒目的「尚未登入 NTPU AI」提示與登入按鈕。背景斷線另顯示「尚未連線」，成功連線後提示自動收起。
+
+## 聊天閱讀與執行紀錄（0.6.6）
+
+提問靠右，Agent 回覆以完整寬度顯示 Markdown。超過 500 字或八行的提問預設顯示六行，可展開全文；複製與儲存仍保留完整提問。連續兩項以上的工具操作集中於「執行紀錄」，執行中展開，結束後自動收合；單一工具維持簡潔執行列。有失敗、拒絕或中斷時顯示提醒，供展開查看。手動展開或收合狀態在即時更新與載入歷史時保留。子任務先呈現可讀結果，完整證據與資料另可展開。

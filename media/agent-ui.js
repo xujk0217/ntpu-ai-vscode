@@ -58,8 +58,46 @@ function empty() {
   welcome.append(grid); return welcome;
 }
 
+function readableResult(content, message, result) {
+  if (!result || typeof result !== 'object') { content.append(element('pre', 'tool-output', message.result)); return; }
+  let readable = false;
+  if (message.name === 'agent_task') {
+    if (result.activity) content.append(element('div', 'execution-meta', result.activity));
+    if (result.retryReason) content.append(element('p', 'result-note', '重試原因：' + result.retryReason));
+    if (typeof result.result === 'string' && result.result.trim()) { content.append(markdown(result.result)); readable = true; }
+  } else {
+    const text = result.error || result.message || result.text || (typeof result.content === 'string' ? result.content : '');
+    if (text) { content.append(element('pre', 'tool-output' + (result.ok === false ? ' result-error' : ''), text)); readable = true; }
+    if (Array.isArray(result.files)) { content.append(element('pre', 'tool-output', result.files.join('\n') || '沒有符合條件的檔案。')); readable = true; }
+    if (Array.isArray(result.matches)) { content.append(element('pre', 'tool-output', result.matches.map(item => `${item.path}:${item.line}  ${item.text}`).join('\n') || '沒有符合條件的結果。')); readable = true; }
+    if (Number.isFinite(result.start_line)) content.prepend(element('div', 'execution-meta', `第 ${result.start_line}–${result.end_line} 行${result.truncated ? ' · 已截短' : ' · 完整讀取此區段'}`));
+    if (result.saved || result.changed === false) { content.append(element('p', 'result-note', result.changed === false ? '檔案內容無需變更。' : '檔案已儲存，可在「檔案變更」查看或撤回。')); readable = true; }
+  }
+  if (!readable) { content.append(element('pre', 'tool-output', message.result)); return; }
+  const raw = element('details', 'raw-result'); raw.append(element('summary', '', '完整資料'), element('pre', 'tool-output', message.result)); content.append(raw);
+}
+function updateExecutionGroup(group) {
+  if (!group) return;
+  const rows = [...group.querySelectorAll('.message.tool')];
+  const running = rows.filter(row => ['running', 'approval'].includes(row.dataset.status)).length;
+  const issues = rows.filter(row => ['error', 'denied', 'interrupted'].includes(row.dataset.status)).length;
+  group.querySelector('.execution-count').textContent = `${rows.length} 項操作`;
+  group.querySelector('.execution-state').textContent = running ? `${running} 項進行中` : issues ? `${issues} 項需查看` : '已完成';
+  group.classList.toggle('has-issues', !!issues); group.classList.toggle('is-running', !!running);
+  if (!group.dataset.manual) group.open = !!running;
+}
+function executionGroup() {
+  const group = element('details', 'execution-group');
+  const summary = element('summary', 'execution-summary');
+  summary.append(icon('terminal'), element('span', 'execution-label', '執行紀錄'), element('span', 'execution-count'), element('span', 'execution-state'), element('span', 'tool-chevron', '›'));
+  summary.addEventListener('click', () => { group.dataset.manual = 'true'; });
+  group.addEventListener('click', event => { if (event.target.closest('.tool-card')) group.dataset.manual = 'true'; });
+  group.append(summary, element('div', 'execution-rows')); return group;
+}
+
 function renderMessage(message) {
-  const wrapper = element('article', 'message ' + message.role); wrapper.dataset.id = message.id;
+  const wrapper = element('article', 'message ' + message.role); wrapper.dataset.id = message.id; wrapper.dataset.status = message.status || '';
+  wrapper.setAttribute('aria-label', message.role === 'user' ? '你的提問' : message.role === 'tool' ? '工具執行' : 'Agent 訊息');
   if (message.role === 'tool') {
     const details = element('details', 'tool-card ' + message.status);
     const summary = element('summary', 'tool-summary');
@@ -69,6 +107,7 @@ function renderMessage(message) {
       write_file: message.outcome?.changed === false ? '檔案無需變更' : message.outcome?.created ? '已建立' : '已修改', edit_file: '已修改',
       run_command: '已執行', web_search: '已搜尋網路', web_fetch: '已讀取網頁', create_visual: '已繪製', inspect_image: '已分析圖片',
       load_skill: '已載入 skill', update_plan: '已更新計畫' }[message.name] || label;
+    if (message.name === 'agent_task') label = { explore: '探索子任務', research: '研究子任務', review: '審查子任務' }[message.args?.role] || '子任務';
     const meta = element('div', 'tool-meta'); meta.append(element('strong', '', label));
     const args = message.args || {}, hint = args.path || args.command || args.query || args.url || args.name;
     if (hint) meta.append(element('span', 'tool-hint', String(hint).slice(0, 180)));
@@ -83,9 +122,9 @@ function renderMessage(message) {
       if (message.liveOutput || result?.output) content.append(element('pre', 'tool-output terminal-output', result?.output || message.liveOutput));
       if (result) content.append(element('div', 'execution-meta', `退出碼：${result.exit_code ?? '—'}${result.timed_out ? ' · 逾時' : ''}${result.truncated ? ' · 輸出已截短' : ''}`));
       if (result?.error || result?.denied) content.append(element('pre', 'tool-output', result.error || result.message));
-    } else if (message.result) content.append(element('pre', 'tool-output', message.result));
+    } else if (message.result) readableResult(content, message, result);
     else if (Object.keys(args).length) content.append(element('pre', 'tool-output', JSON.stringify(args, null, 2)));
-    if (message.finishedAt) content.append(element('span', 'elapsed', '總耗時（含核准等待）：' + ((message.finishedAt - message.startedAt) / 1000).toFixed(1) + ' 秒'));
+    if (message.finishedAt && message.startedAt) content.append(element('span', 'elapsed', '總耗時（含核准等待）：' + ((message.finishedAt - message.startedAt) / 1000).toFixed(1) + ' 秒'));
     details.append(summary, content); wrapper.append(details); return wrapper;
   }
   if (message.role === 'artifact') {
@@ -94,27 +133,67 @@ function renderMessage(message) {
     const actions = element('div', 'artifact-actions'); actions.append(button('檢視圖片', 'text-button', () => send('openArtifact', { id: message.artifactId }), 'image'), button('另存圖片', 'text-button', () => send('saveArtifact', { id: message.artifactId }), 'export')); wrapper.append(actions);
     return wrapper;
   }
-  if (['notice', 'error', 'commentary'].includes(message.role)) { wrapper.append(element('div', 'notice-text', message.text)); return wrapper; }
+  if (['notice', 'error', 'commentary'].includes(message.role)) { wrapper.hidden = !message.text?.trim(); if (message.role === 'error') wrapper.append(element('strong', 'notice-title', '需要處理')); wrapper.append(element('div', 'notice-text', message.text)); return wrapper; }
   const top = element('div', 'message-heading');
   if (message.role === 'user') top.append(element('span', '', message.canceled ? '你 · 已取消' : message.queued ? '你 · 已排入佇列' : '你'));
   else { const mark = element('span', 'assistant-mark', 'N'); top.append(mark, element('span', '', 'NTPU AI')); }
   top.append(iconButton('copy', '複製訊息', () => send('copy', { text: message.text || '' })));
-  wrapper.append(top, message.role === 'user' ? element('div', 'user-body', message.text) : markdown(message.text));
+  const body = message.role === 'user' ? element('div', 'user-body', message.text) : markdown(message.text);
+  wrapper.append(top, body);
+  if (message.role === 'user' && (message.text?.length > 500 || message.text?.split('\n').length > 8)) {
+    body.classList.add('clamped-request'); body.id = 'request-' + message.id;
+    const toggle = button('展開完整提問', 'text-button user-expand', () => {
+      const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+      toggle.setAttribute('aria-expanded', String(expanded)); body.classList.toggle('clamped-request', !expanded); toggle.querySelector('span').textContent = expanded ? '收合提問' : '展開完整提問';
+    });
+    toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', body.id); wrapper.append(toggle);
+  }
   if (message.attachment) { const attached = element('div', 'message-attachment'); attached.append(icon('image'), element('span', '', message.attachment.name)); if (message.attachment.preview) { const image = element('img'); image.src = message.attachment.preview; image.alt = message.attachment.name; attached.append(image); } wrapper.append(attached); }
   return wrapper;
 }
 function nearBottom() { return $('messages').scrollHeight - $('messages').scrollTop - $('messages').clientHeight < 100; }
 function addMessage(message, replace = false) {
-  const follow = nearBottom(); const old = nodes.get(message.id); const open = old?.querySelector('details')?.open;
+  const follow = nearBottom(); const old = nodes.get(message.id); const open = old?.querySelector('details')?.open; const rawOpen = old?.querySelector('.raw-result')?.open; const userExpanded = old?.querySelector('.user-expand')?.getAttribute('aria-expanded') === 'true';
   const item = renderMessage(message);
-  if (old && replace) { if (open && item.querySelector('details')) item.querySelector('details').open = true; old.replaceWith(item); }
-  else { $('messages').querySelector('.welcome')?.remove(); $('messages').append(item); }
+  if (old && replace) {
+    const group = old.closest('.execution-group');
+    if (open && item.querySelector('details')) item.querySelector('details').open = true;
+    if (userExpanded) item.querySelector('.user-expand')?.click();
+    if (rawOpen && item.querySelector('.raw-result')) item.querySelector('.raw-result').open = true;
+    old.replaceWith(item); updateExecutionGroup(group);
+  } else {
+    $('messages').querySelector('.welcome')?.remove();
+    if (message.role === 'tool') {
+      let group = $('messages').lastElementChild;
+      if (group?.classList.contains('execution-group')) {
+        group.querySelector('.execution-rows').append(item); updateExecutionGroup(group);
+      } else if (group?.classList.contains('tool')) {
+        const previous = group; group = executionGroup(); previous.before(group);
+        if (previous.querySelector('.tool-card')?.open) group.dataset.manual = 'true';
+        group.querySelector('.execution-rows').append(previous, item); updateExecutionGroup(group);
+        if (group.dataset.manual) group.open = true;
+      } else $('messages').append(item);
+    } else $('messages').append(item);
+  }
   nodes.set(message.id, item); if (follow) $('messages').scrollTop = $('messages').scrollHeight;
 }
 function renderSession(value) {
+  const expandedUsers = new Set([...$('messages').querySelectorAll('.user-expand[aria-expanded="true"]')].map(node => node.closest('.message').dataset.id));
+  const openRaw = new Set([...$('messages').querySelectorAll('.raw-result[open]')].map(node => node.closest('.message').dataset.id));
+  const openTools = new Set([...$('messages').querySelectorAll('.tool-card[open]')].map(node => node.closest('.message').dataset.id));
+  const groupChoices = new Map();
+  for (const group of $('messages').querySelectorAll('.execution-group[data-manual]')) for (const row of group.querySelectorAll('.message.tool')) groupChoices.set(row.dataset.id, group.open);
   session = value; nodes.clear(); $('messages').replaceChildren();
   $('rename').textContent = value.title;
   if (!value.messages.length) $('messages').append(empty()); else value.messages.forEach(message => addMessage(message));
+  for (const id of expandedUsers) nodes.get(id)?.querySelector('.user-expand')?.click();
+  for (const id of openRaw) { const details = nodes.get(id)?.querySelector('.raw-result'); if (details) details.open = true; }
+  for (const id of openTools) { const details = nodes.get(id)?.querySelector('.tool-card'); if (details) details.open = true; if (openRaw.has(id) && nodes.get(id)?.querySelector('.raw-result')) nodes.get(id).querySelector('.raw-result').open = true; }
+  for (const group of $('messages').querySelectorAll('.execution-group')) {
+    const saved = [...group.querySelectorAll('.message.tool')].find(row => groupChoices.has(row.dataset.id));
+    if (saved) { group.dataset.manual = 'true'; group.open = groupChoices.get(saved.dataset.id); }
+    else if ([...group.querySelectorAll('.message.tool')].some(row => openTools.has(row.dataset.id))) { group.dataset.manual = 'true'; group.open = true; }
+  }
   if (value.hasMore) $('messages').prepend(button('載入較早訊息（' + value.before + ' 則）', 'secondary-button history-more', () => send('historyPage', { before: value.before })));
   renderPlan(value.plan || []); renderChanges(value.changes || []); $('messages').scrollTop = $('messages').scrollHeight;
 }
