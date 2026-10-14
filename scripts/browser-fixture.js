@@ -33,7 +33,7 @@ async function main() {
   const sockets = new Set();
   const ui = await assets();
   let requiresLogin = false;
-  const pairStreams = [];
+  const pairStreams = []; const probeStreams = new Map(); let expectedProbe = 0;
   let activeStreams = 0, peakStreams = 0; const deletedIds = []; let failReset = false;
   const loginHtml = '<!doctype html><html><body><div id="auth-overlay">Fixture login</div><form action="/fixture-login" method="post"><input id="fixture-user" name="user"><button id="fixture-submit">Login</button></form></body></html>';
   const server = http.createServer((request, response) => {
@@ -53,12 +53,17 @@ async function main() {
       response.write('data: ' + JSON.stringify({ type: 'token', content: prefix }) + '\n\n');
       const finish = () => { if (!response.destroyed) response.end('data: {"type":"token","content":"response"}\n\ndata: {"type":"done"}\n\n'); };
       const pair = ['parallel-A', 'parallel-B'].includes(body);
-      const timer = setTimeout(finish, body.includes('slow') ? 10000 : pair ? 10000 : marker || body.startsWith('parallel-') ? 800 : 40);
+      const timer = setTimeout(finish, body.includes('slow') ? 10000 : pair || marker ? 10000 : body.startsWith('parallel-') ? 800 : 40);
       // The localhost pair test needs a deterministic rendezvous. Browser UI
       // scheduling on a busy CI runner can exceed an arbitrary 800 ms stream.
       if (pair) {
         pairStreams.push({ response, finish, timer });
         if (pairStreams.length === 2) setTimeout(() => { for (const stream of pairStreams) { clearTimeout(stream.timer); stream.finish(); } }, 80);
+      }
+      if (marker) {
+        const key = marker.slice(0, marker.lastIndexOf('_'));
+        const group = probeStreams.get(key) || []; probeStreams.set(key, group); group.push({ finish, timer });
+        if (group.length === expectedProbe) setTimeout(() => { for (const stream of group) { clearTimeout(stream.timer); stream.finish(); } }, 80);
       }
       response.on('close', () => { clearTimeout(timer); activeStreams--; });
     });
@@ -98,7 +103,7 @@ async function main() {
       try { await assert.rejects(slowWorker, /已停止/); assert.equal((await parentReply).text, 'parallel-parent-response'); }
       finally { clearTimeout(cancelWorker); }
     } finally { await firstChannel.close(); await secondChannel.close(); }
-    const concurrent = await probeConcurrency(bridge, { groupPauseMs: 0 });
+    const concurrent = await probeConcurrency(bridge, { groupPauseMs: 0, beforeRequests: async count => { expectedProbe = count; } });
     assert.equal(concurrent.verified, true); assert.equal(concurrent.recommendedConcurrency, 5); assert.deepEqual(concurrent.groups.map(group => group.concurrency), [2,3,4,5]); assert.ok(peakStreams >= 5); assert.equal(bridge.channels.size, 0);
     const selected = bridge.manager.info.label;
     await bridge.close(); bridge = new BrowserBridge(options); await bridge.open();

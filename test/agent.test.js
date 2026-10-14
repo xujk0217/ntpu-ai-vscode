@@ -96,3 +96,26 @@ test('Build rejects a final-only code proposal and requires actual tool evidence
     bridge: { chat: async () => ({ text: JSON.stringify(replies.shift()) }) }, tools: { execute: async () => { executions++; return { ok: true }; } } });
   assert.equal(result.completed, true); assert.equal(executions, 1); assert.equal(result.steps, 3);
 });
+
+test('transport failures requeue with shared budget and retain failure evidence without executing partial output', async () => {
+  const { RequestScheduler, ModelBudget } = require('../src/parallel');
+  const scheduler = new RequestScheduler(1), budget = new ModelBudget(6); let calls = 0; const prompts = [], conversations = [], events = [];
+  const result = await runAgent({ request: '檢查', tools: {}, profile: { agent: 'ask' }, signal: new AbortController().signal, modelBudget: budget, maxSteps: 6,
+    bridge: scheduler.bridge({ chat: async (prompt, options) => { calls++; prompts.push(prompt); conversations.push(options.newConversation); if (calls < 3) throw new Error('等待回答逾時'); return { text: '{"kind":"final","message":"已完成"}' }; } }), onActivity: text => events.push(text) });
+  assert.equal(result.completed, true); assert.equal(budget.used, 3); assert.equal(scheduler.requests, 3); assert.deepEqual(conversations, [true, false, false]);
+  assert.match(prompts[2], /request_error/); assert.ok(events.some(text => text.includes('共用佇列'))); scheduler.close();
+});
+test('three consecutive transport failures stop as unavailable, service limits and cancellations never retry', async () => {
+  for (const [error, expected] of [[new Error('timeout'), 3], [Object.assign(new Error('limit'), { status: 429 }), 1], [new Error('尚未登入'), 1], [new Error('invalid request'), 1]]) {
+    let calls = 0; await assert.rejects(runAgent({ request: 'x', tools: {}, signal: new AbortController().signal, bridge: { chat: async () => { calls++; throw error; } } })); assert.equal(calls, expected);
+  }
+  const controller = new AbortController(); let calls = 0;
+  await assert.rejects(runAgent({ request: 'x', tools: {}, signal: controller.signal, bridge: { chat: async () => { calls++; controller.abort(); throw new Error('timeout'); } } })); assert.equal(calls, 1);
+});
+test('ordinary tool failure becomes evidence and parent tries another safe step', async () => {
+  const replies = [{ kind: 'tool', name: 'read_file', args: { path: 'missing' } }, { kind: 'final', completed: false, message: '讀取失败' }, { kind: 'tool', name: 'read_file', args: { path: 'README.md' } }, { kind: 'final', message: '已完成' }];
+  let calls = 0; const prompts = [];
+  const result = await runAgent({ request: '檢查', profile: { agent: 'ask' }, signal: new AbortController().signal,
+    bridge: { chat: async prompt => { prompts.push(prompt); return { text: JSON.stringify(replies.shift()) }; } }, tools: { execute: async () => { if (++calls === 1) throw new Error('File missing'); return { ok: true, content: 'data' }; } } });
+  assert.equal(result.completed, true); assert.equal(calls, 2); assert.match(prompts[2], /safe alternative/);
+});

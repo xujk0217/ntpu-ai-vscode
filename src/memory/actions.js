@@ -35,7 +35,7 @@ class MemoryActions {
         const title = await vscode.window.showInputBox({ title: '重新命名聊天', value: session.title, validateInput: text => text.trim() ? undefined : '請輸入名稱' });
         if (!title?.trim()) return;
         if (app.busy() || app.gate.pending) throw new Error('請先停止目前任務，再管理聊天。');
-        session.title = redact(title.trim().slice(0, 80)); await app.store.save(session); app.render(); return;
+        session.titleSource = 'manual'; session.title = redact(title.trim().slice(0, 80)); await app.store.save(session); app.render(); return;
       }
       if (action === 'delete') {
         const titles = ids.slice(0, 5).map(id => '• ' + app.store.sessions.find(item => item.id === id).title).join('\n');

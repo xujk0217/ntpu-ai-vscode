@@ -315,7 +315,7 @@ class BrowserBridge {
     // Attach immediately: a click failure can reject before the final await.
     result.catch(() => {});
     const timer = setTimeout(() => {
-      this._fail(new Error('等待回答逾時；沒有自動重送。請檢查瀏覽器是否還在產生回答。'));
+      this._fail(new Error('等待回答逾時；這次回覆未完成，Agent 將依恢復規則處理。'));
       void this._abortPage();
     }, options.timeoutMs || 240000);
     const abort = () => { this._fail(new Error('已停止')); void this._abortPage(); };

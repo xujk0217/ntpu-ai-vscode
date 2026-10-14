@@ -20,8 +20,8 @@ function readonly(base) {
   } };
 }
 class AgentWorkers {
-  constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, maxWorkers, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
-    Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, onEvent, onBeforeCleanup, runner });
+  constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, maxWorkers, occupiedSlots = () => 0, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
+    Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, occupiedSlots, onEvent, onBeforeCleanup, runner });
     this.maxWorkers = Math.min(MAX_SUBAGENTS, Math.max(1, Math.floor(Number(maxWorkers) || MAX_SUBAGENTS))); this.maxTasks = Math.max(4, this.maxWorkers * 2);
     this.jobs = new Map(); this.closed = false;
   }
@@ -62,7 +62,7 @@ class AgentWorkers {
     if (this.closed || this.signal.aborted) throw new Error('已停止');
     if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > this.maxWorkers || this.jobs.size + tasks.length > this.maxTasks || tasks.some(task => !['explore', 'research', 'review'].includes(task?.role) || typeof task.request !== 'string' || !task.request.trim() || task.request.length > 6000 || typeof task.title !== 'string' || !task.title.trim() || task.title.length > 120)) throw new Error(`需要 1–${this.maxWorkers} 個有效唯讀子任務；父任務最多 ${this.maxTasks} 個。`);
     const pending = [...this.jobs.values()].filter(job => !job.endedAt).length;
-    if (pending + tasks.length > this.maxWorkers) throw new Error(`最多 ${this.maxWorkers} 個未結束子任務；請先收集結果。`);
+    if (pending + tasks.length + this.occupiedSlots() > this.maxWorkers) throw new Error(`最多 ${this.maxWorkers} 個未結束子任務；請先收集結果。`);
     const jobs = tasks.map(task => {
       const controller = new AbortController(); const abort = () => controller.abort();
       this.signal.addEventListener('abort', abort, { once: true });

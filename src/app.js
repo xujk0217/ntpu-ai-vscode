@@ -8,6 +8,7 @@ const { BrowserBridge } = require('./browser');
 const { PreviewProvider, WorkspaceTools } = require('./tools');
 const { safePath, hash, diskText, isBlocked } = require('./workspace');
 const { runAgent } = require('./agent');
+const { shortTitle, nameSession } = require('./session-title');
 const { ApprovalGate } = require('./approval');
 const { PermissionPolicy } = require('./permissions');
 const { SessionStore } = require('./sessions');
@@ -249,7 +250,7 @@ class AgentApp {
     const adaptive = this.adaptive.state();
     return { ...adaptive, enabled, maxConcurrency: configured, ceiling, effectiveConcurrency: Math.min(adaptive.effectiveConcurrency, ceiling),
       ...(this.scheduler?.state() || { activeRequests: 0, queuedRequests: 0 }),
-      runningAgents: (this.controller && !this.controller.signal.aborted ? 1 : 0) + [...(this.workers?.jobs.values() || [])].filter(job => job.status === 'running').length,
+      runningAgents: (this.controller && !this.controller.signal.aborted ? 1 : 0) + (this.namingActive ? 1 : 0) + [...(this.workers?.jobs.values() || [])].filter(job => job.status === 'running').length,
       queuedTasks: this.queue.length, requestsPerMinute: config.get('parallel.requestsPerMinute', 8), maxTestConcurrency: Math.max(2, Math.min(4, config.get('parallel.probeMaxConcurrency', 4))), probeIntervalSeconds: config.get('parallel.probeIntervalSeconds', 60),
       verification: verification ? { timestamp: verification.timestamp, message: verification.message, stopReason: verification.stopReason,
         serviceLimited: verification.serviceLimited, cancelled: verification.cancelled, groups: verification.groups || [] } : null };
@@ -424,7 +425,7 @@ class AgentApp {
     this.attachment = null; this.contextFiles = [];
     const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name } : null });
     item.messageId = user.id;
-    if (this.session.title === '新工作階段') this.session.title = request.slice(0, 32);
+    if (this.session.tasks.length === 1 && this.session.titleSource !== 'manual') { item.nameSession = true; this.session.title = shortTitle(request); }
     if (this.busy()) { this.queue.push(item); this.state(); return; }
     await this.run(item);
   }
@@ -442,7 +443,7 @@ class AgentApp {
     const task = this.session.tasks.find(task => task.id === item.id);
     task.startedAt = Date.now(); task.status = 'running'; task.agent = this.session.options.agent;
     this.patch(item.messageId, { queued: false }); this.state();
-    let workers, scheduler;
+    let workers, scheduler, naming;
     try {
       await this.save();
       if (this.adaptive.blocked) throw new Error('服務限制已暫停新請求，請處理原因後在工具設定手動恢復發送。');
@@ -482,7 +483,7 @@ class AgentApp {
           onArtifact: artifact => this.artifact(artifact), onChange: change => this.changed({ ...change, taskId: item.id }),
           onCommandOutput: output => { if (this.activeToolId) this.patch(this.activeToolId, { liveOutput: output }); } });
       const tools = this.parallelState().enabled ? (workers = new AgentWorkers({ base: baseTools, bridge, scheduler, modelBudget, signal, context, workspace: root.name,
-        profile: this.session.options, maxWorkers: this.parallelState().workerConcurrency, timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
+        profile: this.session.options, occupiedSlots: () => this.namingActive ? 1 : 0, maxWorkers: this.parallelState().workerConcurrency, timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
         createTools: (workerSignal, workerBridge, title) => new WorkspaceTools(root.uri, this.previews, workerSignal, () => {},
           (detail, requestSignal) => this.gate.request({ ...detail, title: title + ' · ' + detail.title }, requestSignal),
           { ...baseTools.options, policy: new PermissionPolicy({ mode: policy.mode, agent: 'research' }), bridge: workerBridge,
@@ -507,6 +508,13 @@ class AgentApp {
       this.toolsSinceBrief = 0;
       this.add('commentary', resume ? '我會接續原任務，先確認目前檔案與先前結果，再完成剩餘工作。' :
         this.session.options.agent === 'build' ? '我會先查看專案脈絡，再完成實作並確認執行結果。' : '我會先查看相關證據，再整理這次需求的結果。');
+      if (item.nameSession) {
+        const namingId = randomUUID(); this.namingActive = true;
+        this.add('tool', '', { id: namingId, name: 'name_session', args: {}, status: 'running', startedAt: Date.now() });
+        naming = nameSession({ session: this.session, request: item.request, bridge, scheduler, modelBudget, signal,
+          onEvent: (status, result) => { this.patch(namingId, { status, result, ...(status !== 'running' ? { finishedAt: Date.now() } : {}) }); this.state(); },
+          onSave: () => this.save() }).finally(() => { this.namingActive = false; this.state(); });
+      }
       let answer = '';
       const result = await runAgent({ bridge: scheduler.bridge(bridge), tools, modelBudget, request: taskRequest, initialRecords, context, workspace: root.name, signal,
         attachment: item.attachment, profile: this.session.options, maxSteps: modelBudget.limit,
@@ -540,6 +548,7 @@ class AgentApp {
       this.notice(signal.aborted ? '已停止。已套用的修改會保留。' : error.message, signal.aborted ? 'notice' : 'error');
       this.progress = signal.aborted ? '已停止' : '需要處理';
     } finally {
+      await naming; this.namingActive = false;
       await workers?.close({ cancel: signal.aborted || this.adaptive.blocked }); this.workers = null;
       if (scheduler) task.parallel = { adaptive: true, configuredConcurrency: scheduler.limit, modelRequests: scheduler.requests, peakStreams: scheduler.peakStreams, decisions: this.adaptive.decisions.filter(decision => decision.at >= task.startedAt), blocked: this.adaptive.blocked };
       scheduler?.close(); this.scheduler = null;

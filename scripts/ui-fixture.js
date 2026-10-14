@@ -23,6 +23,15 @@ async function testUI(page, origin) {
   assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
   assert.equal(await page.locator('#loginNotice').isHidden(), true);
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
+  await send({ ...state, connection: { ready: false, authentication: 'required' } });
+  await page.getByRole('button', { name: '登入 NTPU AI', exact: true }).waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#loginNoticeTitle').textContent(), '尚未登入 NTPU AI');
+  await page.locator('#loginPrimary').click();
+  assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), 'login');
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'logged-out-ui.png') });
+  await send({ ...state, connection: { ready: false, authentication: 'unknown' } });
+  await page.waitForFunction(() => document.getElementById('loginNoticeTitle').textContent === 'NTPU AI 尚未連線');
+  await send(state); await page.waitForFunction(() => document.getElementById('loginNotice').hidden);
   // Queueing a draft and stopping a task have separate, clearly labelled
   // controls. Blank clicks and keyboard submissions must emit neither action.
   await send({ ...state, busy: true, progress: 'AI 正在處理（5/50）' });
@@ -164,13 +173,13 @@ async function testUI(page, origin) {
   await send({ ...state, busy: true });
   await page.waitForFunction(() => document.querySelector('.session-row').disabled);
   await page.locator('#closeDrawer').click(); await send({ ...state, connection: { ready: false, authentication: 'unknown', message: '瀏覽器未連線' } });
-  await page.waitForFunction(() => !document.getElementById('connectionActions').hidden);
+  await page.waitForFunction(() => document.getElementById('loginPrimary').textContent === '重新連線');
   assert.equal(await page.locator('#connectionLabel').textContent(), '重新連線 NTPU AI');
   await send({ ...state, connection: { ready: false, authentication: 'signed_out', message: '尚未登入' } });
   assert.equal(await page.locator('#connectionLabel').textContent(), '登入');
   await page.locator('#settings').click();
   assert.match(await page.locator('.account-card').textContent(), /未登入/);
-  assert.equal(await page.getByRole('button', { name: '登入 NTPU AI', exact: true }).count(), 1);
+  assert.equal(await page.locator('#drawer').getByRole('button', { name: '登入 NTPU AI', exact: true }).count(), 1);
   await send({ ...state, connection: { ready: false, authentication: 'required', message: '網站要求登入' } });
   assert.equal(await page.locator('#connectionLabel').textContent(), '登入');
   assert.match(await page.locator('.account-card').textContent(), /未登入/);
@@ -178,7 +187,7 @@ async function testUI(page, origin) {
   await send({ ...state, connection: { ready: false, authentication: 'required', loginWindow: true } });
   await page.waitForFunction(() => !document.getElementById('loginNotice').hidden);
   assert.equal(await page.locator('#loginNotice').isVisible(), true);
-  await page.locator('#connect').click();
+  await page.locator('#loginPrimary').click();
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'login' });
   await send(state); await page.waitForFunction(() => document.getElementById('loginNotice').hidden);
   assert.equal(await page.locator('#loginNotice').isHidden(), true);

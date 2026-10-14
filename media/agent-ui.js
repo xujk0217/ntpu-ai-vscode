@@ -1,5 +1,6 @@
 /* global acquireVsCodeApi */
 'use strict';
+const { loginPresentation } = require('./login-state');
 const MarkdownIt = require('markdown-it');
 const highlight = require('highlight.js/lib/core');
 const languages = { javascript: require('highlight.js/lib/languages/javascript'), typescript: require('highlight.js/lib/languages/typescript'),
@@ -16,7 +17,7 @@ let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false, historyEditing = false;
 const selectedSessions = new Set();
 const nodes = new Map();
-const names = { cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 const md = new MarkdownIt({ html: false, breaks: false, linkify: false, highlight: (code, language) => {
@@ -183,10 +184,15 @@ function renderState(value) {
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
   $('connectionLabel').textContent = state.connection?.connecting ? '正在連線…' : state.connection?.ready ? '已連線' : state.connection?.loginWindow ? '返回登入視窗' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '登入';
   $('connect').disabled = state.busy || !!state.connection?.connecting;
-  $('loginNotice').hidden = !state.connection?.loginWindow;
-  $('loginNoticeTitle').textContent = state.connection?.loginComplete ? '登入成功' : '請在瀏覽器完成登入';
-  $('loginNoticeText').textContent = state.connection?.loginComplete ? '正在接續背景連線，可以關閉登入視窗。' : '完成後會自動回到背景連線，你可以關閉登入視窗。';
-  $('connectionActions').hidden = !!state.connection?.ready;
+  const login = loginPresentation(state.connection);
+  $('loginNotice').hidden = login.hidden;
+  $('loginNotice').classList.toggle('needs-login', login.required);
+  $('loginNoticeTitle').textContent = login.title;
+  $('loginNoticeText').textContent = login.text;
+  $('loginPrimary').textContent = login.action;
+  $('loginPrimary').hidden = !login.action;
+  $('loginPrimary').disabled = state.busy || !!state.connection?.connecting;
+  $('connectionActions').hidden = !!state.connection?.ready || !login.hidden;
   $('model').textContent = modelNames[state.model] || 'NTPU AI · 自動';
   const liveParallel = state.parallel;
   $('parallelStatus').hidden = !liveParallel?.enabled;
@@ -452,6 +458,7 @@ $('closeDrawer').addEventListener('click', () => { resetHistoryEditing(); $('dra
 $('historyEdit').addEventListener('click', () => { if (historyEditing) resetHistoryEditing(); else if (!state.busy && !approval) { historyEditing = true; selectedSessions.clear(); } renderDrawer(); });
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { if (tab !== item.dataset.tab) resetHistoryEditing(); tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
+$('loginPrimary').addEventListener('click', () => send('login'));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });
 $('approve').addEventListener('click', () => { if (!approval) return; $('approve').disabled = true; $('deny').disabled = true;

@@ -2,6 +2,8 @@
 const { parseReply, buildPrompt } = require('./protocol');
 const { sanitize, redact, inspectOutboundPayload } = require('./security/guard');
 const { runReadBatch } = require('./parallel');
+const { isServiceLimit } = require('./parallel-policy');
+const { isTransientRequestError } = require('./request-recovery');
 
 async function runAgent({ bridge, tools, request, context, workspace, signal, maxSteps = 12,
   budget = 48000, timeoutMs = 240000, onActivity = () => {}, onFinal = () => {}, onJudge = () => {},
@@ -9,6 +11,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
   initialRecords = [], attachment, profile = {}, modelBudget }) {
   const records = sanitize(initialRecords);
   const repeated = [];
+  let consecutiveFailures = 0, recoveryChecks = 0, firstResponse = true;
   let repairs = 0, completionRetries = 0, previousMessage = '', budgetExhausted = false, usedSteps = 0;
   const checkpoint = async () => onCheckpoint(sanitize(records));
   for (let step = 0; step < maxSteps; step++) {
@@ -23,8 +26,9 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       ...(catalog ? { catalog } : {}), parallelTools: [...(tools.parallelNames?.() || [])], skills: tools.skills?.list() || [], loadedSkills: sanitize([...(tools.loadedSkills?.values() || [])]) }));
     onBudget({ used: prompt.length, total: budget });
     let rawReply = '';
-    const response = await bridge.chat(prompt, {
-      signal, timeoutMs, onJudge, newConversation: step === 0, attachment: step === 0 ? attachment : undefined,
+    let response;
+    try { response = await bridge.chat(prompt, {
+      signal, timeoutMs, onJudge, newConversation: step === 0, attachment: firstResponse ? attachment : undefined,
       onUpload: name => onActivity('正在上傳附件 ' + name),
       onToken: token => {
         rawReply += token;
@@ -39,6 +43,17 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
         }
       },
     });
+      consecutiveFailures = 0; firstResponse = false;
+    } catch (error) {
+      if (signal.aborted || isServiceLimit(error) || !isTransientRequestError(error)) throw error;
+      consecutiveFailures++;
+      records.push({ type: 'request_error', message: redact(error.message), attempt: consecutiveFailures, instruction: 'No tool executed from this failed response. Continue from saved evidence; verify ambiguous external results before using them.' });
+      await checkpoint();
+      if (consecutiveFailures >= 3) throw new Error('NTPU AI 連續三次無法完成模型請求，暫判服務不可用。已保留任務檢查點：' + redact(error.message));
+      onActivity(`回答未完成，排回共用佇列（恢復 ${consecutiveFailures}/2）`);
+      onStream('');
+      continue;
+    }
     if (signal.aborted) throw new Error('已停止');
     let reply;
     try { reply = sanitize(parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined, tools.parallelNames?.() || new Set())); }
@@ -50,6 +65,11 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     if (reply.kind === 'final') {
       if (tools.hasPending?.()) {
         records.push({ type: 'coordination', name: 'get_task_results', result: await tools.waitPending(), instruction: 'Subtasks have now settled. Use their actual evidence to finish the parent task; do not claim a failed subtask succeeded.' });
+        await checkpoint(); continue;
+      }
+      const recoverable = records.some(record => record.type === 'request_error' || record.result?.ok === false && !record.result?.denied);
+      if (reply.completed === false && recoverable && !records.some(record => record.result?.denied) && recoveryChecks++ < 2) {
+        records.push({ type: 'recovery_check', instruction: 'An ordinary failure alone is not a blocker. Try safe alternative tools or direct parent work; if an important child failed, use retry_task once with its original ID. Preserve failure evidence. Never bypass a denied permission or service limit. Report a concrete blocker only after feasible alternatives are exhausted.' });
         await checkpoint(); continue;
       }
       const plan = [...records].reverse().find(record => record.name === 'update_plan' && record.result?.ok);
@@ -83,7 +103,10 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     if (message) previousMessage = message;
     let result;
     try { result = sanitize(await tools.execute(reply.name, reply.args)); }
-    catch (error) { onTool({ id, status: signal.aborted ? 'interrupted' : 'error', result: error.message }); throw error; }
+    catch (error) {
+      if (signal.aborted || isServiceLimit(error) || /本機保存|Session 已|寫入.*失敗/i.test(error.message)) { onTool({ id, status: signal.aborted ? 'interrupted' : 'error', result: redact(error.message) }); throw error; }
+      result = { ok: false, error: redact(error.message) };
+    }
     onTool({ id, status: result.denied ? 'denied' : result.ok === false ? 'error' : 'done', result });
     const args = { ...reply.args };
     if (reply.name === 'write_file') args.content = `(proposed ${reply.args.content?.length || 0} characters; re-read the file for current contents)`;

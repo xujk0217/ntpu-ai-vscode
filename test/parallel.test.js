@@ -166,3 +166,13 @@ test('login failure while opening a child channel blocks new parent and child se
  const id=workers.delegate({tasks:[{title:'read',role:'explore',request:'read'}]}).tasks[0].id;await workers.collect();assert.equal(adaptive.blocked,true);assert.equal(adaptive.limit,1);assert.equal(errors,1);
  await assert.rejects(workers.scheduler.run(()=>sends++),/login/);assert.equal(sends,0);assert.throws(()=>workers.retryTask({id,reason:'necessary evidence'}),/禁止重試/);await workers.close();workers.scheduler.close();
 });
+
+test('background naming reserves one of four subagent slots until it finishes', async () => {
+  let naming = true;
+  const workers = new AgentWorkers({ base: { catalog: () => [] }, bridge: { createChannel: async () => ({ close: async () => {} }) },
+    scheduler: new RequestScheduler(2), modelBudget: new ModelBudget(20), signal: signal(), occupiedSlots: () => naming ? 1 : 0,
+    createTools: () => ({ catalog: () => [] }), runner: async () => ({ completed: true }) });
+  const tasks = Array.from({ length: 4 }, (_, index) => ({ title: 't' + index, role: 'explore', request: 'read' }));
+  assert.throws(() => workers.delegate({ tasks }), /最多 4/); assert.equal(workers.jobs.size, 0);
+  naming = false; assert.equal(workers.delegate({ tasks }).tasks.length, 4); await workers.close({ cancel: false }); workers.scheduler.close();
+});
