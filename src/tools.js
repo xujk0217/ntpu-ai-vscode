@@ -87,6 +87,7 @@ class WorkspaceTools {
     const methods = {
       list_files: () => this.list(args), read_file: () => this.read(args), search_text: () => this.search(args),
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
+      open_browser: () => this.openBrowser(args),
       update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
       get_capabilities: () => this.getCapabilities(), refresh_skills: () => this.refreshSkills(),
       install_skill: () => this.installSkill(args), connect_mcp: () => this.connectMcp(args), add_mcp: () => this.addMcp(args), download_file: () => this.download(args),
@@ -98,7 +99,7 @@ class WorkspaceTools {
     if (this.options.web === false && (['web_search', 'web_fetch', 'download_file'].includes(name) || name === 'install_skill' && typeof args.url === 'string' || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用公開網路工具；請先開啟輸入框旁的地球按鈕。' };
     if (this.policy.decision(name, args, mcpTool) === 'deny') return { ok: false, denied: true, error: '目前 agent 模式禁止這個操作。' };
     try {
-      if (!['write_file', 'edit_file', 'run_command', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
+      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
     catch (error) { if (this.signal.aborted) throw error; return sanitize({ ok: false, error: error.message }); }
@@ -389,6 +390,31 @@ class WorkspaceTools {
     return { ok: true, path: args.path, bytes: buffer.length, artifact: artifact?.id };
   }
 
+  async openBrowser(args) {
+    if (typeof args.path !== 'string' || !/\.html?$/i.test(args.path)) throw new Error('open_browser 僅接受工作區內的 .html 或 .htm 相對路徑。');
+    // The desktop operation is narrow and separately approved; shell isolation stays intact.
+    if (this.root.scheme && this.root.scheme !== 'file') throw new Error('遠端工作區檔案不能直接交給桌面瀏覽器；請先使用使用者已設定的預覽或連接埠轉送。');
+    const validate = async () => {
+      const absolute = await safePath(this.root.fsPath, args.path);
+      const real = await fs.realpath(absolute), realRoot = await fs.realpath(this.root.fsPath);
+      if (!(await fs.stat(absolute)).isFile() || !/\.html?$/i.test(real)) throw new Error('目標必須是一般 HTML 檔案，不能連結到其他類型的檔案。');
+      if ([args.path, path.relative(realRoot, real)].some(relative => classifyPath(relative, this.options.reviewPaths || []).level === 'review')) throw new Error('需審核的資料檔案不能直接交給外部瀏覽器。');
+      // The browser reads disk, so an unsaved editor buffer cannot hide disk secrets.
+      if (classifyContent(await diskText(absolute)).detected) throw new Error('HTML 含敏感資料，不能直接交給外部瀏覽器。');
+      return absolute;
+    };
+    await validate();
+    if (!(await this.authorize('open_browser', args, { title: '開啟網頁 ' + args.path,
+      detail: `使用 VS Code 交給預設瀏覽器：${args.path}\n頁面中的 JavaScript 會在瀏覽器執行，並可能存取網路；不代表已驗證畫面或互動。` }))) return { ok: false, denied: true, message: '使用者未批准開啟網頁。' };
+    this.checkStopped();
+    const absolute = await validate();
+    const opened = await vscode.env.openExternal(vscode.Uri.file(absolute));
+    this.checkStopped();
+    this.onActivity(opened ? '已交給瀏覽器開啟 ' + args.path : '瀏覽器未接受開啟請求');
+    return { ok: opened === true, opened: opened === true, path: args.path, verified: false,
+      ...(opened ? { message: 'VS Code 已交付開啟請求；頁面渲染與互動尚未驗證。' } : { error: 'VS Code 未能交付開啟請求，請檢查系統預設瀏覽器與桌面工作階段。' }) };
+  }
+
   async command(args) {
     inspectOutboundPayload(args, { reject: true });
     if (typeof args.command !== 'string' || !args.command.trim() || args.command.length > 2000) throw new Error('command 必須是 1–2000 字的完整指令。');
@@ -430,6 +456,8 @@ class WorkspaceTools {
         await launch.cleanup().catch(() => {});
         if (this.signal.aborted) return reject(new Error('已停止'));
         resolve({ ok: exitCode === 0 && !timedOut, exit_code: exitCode, signal, timed_out: timedOut,
+          ...(exitCode !== 0 && /kLSServerCommunicationErr|Launch.?Services|cannot open display|no method available for opening/i.test(output) ?
+            { recovery_hint: 'Desktop opening failed in the shell sandbox. For workspace HTML, use open_browser with the relative path through VS Code; do not disable the sandbox or repeat the same shell command.' } : {}),
           output: redact(output).slice(0, 14000), truncated: total > 14000, sandbox: launch.info, approval: !autoApproved ? '使用者核准' : this.policy.mode === 'full' && !approvalInfo.explicit ? '完整存取' : approvalInfo.reason, matched_rule: approvalInfo.rule });
       });
       if (this.signal.aborted) kill();

@@ -48,6 +48,86 @@ async function fixture(t) {
   await fs.writeFile(path.join(root, 'main.js'), 'const first = 1;\nconst second = 2;\nconst third = 3;\n');
   return root;
 }
+
+test('workspace HTML opens through VS Code after approval without launching a shell', async t => {
+  const root = await fixture(t), mock = mockVscode(), opened = []; let approvals = 0;
+  await fs.writeFile(path.join(root, 'index.html'), '<!doctype html><title>Fixture</title>');
+  mock.env = { openExternal: async uri => { opened.push(uri.fsPath); return true; } };
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => {
+    approvals++; assert.equal(detail.tool, 'open_browser'); return detail.accept;
+  }, { sandbox: { prepare: () => { throw new Error('must not spawn shell'); } } });
+  const result = await tools.execute('open_browser', { path: 'index.html' });
+  assert.equal(result.ok, true); assert.equal(result.opened, true); assert.equal(result.verified, false);
+  assert.equal(approvals, 1); assert.deepEqual(opened, [path.join(root, 'index.html')]);
+});
+
+test('browser launch rejects secrets, traversal, executables, missing HTML and remote files', async t => {
+  const root = await fixture(t), mock = mockVscode(); let opens = 0, approvals = 0;
+  mock.env = { openExternal: async () => { opens++; return true; } };
+  await fs.writeFile(path.join(root, 'private.html'), 'API_KEY=only-test-key');
+  await fs.writeFile(path.join(root, 'review.html'), '<p>review</p>');
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => { approvals++; return detail.accept; }, { reviewPaths: ['review.html'] });
+  for (const relative of ['../outside.html', '.ssh/index.html', 'main.js', 'missing.html', 'private.html', 'review.html', 'C:\\private\\index.html'])
+    assert.equal((await tools.execute('open_browser', { path: relative })).ok, false, relative);
+  tools.root.scheme = 'vscode-remote';
+  assert.match((await tools.execute('open_browser', { path: 'review.html' })).error, /遠端/);
+  assert.equal(opens, 0); assert.equal(approvals, 0);
+});
+
+test('denial, cancellation and system refusal do not report opened or run alternative shell', async t => {
+  const root = await fixture(t), mock = mockVscode(); let opens = 0;
+  await fs.writeFile(path.join(root, 'index.html'), '<p>Fixture</p>');
+  mock.env = { openExternal: async () => { opens++; return false; } };
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const controller = new AbortController();
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), controller.signal, () => {}, async () => undefined);
+  assert.equal((await tools.execute('open_browser', { path: 'index.html' })).denied, true); assert.equal(opens, 0);
+  tools.onApproval = async detail => detail.accept;
+  const result = await tools.execute('open_browser', { path: 'index.html' });
+  assert.equal(result.ok, false); assert.equal(result.opened, false); assert.equal(opens, 1);
+  tools.onApproval = async detail => { controller.abort(); return detail.accept; };
+  await assert.rejects(tools.execute('open_browser', { path: 'index.html' }), /已停止/); assert.equal(opens, 1);
+});
+
+test('HTML is revalidated after approval if user replaces it with sensitive contents', async t => {
+  const root = await fixture(t), mock = mockVscode(); let opens = 0;
+  await fs.writeFile(path.join(root, 'index.html'), '<p>Fixture</p>');
+  mock.env = { openExternal: async () => { opens++; return true; } };
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => {
+    await fs.writeFile(path.join(root, 'index.html'), 'API_KEY=only-test-key'); return detail.accept;
+  });
+  assert.equal((await tools.execute('open_browser', { path: 'index.html' })).ok, false); assert.equal(opens, 0);
+});
+
+test('unsaved editor text cannot hide secrets in the HTML opened from disk', async t => {
+  const root = await fixture(t), mock = mockVscode(); let opens = 0;
+  const file = path.join(root, 'index.html');
+  await fs.writeFile(file, 'API_KEY=only-test-key');
+  mock.workspace.textDocuments.push({ uri: mock.Uri.file(file), getText: () => '<p>unsaved clean buffer</p>' });
+  mock.env = { openExternal: async () => { opens++; return true; } };
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => detail.accept);
+  assert.equal((await tools.execute('open_browser', { path: 'index.html' })).ok, false); assert.equal(opens, 0);
+});
+
+test('HTML symlinks cannot open external or protected files', { skip: process.platform === 'win32' }, async t => {
+  const root = await fixture(t), outside = await fixture(t), mock = mockVscode(); let opens = 0;
+  await fs.writeFile(path.join(outside, 'outside.html'), '<p>outside</p>');
+  await fs.writeFile(path.join(root, '.env'), 'private-data');
+  await fs.writeFile(path.join(root, 'review.html'), '<p>review data</p>');
+  await fs.symlink(path.join(outside, 'outside.html'), path.join(root, 'outside.html'));
+  await fs.symlink(path.join(root, '.env'), path.join(root, 'secret.html'));
+  await fs.symlink(path.join(root, 'main.js'), path.join(root, 'script.html'));
+  await fs.symlink(path.join(root, 'review.html'), path.join(root, 'alias.html'));
+  mock.env = { openExternal: async () => { opens++; return true; } };
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => detail.accept, { reviewPaths: ['review.html'] });
+  for (const relative of ['outside.html', 'secret.html', 'script.html', 'alias.html']) assert.equal((await tools.execute('open_browser', { path: relative })).ok, false, relative);
+  assert.equal(opens, 0);
+});
 test('assisted mode applies a precise edit to read lines while preserving unseen content', async t => {
   const root = await fixture(t); let approvals = 0; const changes = [];
   const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());

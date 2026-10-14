@@ -1,7 +1,7 @@
 'use strict';
 
 const READ_TOOLS = new Set(['list_files', 'read_file', 'search_text', 'load_skill', 'get_capabilities', 'refresh_skills', 'update_plan', 'ask_user']);
-const EDIT_TOOLS = new Set(['write_file', 'edit_file', 'create_visual', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp']);
+const EDIT_TOOLS = new Set(['write_file', 'edit_file', 'create_visual', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp', 'open_browser']);
 const READ_ONLY_AGENTS = new Set(['plan', 'review', 'research', 'ask']);
 const MODES = ['ask', 'assisted', 'full'];
 
@@ -26,7 +26,7 @@ class PermissionPolicy {
     }
     if (this.grants.has(name)) return 'allow';
     if (this.mode === 'full') return 'allow';
-    if (this.mode === 'assisted' && (EDIT_TOOLS.has(name) || name === 'web_search' || name === 'web_fetch' ||
+    if (this.mode === 'assisted' && ((EDIT_TOOLS.has(name) && name !== 'open_browser') || name === 'web_search' || name === 'web_fetch' ||
       name === 'inspect_image' || (name === 'run_command' && safeCommand(args.command)))) return 'allow';
     return 'ask';
   }

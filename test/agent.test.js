@@ -53,10 +53,10 @@ test('unstructured prose never executes tools and canceled requests never start 
 test('protocol rejects unknown tools and budget retains authoritative request', () => {
   assert.throws(() => parseReply('{"kind":"tool","name":"delete_all","args":{}}'), /未知工具/);
   assert.equal(parseReply('```json\n{"kind":"final","message":"完成"}\n```').kind, 'final');
-  const prompt = buildPrompt({ request: 'Keep this request', records: [{ result: 'x'.repeat(20000) }], budget: 8000 });
+  const prompt = buildPrompt({ request: 'Keep this request', records: [{ result: 'x'.repeat(20000) }], budget: 16000 });
   assert.match(prompt, /Keep this request/);
   assert.match(prompt, /truncated|older tool records omitted/);
-  assert.ok(prompt.length < 8000);
+  assert.ok(prompt.length < 16000);
 });
 
 test('Build repairs prose and continues actual tool calls before finalizing', async () => {
@@ -144,4 +144,95 @@ test('ordinary tool failure becomes evidence and parent tries another safe step'
   const result = await runAgent({ request: '檢查', profile: { agent: 'ask' }, signal: new AbortController().signal,
     bridge: { chat: async prompt => { prompts.push(prompt); return { text: JSON.stringify(replies.shift()) }; } }, tools: { execute: async () => { if (++calls === 1) throw new Error('File missing'); return { ok: true, content: 'data' }; } } });
   assert.equal(result.completed, true); assert.equal(calls, 2); assert.match(prompts[2], /safe alternative/);
+});
+
+test('desktop shell failure cannot finalize implicitly; agent researches and opens through the host', async () => {
+  const replies = [
+    { kind: 'tool', name: 'run_command', args: { command: 'open calculus.html' } },
+    { kind: 'final', message: '沙箱失敗，請自行開啟。' },
+    { kind: 'tool', name: 'get_capabilities', args: {} },
+    { kind: 'tool', name: 'web_fetch', args: { url: 'https://code.visualstudio.com/api/references/vscode-api' } },
+    { kind: 'final', message: '已讀取官方 API，但仍未開啟。', completed: false },
+    { kind: 'tool', name: 'open_browser', args: { path: 'calculus.html' } },
+    { kind: 'final', completed: true, message: '已交付瀏覽器開啟，尚未驗證畫面。' },
+  ];
+  const prompts = [], finals = [], checkpoints = [], executed = [];
+  const result = await runAgent({ request: '幫我執行，然後開啟網頁', profile: { agent: 'build' }, signal: new AbortController().signal,
+    bridge: { chat: async prompt => { prompts.push(prompt); return { text: JSON.stringify(replies.shift()) }; } },
+    tools: { execute: async name => { executed.push(name); return name === 'run_command' ? { ok: false, exit_code: 1, output: 'kLSServerCommunicationErr' } :
+      name === 'open_browser' ? { ok: true, opened: true, verified: false } : { ok: true, content: 'actual official docs' }; } },
+    onFinal: text => finals.push(text), onCheckpoint: records => checkpoints.push([...records]) });
+  assert.equal(result.completed, true);
+  assert.deepEqual(executed, ['run_command', 'get_capabilities', 'web_fetch', 'open_browser']);
+  assert.equal(finals.length, 1); assert.match(finals[0], /尚未驗證/);
+  assert.match(prompts[2], /materially different approach/);
+  assert.equal(checkpoints.at(-1).filter(record => record.type === 'recovery_check').length, 2);
+});
+
+test('recovery permits multiple evidence-based attempts rather than two failures per task', async () => {
+  const replies = [];
+  for (let i = 0; i < 4; i++) replies.push({ kind: 'tool', name: 'run_command', args: { command: `node attempt-${i}.js` } },
+    { kind: 'final', completed: false, message: '仍然失敗。' });
+  replies.push({ kind: 'tool', name: 'run_command', args: { command: 'node repaired.js' } }, { kind: 'final', completed: true, message: '已驗證完成。' });
+  let attempts = 0;
+  const result = await runAgent({ request: '幫我修正執行錯誤', maxSteps: 14, signal: new AbortController().signal,
+    bridge: { chat: async () => ({ text: JSON.stringify(replies.shift()) }) }, tools: { execute: async () => ({ ok: ++attempts === 5, output: 'actual fixture result' }) } });
+  assert.equal(result.completed, true); assert.equal(attempts, 5); assert.equal(result.steps, 10);
+});
+
+test('repeated premature finals without new evidence remain incomplete and stop boundedly', async () => {
+  let calls = 0, executions = 0; const finals = [];
+  const result = await runAgent({ request: '檢查', signal: new AbortController().signal,
+    bridge: { chat: async () => ({ text: JSON.stringify(++calls === 1 ? { kind: 'tool', name: 'run_command', args: { command: 'node broken.js' } } :
+      { kind: 'final', message: '完成。' }) }) }, tools: { execute: async () => { executions++; return { ok: false, exit_code: 1 }; } }, onFinal: text => finals.push(text) });
+  assert.equal(result.completed, false); assert.equal(calls, 4); assert.equal(executions, 1);
+  assert.match(finals[0], /尚未確認全部任務完成/);
+});
+
+test('resolved failure does not force research or replay already successful operations', async () => {
+  let calls = 0, executions = 0;
+  const replies = [ { kind: 'tool', name: 'run_command', args: { command: 'node fixed.js' } }, { kind: 'final', completed: true, message: '測試通過。' } ];
+  const result = await runAgent({ request: '修正程式', signal: new AbortController().signal,
+    initialRecords: [{ type: 'tool', name: 'run_command', result: { ok: false } }],
+    bridge: { chat: async () => { calls++; return { text: JSON.stringify(replies.shift()) }; } }, tools: { execute: async () => { executions++; return { ok: true }; } } });
+  assert.equal(result.completed, true); assert.equal(calls, 2); assert.equal(executions, 1);
+});
+
+test('denied desktop action is not retried or replaced by shell', async () => {
+  let calls = 0, executions = 0;
+  const replies = [{ kind: 'tool', name: 'open_browser', args: { path: 'index.html' } }, { kind: 'final', completed: false, message: '開啟未核准。' }];
+  const result = await runAgent({ request: '幫我開啟網頁', signal: new AbortController().signal,
+    bridge: { chat: async () => { calls++; return { text: JSON.stringify(replies.shift()) }; } }, tools: { execute: async () => { executions++; return { ok: false, denied: true }; } } });
+  assert.equal(result.completed, false); assert.equal(calls, 2); assert.equal(executions, 1);
+});
+
+test('identical tool results trigger investigation before stopping, without a fourth blind execution', async () => {
+  for (const changeApproach of [true, false]) {
+    let calls = 0, executions = 0;
+    const repeat = { kind: 'tool', name: 'run_command', args: { command: 'node broken.js' } };
+    const replies = [repeat, repeat, repeat, ...(changeApproach ? [
+      { kind: 'tool', name: 'web_fetch', args: { url: 'https://example.com/docs' } },
+      { kind: 'tool', name: 'run_command', args: { command: 'node fixed.js' } },
+      { kind: 'final', completed: true, message: '已完成' },
+    ] : [repeat])];
+    const result = await runAgent({ request: '修正', maxSteps: 10, signal: new AbortController().signal,
+      bridge: { chat: async prompt => { if (++calls === 4) assert.match(prompt, /loop_check/); return { text: JSON.stringify(replies.shift()) }; } },
+      tools: { execute: async (name, args) => { executions++; return { ok: name === 'web_fetch' || args.command === 'node fixed.js', output: 'actual fixture output' }; } } });
+    assert.equal(result.completed, changeApproach); assert.equal(executions, changeApproach ? 5 : 3);
+    if (!changeApproach) assert.equal(result.loopStopped, true);
+  }
+});
+
+test('investigation honors shared model budget and user cancellation', async () => {
+  const { ModelBudget } = require('../src/parallel');
+  for (const cancel of [false, true]) {
+    const budget = new ModelBudget(2), controller = new AbortController(); let calls = 0;
+    const promise = runAgent({ request: '修正', maxSteps: 50, modelBudget: budget, signal: controller.signal,
+      bridge: { chat: async () => ({ text: JSON.stringify(++calls === 1 ? { kind: 'tool', name: 'run_command', args: { command: 'node broken.js' } } :
+        { kind: 'final', completed: false, message: '執行失敗' }) }) }, tools: { execute: async () => ({ ok: false }) },
+      onActivity: message => { if (cancel && message.includes('替代方法')) controller.abort(); } });
+    if (cancel) await assert.rejects(promise, /已停止/);
+    else assert.equal((await promise).completed, false);
+    assert.equal(calls, 2); assert.equal(budget.used, 2);
+  }
 });

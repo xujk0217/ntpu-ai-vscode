@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.7 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.6.9 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 ## Agent 能力與送出快捷鍵
 
@@ -57,10 +57,10 @@ Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區�
 
 | 系統 | 0.6.5 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-win32-x64-0.6.6.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-arm64-0.6.6.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-x64-0.6.6.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-linux-x64-0.6.6.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-win32-x64-0.6.9.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-darwin-arm64-0.6.9.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-darwin-x64-0.6.9.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-linux-x64-0.6.9.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -406,3 +406,10 @@ Agent 可在一個模型回合批次讀取 2–6 個獨立檔案或公開資料�
 並行延遲以實際重疊的串流為依據，按輸入／回覆量評估首字與完成時間，也觀察內容間的長時間停滯。單一請求的大型程式碼生成不會因總耗時長就被當成並行壅塞。多次真正的空白回答／網路失敗仍會降低新請求名額；429、登入失效及明確服務限制仍立即停止新請求。
 
 本機 Task Memory 保留每輪事件數、輸入／回覆字數、模型代碼與耗時，用於診斷；不包含 Cookie、Token 或原始網路 payload。這些指標為本機啟發式判斷，不能推論校方硬體負載或官方並行上限。
+
+
+## 調查與持續嘗試（0.6.9）
+
+一般工具失敗時，Agent 會檢查實際錯誤與檔案、確認可用能力，必要時使用已啟用的網路／MCP 查官方資料，整理替代方法後繼續執行。尚未恢復的失敗不會因讀到文件或更新計畫就算完成。可以用 `open_browser` 交給預設瀏覽器開啟工作區 HTML，取代沙箱中無法呼叫桌面服務的 shell `open`。它仍遵循權限與敏感檔案防護，接受開啟不等於已驗證畫面。
+
+有新工具證據時會繼續調查，仍受共用輪數、取消與無進展停止條件約束；使用者拒絕、登入失效或服務限制不會被繞過。完整流程與參考來源見 [Agent 恢復說明](AGENT_RECOVERY.md)。

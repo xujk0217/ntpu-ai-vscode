@@ -9,6 +9,9 @@ test('permission levels enforce distinct file, terminal and external tool behavi
   assert.equal(ask.decision('read_file'), 'allow');
   assert.equal(ask.decision('write_file'), 'ask');
   assert.equal(assisted.decision('write_file'), 'allow');
+  assert.equal(ask.decision('open_browser'), 'ask');
+  assert.equal(assisted.decision('open_browser'), 'ask');
+  assert.equal(full.decision('open_browser'), 'allow');
   assert.equal(assisted.decision('run_command', { command: 'git status --short' }), 'allow');
   assert.equal(assisted.decision('run_command', { command: 'npm install' }), 'ask');
   assert.equal(assisted.decision('mcp_custom', {}, { external: true }), 'ask');
@@ -24,6 +27,7 @@ test('read-only agent restrictions dominate full access and session grants', () 
     assert.equal(policy.decision('install_skill'), 'deny');
     assert.equal(policy.decision('connect_mcp'), 'deny');
     assert.equal(policy.decision('add_mcp'), 'deny');
+    policy.grant('open_browser'); assert.equal(policy.decision('open_browser'), 'deny');
     assert.equal(policy.decision('get_capabilities'), 'allow');
     assert.equal(policy.decision('run_command', { command: 'npm run build' }), 'deny');
     assert.equal(policy.decision('mcp_unknown', {}, { external: true, readOnly: false }), 'deny');
