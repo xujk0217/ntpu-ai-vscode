@@ -102,3 +102,14 @@ test('worker catalog and host enforce the selected subagent limit while maintain
   assert.throws(()=>workers.delegate({tasks:[{title:'extra',request:'read',role:'review'}]}),/最多 4/);
   await turn();controller.abort();await workers.close();
 });
+
+test('five read-only workers complete across four shared model slots', async () => {
+  const scheduler=new RequestScheduler(4),budget=new ModelBudget(20),controller=new AbortController();let channels=0,closed=0,active=0,peak=0;
+  const base={catalog:()=>[{name:'read_file'}],execute:async()=>({ok:true,text:'synthetic fixture'})};
+  const workers=new AgentWorkers({base,scheduler,modelBudget:budget,signal:controller.signal,maxWorkers:5,createTools:()=>base,
+    bridge:{createChannel:async()=>{channels++;return {chat:async(_,options)=>{options.onOpen?.();peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,5));active--;return {text:'evidence'};},close:async()=>{closed++;}};}},
+    runner:async options=>{assert.deepEqual(options.tools.catalog().map(t=>t.name),['read_file']);options.modelBudget.consume();const reply=await options.bridge.chat('synthetic',{signal:options.signal});options.onFinal(reply.text);return {completed:true};}});
+  const result=workers.delegate({tasks:Array.from({length:5},(_,i)=>({title:`area ${i}`,role:'explore',request:'read synthetic area'}))});
+  assert.equal(result.tasks.length,5);const collected=await workers.collect();
+  assert.equal(collected.ok,true);assert(collected.tasks.every(t=>t.status==='done'));assert.equal(peak,4);assert.equal(scheduler.peakStreams,4);assert.equal(channels,5);assert.equal(closed,5);assert.equal(budget.used,5);await workers.close();
+});

@@ -8,7 +8,7 @@ function peakStreams(requests) {
     .flatMap(item => [[item.openedAt, 1], [item.endedAt, -1]]).sort((a,b) => a[0]-b[0] || a[1]-b[1]);
   let active = 0, peak = 0; for (const [, change] of events) { active += change; peak = Math.max(peak, active); } return peak;
 }
-async function probeGroup(bridge, concurrency, { signal, onProgress, timeoutMs }) {
+async function probeGroup(bridge, concurrency, { signal, onProgress, timeoutMs, beforeRequests = async () => {}, responseLines = 10 }) {
   const channels = [], controller = new AbortController(); let failure = null;
   const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
   const prefix = 'NTPU_PARALLEL_' + randomUUID().replaceAll('-', '').slice(0, 12);
@@ -22,12 +22,14 @@ async function probeGroup(bridge, concurrency, { signal, onProgress, timeoutMs }
       channels.push(await bridge.createChannel());
     }
     if (!controller.signal.aborted && channels.length === concurrency) {
+      await beforeRequests(concurrency, controller.signal);
+      if (controller.signal.aborted) throw new Error('已停止');
       onProgress(`正在測試 ${concurrency} 個同時請求`);
       await Promise.all(channels.map(async (channel, index) => {
         const timing = requests[index]; timing.startedAt = Date.now();
         try {
           if (controller.signal.aborted) throw new Error('已停止');
-          const result = await channel.chat(`這是有限的連線測試。請只回覆 ${markers[index]} 作為第一行，再寫 10 行繁體中文簡短問候（每行約 20 字、總長不超過 400 字）。請不要加入其他識別碼。`, {
+          const result = await channel.chat(`這是有限的連線測試。請只回覆 ${markers[index]} 作為第一行，再寫 ${responseLines} 行繁體中文簡短問候（每行約 20 字、總長不超過 ${responseLines * 40} 字）。請不要加入其他識別碼。`, {
             signal: controller.signal, timeoutMs, newConversation: true,
             onOpen: () => { timing.openedAt = Date.now(); }, onToken: () => { timing.firstTokenAt ??= Date.now(); } });
           timing.success = true; timing.matched = result.text.includes(markers[index]);
@@ -59,7 +61,7 @@ async function probeGroup(bridge, concurrency, { signal, onProgress, timeoutMs }
   const streamOverlap = successful && requests.every(item => item.openedAt !== null && item.firstTokenAt !== null) && peakStreams(requests) === concurrency;
   const crossTalk = requests.some(item => item.crossTalk);
   const times = requests.map(item => item.durationMs).filter(value => value !== null);
-  return { concurrency, successCount, successRate: successCount / concurrency, successful, streamOverlap, crossTalk,
+  return { concurrency, responseLines, measuredAt: new Date().toISOString(), successCount, successRate: successCount / concurrency, successful, streamOverlap, crossTalk,
     observedPeakConcurrency: peakStreams(requests), verified: successful && streamOverlap && !signal?.aborted && !failure,
     cancelled: signal?.aborted === true, serviceLimited: failure?.serviceLimited === true,
     stopReason: signal?.aborted ? 'cancelled' : failure?.reason || (!streamOverlap ? 'no_overlap' : null), error: failure?.error,
@@ -75,14 +77,16 @@ function waitBetweenGroups(milliseconds, signal, onProgress, next) {
     signal?.addEventListener('abort', finish, { once: true }); update();
   });
 }
-async function probeConcurrency(bridge, { signal, onProgress = () => {}, timeoutMs = 90000, maxConcurrency = MAX_CONCURRENCY, groupPauseMs = 60000, onGroup = async () => {} } = {}) {
-  const groups = []; let maxVerifiedConcurrency = 1;
+async function probeConcurrency(bridge, { signal, onProgress = () => {}, timeoutMs = 90000, maxConcurrency = MAX_CONCURRENCY, groupPauseMs = 60000, beforeRequests = async () => {}, initialGroups = [], responseLines = 10, onGroup = async () => {} } = {}) {
+  const groups = initialGroups.map(group => ({ ...group, reused: true })); let maxVerifiedConcurrency = 1;
+  for (const group of groups) { if (group.concurrency !== maxVerifiedConcurrency + 1 || !group.verified || !group.successful || !group.streamOverlap || group.crossTalk) throw new Error('不可沿用未驗證或不連續的組別。'); maxVerifiedConcurrency = group.concurrency; }
   const ceiling = Math.max(2, concurrencyLimit(maxConcurrency, MAX_CONCURRENCY));
   const pause = Number.isFinite(groupPauseMs) ? Math.max(0, Math.min(120000, groupPauseMs)) : 60000;
-  for (let count = 2; count <= ceiling; count++) {
-    if (count > 2) await waitBetweenGroups(pause, signal, onProgress, count);
+  const lines = Math.max(10, Math.min(60, Math.floor(Number(responseLines) || 10)));
+  for (let count = maxVerifiedConcurrency + 1; count <= ceiling; count++) {
+    if (count > 2 && groups.length > initialGroups.length) await waitBetweenGroups(pause, signal, onProgress, count);
     if (signal?.aborted) break;
-    const group = await probeGroup(bridge, count, { signal, onProgress, timeoutMs });
+    const group = await probeGroup(bridge, count, { signal, onProgress, timeoutMs, beforeRequests, responseLines: lines });
     groups.push(group); await onGroup(group);
     if (!group.verified) break;
     maxVerifiedConcurrency = count;
@@ -90,7 +94,7 @@ async function probeConcurrency(bridge, { signal, onProgress = () => {}, timeout
   const serviceLimited = groups.some(group => group.serviceLimited), cancelled = signal?.aborted === true;
   const recommendedConcurrency = serviceLimited || cancelled ? 1 : maxVerifiedConcurrency;
   const verified = recommendedConcurrency > 1;
-  return { schemaVersion: 2, timestamp: new Date().toISOString(), maxTestConcurrency: ceiling, groupPauseMs: pause, groups, maxVerifiedConcurrency,
+  return { schemaVersion: 2, timestamp: groups.filter(group => group.measuredAt).map(group => group.measuredAt).sort()[0] || new Date().toISOString(), completedAt: new Date().toISOString(), maxTestConcurrency: ceiling, groupPauseMs: pause, groups, maxVerifiedConcurrency,
     recommendedConcurrency, verified, successful: groups.length > 0 && groups.every(group => group.successful),
     streamOverlap: groups.length > 0 && groups.every(group => group.streamOverlap), serviceLimited, cancelled,
     stopReason: cancelled ? 'cancelled' : groups.at(-1)?.stopReason || null,

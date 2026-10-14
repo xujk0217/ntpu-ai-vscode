@@ -27,8 +27,18 @@ function parallelPolicy(verification, { scope, now = Date.now(), enabled = true,
   const verified = proven > 1;
   const configured = Number(maxConcurrency) === 0 ? proven : concurrencyLimit(maxConcurrency);
   const effectiveConcurrency = enabled ? Math.min(proven, configured) : 1;
-  const autoWorkers = Math.max(1, effectiveConcurrency - 1);
-  const workerConcurrency = Math.min(effectiveConcurrency, Number(maxSubagents) === 0 ? autoWorkers : concurrencyLimit(maxSubagents));
-  return { enabled, verified, maxConcurrency: Number(maxConcurrency) || 0, maxVerifiedConcurrency: proven, effectiveConcurrency, workerConcurrency };
+  // Successful isolated conversations can form a larger worker pool than the
+  // proven stream limit. Every worker still acquires the shared scheduler slot.
+  let validatedWorkers = proven;
+  if (verified && verification.schemaVersion === 2) {
+    let contiguous = 1;
+    for (const group of verification.groups || []) {
+      if (group.concurrency !== contiguous + 1 || !group.successful || group.crossTalk || group.serviceLimited || group.cancelled || group.requests?.length !== group.concurrency || !group.requests.every(request => request.success && request.matched && !request.crossTalk && !request.error)) break;
+      contiguous = group.concurrency;
+    }
+    validatedWorkers = concurrencyLimit(contiguous);
+  }
+  const workerConcurrency = effectiveConcurrency === 1 ? 1 : Math.min(validatedWorkers, Number(maxSubagents) === 0 ? validatedWorkers : concurrencyLimit(maxSubagents));
+  return { enabled, verified, maxConcurrency: Number(maxConcurrency) || 0, maxVerifiedConcurrency: proven, maxValidatedSubagents: validatedWorkers, effectiveConcurrency, workerConcurrency };
 }
 module.exports = { MAX_CONCURRENCY, concurrencyLimit, isServiceLimit, parallelPolicy };

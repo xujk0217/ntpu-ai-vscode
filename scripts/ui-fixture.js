@@ -98,6 +98,12 @@ async function testUI(page, origin) {
   await page.getByRole('combobox', { name: '逐組測試至', exact: true }).selectOption('4');
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'probeMaxConcurrency', value: 4 });
   assert.match(await page.getByRole('button', { name: '逐步測試並行能力（2–5）', exact: true }).getAttribute('title'), /14/);
+  await page.getByRole('combobox', { name: '每分鐘請求節奏', exact: true }).selectOption('6');
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'requestsPerMinute', value: 6 });
+  const fiveProbe=page.getByRole('button', { name: '單獨驗證五個串流', exact: true });
+  assert.equal(await fiveProbe.isEnabled(),true);await fiveProbe.click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'testFiveConcurrency' });
+
   await page.locator('.concurrency-report > summary').click(); await page.locator('.concurrency-group > summary').click();
   assert.match(await page.locator('.concurrency-group').textContent(), /成功 4\/4（100%）/);
   assert.match(await page.locator('.concurrency-group').textContent(), /1500 ms/);

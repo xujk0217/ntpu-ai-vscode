@@ -17,6 +17,7 @@ function activate(context) {
   command('ntpuAI.logout', () => app.logout());
   command('ntpuAI.status', () => app.checkConnection());
   command('ntpuAI.testConcurrency', () => app.testConcurrency());
+  command('ntpuAI.testFiveConcurrency', () => app.testConcurrency({ focusedFive: true }));
   command('ntpuAI.stop', () => app.stop());
   command('ntpuAI.askSelection', async () => {
     await vscode.commands.executeCommand('workbench.view.extension.ntpuAI');

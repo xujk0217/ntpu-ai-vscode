@@ -23,7 +23,7 @@ async function runReadBatch(calls, { tools, onTool, signal, message = '' }) {
 }
 
 class RequestScheduler {
-  constructor(limit = 1, onError = () => {}) { this.onError = onError; this.limit = concurrencyLimit(limit); this.active = 0; this.queue = []; }
+  constructor(limit = 1, onError = () => {}, { rateGate, onWait = () => {} } = {}) { this.rateGate = rateGate; this.onWait = onWait; this.streamActive = 0; this.peakStreams = 0; this.requests = 0; this.onError = onError; this.limit = concurrencyLimit(limit); this.active = 0; this.queue = []; }
   run(work, signal) {
     if (signal?.aborted) return Promise.reject(new Error('已停止'));
     return new Promise((resolve, reject) => {
@@ -38,10 +38,14 @@ class RequestScheduler {
       const job = this.queue.shift(); job.signal?.removeEventListener('abort', job.abort);
       if (job.signal?.aborted) { job.reject(new Error('已停止')); continue; }
       this.active++;
-      Promise.resolve().then(job.work).then(job.resolve, error => { this.onError(error); job.reject(error); }).finally(() => { this.active--; this.drain(); });
+      Promise.resolve().then(async () => { await this.rateGate?.acquire(job.signal, 1, this.onWait); if (job.signal?.aborted) throw new Error('已停止'); this.requests++; return job.work(); }).then(job.resolve, error => { this.onError(error); job.reject(error); }).finally(() => { this.active--; this.drain(); });
     }
   }
-  bridge(bridge) { return { chat: (prompt, options = {}) => this.run(() => bridge.chat(prompt, options), options.signal) }; }
+  bridge(bridge) { return { chat: (prompt, options = {}) => this.run(async () => {
+    let opened = false;
+    try { return await bridge.chat(prompt, { ...options, onOpen: () => { if (!opened) { opened = true; this.peakStreams = Math.max(this.peakStreams, ++this.streamActive); } options.onOpen?.(); } }); }
+    finally { if (opened) this.streamActive--; }
+  }, options.signal) }; }
 }
 
 class ModelBudget {

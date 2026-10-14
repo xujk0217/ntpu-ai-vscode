@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.2 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.6.3 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.6.2 安裝檔 |
+| 系統 | 0.6.3 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.2/ntpu-ai-coder-win32-x64-0.6.2.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.2/ntpu-ai-coder-darwin-arm64-0.6.2.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.2/ntpu-ai-coder-darwin-x64-0.6.2.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.2/ntpu-ai-coder-linux-x64-0.6.2.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.3/ntpu-ai-coder-win32-x64-0.6.3.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.3/ntpu-ai-coder-darwin-arm64-0.6.3.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.3/ntpu-ai-coder-darwin-x64-0.6.3.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.3/ntpu-ai-coder-linux-x64-0.6.3.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -345,17 +345,18 @@ npm run package
 完整依賴安裝、隔離範圍、OCR 保障及驗收限制見 [側欄瀏覽器與本機執行隔離](BROWSER_SURFACE_AND_SECURITY.md)。
 
 
-## 變更檢視與 Agent 多工（0.6.2）
+## 變更檢視與 Agent 多工（0.6.3）
 
 「檔案變更」中的修改預設已套用，可按 **保留檔案／撤回檔案**；展開文字檔後可 **保留這段／撤回這段**。同一任務的連續修改合併顯示。撤回前檢查目前檔案，遇到後續手動修改會拒絕覆蓋；新檔案撤回移入資源回收桶。圖片支援整個檔案撤回。任務執行中停用變更操作。
 
 Agent 可在一個模型回合批次讀取 2–6 個獨立檔案或公開資料，也可分派 **探索／研究／審查** 唯讀子任務。子任務有獨立聊天室，灰色工具列可展開進度、證據與結果，也可停止單一子任務。主 Agent 負責整合、修改檔案、依序執行 Shell 與驗證；結束前會收集未領取的子任務結果。
 
-- 未結束子任務上限依有效並行能力及使用者設定決定（1–5）；每次父任務總上限為 max(4, 子任務上限 × 2)，子任務各最多 6 個模型回合。
+- 未結束子任務上限依獨立聊天室成功證據及使用者設定決定（1–5）；每次父任務總上限為 max(4, 子任務上限 × 2)，子任務各最多 6 個模型回合。
 - 父子任務共用模型輪數預算，保留 2 輪供主 Agent 整合；進度的 `5/50` 是目前任務的模型回合數與上限，並非上線人數。
 - 所有模型請求共用依有效驗證結果設定的排程器（1–5）；同一專用瀏覽器 Profile 的不同背景 Page 各自處理串流與取消。沒有新增可見瀏覽器視窗，也沒有複製或匯出登入憑證。
 - 設定 → 工具 → **逐步測試並行能力（2–5）**：逐組建立新的聊天室，2、3、4、5 共最多 14 個小型請求，可能消耗校方用量。只有同一網站／Profile 最近 24 小時有效的完整成功、未串台、全組串流重疊證據，才提高自動上限。首組失敗或驗證過期使用一個；一般錯誤保留已通過較低組的證據，服務限制／登入失效／使用者停止使整次驗證失效並降為一個。每組成功率、耗時與錯誤可在工具頁展開。`parallel.probeIntervalSeconds` 預設 60 秒，僅在成功組之間等待，避免累積頻率；任何失敗後都不等待再重試。
-- `ntpuAI.parallel.enabled` 可關閉批次／子任務；`ntpuAI.parallel.maxConcurrency` 可設為 0（自動）或 1–5，實際不超過驗證證據；`parallel.maxSubagents` 可設為 0（自動）或 1–5；`parallel.probeMaxConcurrency` 可控制最高測試組（2–5）。HTTP 401／403／429 或其他服務限制 會停止任務、取消排隊請求並使並行驗證失效，不會自動重試。
+- `ntpuAI.parallel.requestsPerMinute` 預設每 61 秒窗口 8 次，所有主／子模型請求共用；可調為 1–10，等待可以取消且不重送失敗請求。已有效驗證 2–4 組後，可手動單獨驗證五串流，只發五個最多 2400 字的較長回覆，既有證據不因此延長有效時間。
+- `ntpuAI.parallel.enabled` 可關閉批次／子任務；`ntpuAI.parallel.maxConcurrency` 可設為 0（自動）或 1–5，實際不超過驗證證據；`parallel.maxSubagents` 可設為 0（自動）或 1–5，依成功且未串台的獨立聊天室數決定；模型串流仍受已驗證上限限制；`parallel.probeMaxConcurrency` 可控制最高測試組（2–5）。HTTP 401／403／429 或其他服務限制 會停止任務、取消排隊請求並使並行驗證失效，不會自動重試。
 - macOS／Chrome 實測兩個 NTPU AI 聊天室皆成功、各自回覆正確識別碼且串流時間重疊。此結果不保證校方長期支援並行、伺服器實際運算並行或兩倍速度；Windows／Linux 校方 SSO 尚待真人驗收。
 
 分工與限流概念參考 [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)，由本專案自行實作，未複製其原始碼。

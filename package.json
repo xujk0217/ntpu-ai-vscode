@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -51,6 +51,10 @@
       {
         "command": "ntpuAI.testConcurrency",
         "title": "NTPU AI: 逐步測試聊天室並行能力（2–5）"
+      },
+      {
+        "command": "ntpuAI.testFiveConcurrency",
+        "title": "NTPU AI: 單獨驗證五個串流（較長有限回覆）"
       }
     ],
     "menus": {
@@ -255,7 +259,7 @@
           ],
           "default": 0,
           "scope": "application",
-          "description": "未結束唯讀子任務上限，0 為自動（保留主任務請求空間）。不超過有效模型並行數；所有請求仍共用排程器與模型預算。"
+          "description": "未結束唯讀子任務上限，0 為自動（依獨立聊天室成功證據，最多 5）。子任務數可高於串流名額，但父子任務共用已驗證的模型請求排程與輪數預算；超額請求等待名額。"
         },
         "ntpuAI.parallel.probeMaxConcurrency": {
           "type": "integer",
@@ -281,6 +285,14 @@
           "default": 60,
           "scope": "application",
           "description": "成功組之間的等待秒數，預設 60，降低累積請求觸發分鐘限制的機率；不是失敗後重試。遇到 429／服務限制立即停止，必須使用者再次手動啟動新的測試。"
+        },
+        "ntpuAI.parallel.requestsPerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 8,
+          "scope": "application",
+          "description": "本機模型請求節奏，預設每分鐘最多 8 次（可調低或最高 10）；超出本機額度先等待，不重送失敗請求。校方及其他視窗的用量限制仍優先，429 仍立即停止。"
         }
       }
     }

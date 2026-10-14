@@ -385,7 +385,8 @@ function renderDrawer() {
       ['maxConcurrency', '模型請求上限', [0,1,2,3,4,5], parallel.maxConcurrency ?? 0],
       ['maxSubagents', '子任務上限', [0,1,2,3,4,5], parallel.maxSubagents ?? 0],
       ['probeMaxConcurrency', '逐組測試至', [2,3,4,5], parallel.maxTestConcurrency ?? 5],
-      ['probeIntervalSeconds', '組間等待（秒）', [0,30,60,90,120], parallel.probeIntervalSeconds ?? 60]
+      ['probeIntervalSeconds', '組間等待（秒）', [0,30,60,90,120], parallel.probeIntervalSeconds ?? 60],
+      ['requestsPerMinute', '每分鐘請求節奏', [1,2,3,4,5,6,7,8,9,10], parallel.requestsPerMinute ?? 8]
     ]) {
       const row = element('label', 'parallel-setting'); row.append(element('span', '', label));
       const select = element('select', 'history-search'); select.setAttribute('aria-label', label); select.title = label + '：實際請求數仍受有效驗證結果及共用排程限制。';
@@ -397,6 +398,7 @@ function renderDrawer() {
     const probe = button(`逐步測試並行能力（2–${ceiling}）`, 'secondary-button full-width', () => send('testConcurrency'));
     probe.title = `依序測試 2 至 ${ceiling} 個請求，最多 ${ceiling * (ceiling + 1) / 2 - 1} 個小型模型請求；組間等待 ${parallel.probeIntervalSeconds ?? 60} 秒；失敗即停止，可能消耗校方用量。`;
     probe.disabled = state.busy || !state.connection?.ready; content.append(probe);
+    const five = button('單獨驗證五個串流', 'secondary-button full-width', () => send('testFiveConcurrency')); five.title = '沿用最近 2–4 組證據，只送出 5 個有上限的較長回覆（每個最多 2400 字），觀察全組重疊；不會在服務限制後自動重試。'; five.disabled = state.busy || !state.connection?.ready || !parallel.verified || parallel.maxVerifiedConcurrency < 4; content.append(five);
     const groups = parallel.verification?.groups || [];
     if (groups.length) {
       const report = element('details', 'concurrency-report'); report.append(element('summary', '', '各組並行測試結果'));
@@ -410,7 +412,7 @@ function renderDrawer() {
       }
       content.append(report);
     }
-    content.append(element('p', 'panel-description', '測試逐組建立獨立聊天室，預設組間等待 60 秒以避免短時間累積請求；降低等待時間可能觸發頻率限制。首次失敗即停止，不自動重試。登入／服務限制或使用者停止會降級為單一請求。驗證一天內有效，只代表當次環境，不是官方保證的上限。'), button('更多多工設定', 'text-button', () => send('parallelSettings'), 'gear'));
+    content.append(element('p', 'panel-description', 'Agent 模型請求另依本機每分鐘節奏排程（預設 8），等待不等於重試。測試逐組建立獨立聊天室，預設組間等待 60 秒以避免短時間累積請求；降低等待時間可能觸發頻率限制。首次失敗即停止，不自動重試。登入／服務限制或使用者停止會降級為單一請求。驗證一天內有效，只代表當次環境，不是官方保證的上限。'), button('更多多工設定', 'text-button', () => send('parallelSettings'), 'gear'));
     content.append(button('開啟 VS Code 設定', 'text-button', () => send('settings'), 'gear'));
     content.append(element('p', 'panel-footnote', '程式碼、附件與工具結果會傳給 NTPU AI；外部工具也會收到執行它所需的參數。MCP 金鑰保存在 VS Code SecretStorage。'));
   }

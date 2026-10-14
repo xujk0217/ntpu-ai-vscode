@@ -23,6 +23,7 @@ const { SandboxExecutor } = require('./security/sandbox');
 const { ChangeReview } = require('./change-review');
 const { AgentWorkers } = require('./agent-workers');
 const { RequestScheduler, ModelBudget } = require('./parallel');
+const { RequestRateGate } = require('./request-rate');
 const { parallelPolicy, isServiceLimit } = require('./parallel-policy');
 const { probeConcurrency } = require('./browser/concurrency-probe');
 
@@ -43,6 +44,7 @@ class AgentApp {
     });
     this.skills = new SkillCatalog(path.join(context.extensionPath, 'skills'), vscode.workspace.getConfiguration('ntpuAI').get('skillDirectories', []));
     this.initialAutoConnect = false;
+    this.requestRate = new RequestRateGate(vscode.workspace.getConfiguration('ntpuAI').get('parallel.requestsPerMinute', 8));
     this.parallelVerification = context.globalState.get('ntpuAI.parallelVerification', null);
     this.sandbox = new SandboxExecutor();
     this.mcp = new McpManager({ secrets: context.secrets, sandbox: this.sandbox, workspace: () => this.workspace()?.uri.scheme === 'file' ? this.workspace().uri.fsPath : null, onState: () => this.capabilities(), onContent: content => this.mcpContent(content) });
@@ -240,32 +242,38 @@ class AgentApp {
     const verification = this.parallelVerification;
     const policy = parallelPolicy(verification, { scope: this.parallelScope(), enabled: config.get('parallel.enabled', true),
       maxConcurrency: config.get('parallel.maxConcurrency', 0), maxSubagents: config.get('parallel.maxSubagents', 0) });
-    return { ...policy, maxSubagents: config.get('parallel.maxSubagents', 0), maxTestConcurrency: config.get('parallel.probeMaxConcurrency', 5), probeIntervalSeconds: config.get('parallel.probeIntervalSeconds', 60),
+    return { ...policy, maxSubagents: config.get('parallel.maxSubagents', 0), requestsPerMinute: config.get('parallel.requestsPerMinute', 8), maxTestConcurrency: config.get('parallel.probeMaxConcurrency', 5), probeIntervalSeconds: config.get('parallel.probeIntervalSeconds', 60),
       verification: verification ? { timestamp: verification.timestamp, message: verification.message, stopReason: verification.stopReason,
         serviceLimited: verification.serviceLimited, cancelled: verification.cancelled, groups: verification.groups || [] } : null };
   }
   async updateParallel(message) {
     if (this.busy()) throw new Error('請先停止或完成目前任務再修改並行設定。');
-    const values = { maxConcurrency: [0,1,2,3,4,5], maxSubagents: [0,1,2,3,4,5], probeMaxConcurrency: [2,3,4,5], probeIntervalSeconds: [0,30,60,90,120] };
+    const values = { maxConcurrency: [0,1,2,3,4,5], maxSubagents: [0,1,2,3,4,5], probeMaxConcurrency: [2,3,4,5], probeIntervalSeconds: [0,30,60,90,120], requestsPerMinute: [1,2,3,4,5,6,7,8,9,10] };
     if (!values[message.key]?.includes(message.value)) throw new Error('無效的並行設定。');
     await vscode.workspace.getConfiguration('ntpuAI').update('parallel.' + message.key, message.value, vscode.ConfigurationTarget.Global);
     this.capabilities();
   }
-  async testConcurrency() {
+  async testConcurrency({ focusedFive = false } = {}) {
     await this.ready;
     if (this.busy() || this.changeReview.applying) throw new Error('請等目前任務完成或停止後再測試。');
     await this.login(false);
     if (!this.connection.ready) throw new Error('請先按「登入」完成學校登入，再執行並行測試。');
     if (this.busy() || this.changeReview.applying) throw new Error('目前已有任務執行，請稍後再測試。');
+    const previous = this.parallelVerification;
+    if (focusedFive && (!this.parallelState().verified || this.parallelState().maxVerifiedConcurrency < 4 || previous?.schemaVersion !== 2)) throw new Error('請先取得同一 Profile 最近一天內的 2–4 組有效驗證，再單獨測試五個。');
+    const initialGroups = focusedFive ? previous.groups.filter(group => group.concurrency <= 4 && group.verified).map(group => ({ ...group, measuredAt: group.measuredAt || new Date(group.requests.find(request => Number.isFinite(request.startedAt))?.startedAt ?? Date.parse(previous.timestamp)).toISOString() })) : [];
     this.diagnosticController = new AbortController(); this.state();
     this.concurrencyOperation = (async () => {
       this.parallelVerification = null; await this.context.globalState.update('ntpuAI.parallelVerification', undefined);
       const directory = path.join(this.context.globalStorageUri.fsPath, 'diagnostics'); await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-      const partial = { schemaVersion: 2, timestamp: new Date().toISOString(), scope: this.parallelScope(), verified: false, groups: [], recommendedConcurrency: 1, inProgress: true };
+      const partial = { schemaVersion: 2, timestamp: new Date().toISOString(), scope: this.parallelScope(), verified: false, groups: [...initialGroups], recommendedConcurrency: 1, inProgress: true };
+      this.requestRate.configure(vscode.workspace.getConfiguration('ntpuAI').get('parallel.requestsPerMinute', 8));
       const result = await probeConcurrency(this.getBridge(), { signal: this.diagnosticController.signal,
-        maxConcurrency: vscode.workspace.getConfiguration('ntpuAI').get('parallel.probeMaxConcurrency', 5),
+        maxConcurrency: focusedFive ? 5 : vscode.workspace.getConfiguration('ntpuAI').get('parallel.probeMaxConcurrency', 5),
+        initialGroups, responseLines: focusedFive ? 60 : 10,
         groupPauseMs: vscode.workspace.getConfiguration('ntpuAI').get('parallel.probeIntervalSeconds', 60) * 1000,
         onProgress: text => { this.progress = text; this.state(); },
+        beforeRequests: (count, requestSignal) => this.requestRate.acquire(requestSignal, count, milliseconds => { this.progress = `等待本機請求節奏（約 ${Math.ceil(milliseconds / 1000)} 秒），不會重送已失敗請求。`; this.state(); }),
         onGroup: async group => { partial.groups.push(group); this.parallelVerification = partial; this.capabilities();
           await fs.writeFile(path.join(directory, 'concurrency.json'), JSON.stringify(sanitize(partial), null, 2), { mode: 0o600 }); } });
       const evidence = sanitize({ ...result, scope: this.parallelScope(), platform: process.platform + '-' + process.arch, browser: this.bridge?.manager.info?.browser });
@@ -303,6 +311,7 @@ class AgentApp {
       case 'browserUpdate': await this.updateBrowser(message); break;
       case 'reconnectBrowser': await this.reconnectBrowser(true); break;
       case 'testConcurrency': await this.testConcurrency(); break;
+      case 'testFiveConcurrency': await this.testConcurrency({ focusedFive: true }); break;
       case 'logout': await this.logout(); break;
       case 'status': await this.checkConnection(); break;
       case 'ask': if (typeof message.text === 'string') await this.ask(message.text, message.includeEditor !== false); break;
@@ -421,7 +430,7 @@ class AgentApp {
     const task = this.session.tasks.find(task => task.id === item.id);
     task.startedAt = Date.now(); task.status = 'running'; task.agent = this.session.options.agent;
     this.patch(item.messageId, { queued: false }); this.state();
-    let workers;
+    let workers, scheduler;
     try {
       await this.save();
       const bridge = this.getBridge();
@@ -442,12 +451,13 @@ class AgentApp {
       policy.terminal = { enabled: config.get('terminal.enableAutoApprove', true), rules: config.get('terminal.autoApprove', {}) };
       this.activePolicy = policy;
       this.configureScanner();
-      const scheduler = new RequestScheduler(this.parallelState().enabled ? this.parallelState().effectiveConcurrency : 1, error => {
+      this.requestRate.configure(config.get('parallel.requestsPerMinute', 8));
+      scheduler = new RequestScheduler(this.parallelState().enabled ? this.parallelState().effectiveConcurrency : 1, error => {
         if (isServiceLimit(error)) {
           this.parallelVerification = null; void this.context.globalState.update('ntpuAI.parallelVerification', undefined);
           this.notice(redact(error.message), 'error'); this.stop();
         }
-      });
+      }, { rateGate: this.requestRate, onWait: milliseconds => { this.progress = `等待本機請求節奏（約 ${Math.ceil(milliseconds / 1000)} 秒）`; this.state(); } });
       const modelBudget = new ModelBudget(Math.min(config.get('maxSteps', 50), { quick: 12, standard: 50, deep: 100 }[this.session.options.depth] || 50));
       const baseTools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); this.capabilities(); },
         (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox,
@@ -517,6 +527,7 @@ class AgentApp {
       this.progress = signal.aborted ? '已停止' : '需要處理';
     } finally {
       await workers?.close(); this.workers = null;
+      if (scheduler) task.parallel = { configuredConcurrency: scheduler.limit, modelRequests: scheduler.requests, peakStreams: scheduler.peakStreams };
       task.endedAt = Date.now(); task.pending = (this.session.plan || []).filter(step => step.status !== 'completed');
       summarize(this.session);
       try {
@@ -755,7 +766,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.2 · 實驗性專案 · MIT License**
+**版本：0.6.3 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -21,16 +21,16 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 目前透過 GitHub Releases 提供 VSIX，尚未上架 VS Code Marketplace。
 
 1. 安裝 VS Code 1.95 以上，以及 Chrome、Edge 或其他受支援的 Chromium 瀏覽器。
-2. 從 [0.6.2 Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.6.2) 下載符合系統的安裝檔。
+2. 從 [0.6.3 Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases/tag/v0.6.3) 下載符合系統的安裝檔。
 3. 在 VS Code 擴充套件頁的 `…` 選單選擇 **Install from VSIX…**，安裝後重新載入視窗。
 4. 開啟專案，進入 **NTPU AI** 側欄，按 **登入**，人工完成校方登入或驗證。成功後可關閉登入視窗，擴充套件會接續背景連線。
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.2.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.2.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.2.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.2.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.3.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.3.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.3.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.3.vsix` |
 
 更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 
@@ -44,9 +44,12 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 - **協助核准**：工作區修改及公開搜尋可自動執行，其他指令與敏感操作仍需確認。
 - **完整存取**：允許範圍內的工具自動執行；敏感檔案政策、OS 執行隔離與唯讀 Agent 限制仍有效。
 
-Agent 會依任務選用工具、載入適用 skills，並評估是否分派探索、研究或審查子任務。子任務只能讀取，主 Agent 負責整合、修改與執行 Shell。單純提問通常直接處理；可在設定關閉多工或限制為一個模型請求。子任務上限可設為自動或 1–5，受有效模型並行數限制；自動模式保留主任務的請求空間。
+Agent 會依任務選用工具、載入適用 skills，並評估是否分派探索、研究或審查子任務。子任務只能讀取，主 Agent 負責整合、修改與執行 Shell。單純提問通常直接處理；可在設定關閉多工或限制為一個模型請求。子任務上限可設為自動或 1–5，依獨立聊天室成功證據決定。子任務數和模型串流名額分開；例如五個子任務可共用四個已驗證請求名額，主 Agent 也使用同一個排程器，超額請求等待。
 
 設定 → 工具可逐組測試 2、3、4、5 個同時請求；每組使用新的獨立聊天室，記錄成功率、回應／首字時間、串流峰值及錯誤。只有完整成功、未串台且全組串流確實重疊，才提高已驗證數。排程器依最近 24 小時、同一網站／Profile 的有效結果自動設定上限；可手動調低，不可超出驗證。遇到登入／429／其他服務限制或停止測試會降級為 1，不自動重試。完整測試最多 14 個小型請求，成功組之間預設等待 60 秒，降低短時間累積請求觸發頻率限制的機率；失敗後不自動等待重試。這只是當次環境結果，不是官方保證的上限。父子任務共用模型輪數預算，不會透過多工繞過校方限制。進度 `5/50` 表示目前任務的模型回合數與上限。
+
+模型請求共用 `ntpuAI.parallel.requestsPerMinute` 本機節奏，預設每 61 秒窗口最多 8 次，可調為 1–10。等待名額不會重送失敗請求；校方及其他視窗的用量仍可能觸發限制。已驗證 2–4 組後，可手動「單獨驗證五個串流」，只送出五個最多 2400 字的回覆，不延長既有證據有效時間。
+
 
 ### 網路搜尋、AI4X 與 Skills
 
@@ -83,7 +86,7 @@ Skills 是任務指引，不能授予權限。選擇 skills 代表預先載入�
 - 檔案工具限制在選定工作區，保護敏感路徑及憑證；撤回前檢查後續修改，避免覆蓋使用者內容。
 - Shell／stdio MCP 需要受支援的 OS 隔離；缺少隔離時拒絕執行。Windows 完整 OS 沙箱仍待驗收。
 - 圖片／PDF 在上傳前使用本機 OCR 與文字檢查；需要 Tesseract／Poppler，辨識仍可能漏判，請自行確認附件內容。
-- macOS／Chrome 此次快速測試中，2、3、4 個請求均成功且全組串流重疊；5 個時遇到「每分鐘最多 10 題」的 HTTP 429，立即停止並降為 1，因此 5 個能力尚未確認，這不是並行上限判定。後續手動測試預設增加組間間隔；Windows／Linux 真人校方 SSO 尚待驗收。並行測試不保證速度提升或校方永久支援。
+- macOS／Chrome 逐組加入 60 秒間隔後，2、3、4 個請求均成功且全組串流重疊；兩次五個請求均 5/5 成功、無串台，但峰值只有四個。實際模型排程上限維持四個，允許五個唯讀子任務共用名額。先前快速測試觸發分鐘限制已立即停止，沒有自動重試。Windows／Linux 真人校方 SSO 尚待驗收；結果不保證速度提升或校方永久支援。
 
 詳細結果見 [驗證紀錄](VALIDATION.md) 及 [GitHub Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions)。
 

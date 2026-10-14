@@ -68,8 +68,8 @@ test('bootstrap failure closes earlier pages; a configured probe ceiling is hono
 test('auto policy uses fresh, same-profile proof, respects manual ceilings, and rejects gaps or expired evidence', async () => {
   const f=fixture(),result=await probeConcurrency(f.bridge,f.options);const proof={...result,scope:'a'};const now=Date.parse(proof.timestamp)+1;
   assert.equal(parallelPolicy(proof,{scope:'a',now}).effectiveConcurrency,5);
-  assert.equal(parallelPolicy(proof,{scope:'a',now}).workerConcurrency,4);
-  assert.equal(parallelPolicy(proof,{scope:'a',now,maxConcurrency:3,maxSubagents:5}).workerConcurrency,3);
+  assert.equal(parallelPolicy(proof,{scope:'a',now}).workerConcurrency,5);
+  assert.equal(parallelPolicy(proof,{scope:'a',now,maxConcurrency:3,maxSubagents:5}).workerConcurrency,5);
   for(const options of [{scope:'b',now},{scope:'a',now:now+86400000},{scope:'a',now:now-1000},{scope:'a',now,enabled:false}])assert.equal(parallelPolicy(proof,options).effectiveConcurrency,1);
   assert.equal(parallelPolicy({...proof,serviceLimited:true},{scope:'a',now}).effectiveConcurrency,1);
   assert.equal(parallelPolicy({...proof,groups:[proof.groups[0],proof.groups[2]]},{scope:'a',now}).effectiveConcurrency,2);
@@ -88,4 +88,23 @@ test('group pacing is bounded and can be cancelled without launching the next gr
   assert.equal(result.groups.length,1);assert.equal(result.cancelled,true);assert.equal(f.calls.length,2);assert.equal(result.recommendedConcurrency,1);
   const paced=fixture();const starts=[];await probeConcurrency(paced.bridge,{...paced.options,maxConcurrency:3,groupPauseMs:20,onGroup:async()=>starts.push(Date.now())});
   assert(starts[1]-starts[0]>=20);
+});
+
+test('focused five-stream test reuses only verified lower groups and does not renew their lease',async()=>{
+ const lower=fixture();const initial=await probeConcurrency(lower.bridge,{...lower.options,maxConcurrency:4});
+ const focused=fixture();const result=await probeConcurrency(focused.bridge,{...focused.options,initialGroups:initial.groups,responseLines:60});
+ assert.equal(focused.calls.length,5);assert.equal(focused.created.length,5);assert.equal(result.recommendedConcurrency,5);assert.equal(result.groups.at(-1).responseLines,60);assert.equal(result.timestamp,initial.groups[0].measuredAt);assert(result.groups.slice(0,3).every(group=>group.reused));
+ await assert.rejects(probeConcurrency(focused.bridge,{...focused.options,initialGroups:[initial.groups[1]]}),/不連續/);
+});
+
+test('five successful isolated workers share four proven stream slots without promoting request concurrency', async () => {
+  const f=fixture((n,i)=>n===5?{lateOpen:true}:{});
+  const result=await probeConcurrency(f.bridge,f.options),proof={...result,scope:'a'},now=Date.parse(proof.timestamp)+1;
+  const policy=parallelPolicy(proof,{scope:'a',now});
+  assert.equal(policy.effectiveConcurrency,4);assert.equal(policy.workerConcurrency,5);
+  assert.equal(parallelPolicy(proof,{scope:'a',now,maxSubagents:2}).workerConcurrency,2);
+  for(const change of [{scope:'b'},{now:now+86400000},{maxConcurrency:1},{enabled:false}])assert.equal(parallelPolicy(proof,{scope:'a',now,...change}).workerConcurrency,1);
+  assert.equal(parallelPolicy({...proof,serviceLimited:true},{scope:'a',now}).workerConcurrency,1);
+  const broken={...proof,groups:proof.groups.map(g=>g.concurrency===5?{...g,crossTalk:true}:g)};
+  assert.equal(parallelPolicy(broken,{scope:'a',now}).workerConcurrency,4);
 });
