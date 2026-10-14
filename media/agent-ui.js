@@ -44,6 +44,11 @@ function markdown(text) {
   return body;
 }
 
+function isDiagnosticNotice(message) {
+  return message.role === 'notice' && (message.category === 'diagnostic' || /^(?:當次環境已驗證最多\s+\d+|遇到登入失效或服務限制，立即停止，降級為單一請求|較低組已驗證至|測試已停止，降級為單一請求|未確認兩個以上請求可可靠重疊)/.test(message.text || ''));
+}
+function hasConversation(messages) { return messages.some(message => ['user', 'assistant', 'stream', 'tool', 'artifact', 'commentary'].includes(message.role)); }
+
 function empty() {
   const welcome = element('div', 'welcome');
   const mark = element('div', 'welcome-mark'); mark.append(icon('spark'));
@@ -153,6 +158,7 @@ function renderMessage(message) {
 }
 function nearBottom() { return $('messages').scrollHeight - $('messages').scrollTop - $('messages').clientHeight < 100; }
 function addMessage(message, replace = false) {
+  if (isDiagnosticNotice(message)) return;
   const follow = nearBottom(); const old = nodes.get(message.id); const open = old?.querySelector('details')?.open; const rawOpen = old?.querySelector('.raw-result')?.open; const userExpanded = old?.querySelector('.user-expand')?.getAttribute('aria-expanded') === 'true';
   const item = renderMessage(message);
   if (old && replace) {
@@ -162,7 +168,7 @@ function addMessage(message, replace = false) {
     if (rawOpen && item.querySelector('.raw-result')) item.querySelector('.raw-result').open = true;
     old.replaceWith(item); updateExecutionGroup(group);
   } else {
-    $('messages').querySelector('.welcome')?.remove();
+    if (hasConversation([message])) $('messages').querySelector('.welcome')?.remove();
     if (message.role === 'tool') {
       let group = $('messages').lastElementChild;
       if (group?.classList.contains('execution-group')) {
@@ -185,7 +191,9 @@ function renderSession(value) {
   for (const group of $('messages').querySelectorAll('.execution-group[data-manual]')) for (const row of group.querySelectorAll('.message.tool')) groupChoices.set(row.dataset.id, group.open);
   session = value; nodes.clear(); $('messages').replaceChildren();
   $('rename').textContent = value.title;
-  if (!value.messages.length) $('messages').append(empty()); else value.messages.forEach(message => addMessage(message));
+  const visible = value.messages.filter(message => !isDiagnosticNotice(message));
+  if (!hasConversation(visible)) $('messages').append(empty());
+  visible.forEach(message => addMessage(message));
   for (const id of expandedUsers) nodes.get(id)?.querySelector('.user-expand')?.click();
   for (const id of openRaw) { const details = nodes.get(id)?.querySelector('.raw-result'); if (details) details.open = true; }
   for (const id of openTools) { const details = nodes.get(id)?.querySelector('.tool-card'); if (details) details.open = true; if (openRaw.has(id) && nodes.get(id)?.querySelector('.raw-result')) nodes.get(id).querySelector('.raw-result').open = true; }
@@ -323,6 +331,7 @@ function resetHistoryEditing() { historyEditing = false; includeArchived = false
 function openDrawer(nextTab) { resetHistoryEditing(); tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
 function renderDrawer() {
   $('drawerTitle').textContent = { sessions: '聊天紀錄', skills: 'Skills', connection: '連線', security: '安全與權限', tools: '工具', memory: '記憶與隱私' }[tab];
+  $('historyNew').hidden = tab !== 'sessions'; $('historyNew').disabled = state.busy || !!approval;
   $('historyEdit').hidden = tab !== 'sessions'; $('historyEdit').textContent = historyEditing ? '完成' : '編輯';
   $('historyEdit').disabled = !historyEditing && (state.busy || !!approval);
   $('historyEdit').title = historyEditing ? '結束編輯並清除選取' : '選取聊天以進行批次管理';
@@ -330,7 +339,6 @@ function renderDrawer() {
   const content = $('drawerContent'); content.replaceChildren();
   if (tab === 'sessions') {
     const locked = state.busy || !!approval;
-    const create = button('新增聊天', 'primary-button full-width', () => { send('new'); $('drawer').hidden = true; }, 'plus'); create.disabled = locked; if (historyEditing) content.append(create);
     const search = element('input', 'history-search'); search.placeholder = '搜尋聊天名稱與任務'; search.setAttribute('aria-label', '搜尋聊天紀錄'); search.value = sessionQuery;
     search.addEventListener('input', () => { sessionQuery = search.value; selectedSessions.clear(); filterSessions(); }); content.append(search);
     const archived = element('label', 'privacy-option'); const show = element('input'); show.type = 'checkbox'; show.checked = includeArchived;
@@ -534,6 +542,7 @@ for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('cha
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));
 $('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('connection')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
 $('closeDrawer').addEventListener('click', () => { resetHistoryEditing(); $('drawer').hidden = true; });
+$('historyNew').addEventListener('click', () => { resetHistoryEditing(); send('new'); $('drawer').hidden = true; });
 $('historyEdit').addEventListener('click', () => { if (historyEditing) resetHistoryEditing(); else if (!state.busy && !approval) { historyEditing = true; selectedSessions.clear(); } renderDrawer(); });
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { if (tab !== item.dataset.tab) resetHistoryEditing(); tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));

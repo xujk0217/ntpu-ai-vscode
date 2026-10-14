@@ -121,3 +121,5 @@
 .user-body.clamped-request{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}.user-expand{display:flex;margin:5px 0 0 auto;padding:2px 3px;font-size:10px}
 
 #prompt{font-size:13px;line-height:1.7}.control-row select,.model-button{font-size:11px}.scope-button{font-size:11px}.permissions-footer select{font-size:10px}.permissions-footer>span{font-size:9px}.context-chip,.attachment-card{font-size:11px}
+
+.history-new{flex:none;gap:3px;margin-right:10px;font-size:11px}.history-new svg{width:12px;height:12px}

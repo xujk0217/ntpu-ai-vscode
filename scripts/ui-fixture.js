@@ -22,6 +22,18 @@ async function testUI(page, origin) {
   assert.equal(await page.locator('#composer').evaluate(node => !!node.nextElementSibling.querySelector('#workspace')), true);
   assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
   assert.equal(await page.locator('#loginNotice').isHidden(), true);
+  await send({ kind: 'session', session: { id: 'welcome-fixture', title: '新工作階段', messages: [
+    { id: 'diag1', role: 'notice', text: '遇到登入失效或服務限制，立即停止，降級為單一請求；不會重試或繞過限制。' },
+    { id: 'diag2', role: 'notice', text: '當次環境已驗證最多 4 個同時串流請求；非官方上限或永久保證。' }
+  ], changes: [], plan: [] } });
+  await page.locator('.welcome').waitFor({ state: 'visible' }); assert.equal(await page.locator('.suggestion').count(), 4); assert.equal(await page.locator('.message.notice').count(), 0);
+  await send({ kind: 'message', message: { id: 'diag3', role: 'notice', text: '當次環境已驗證最多 4 個同時串流請求；非官方上限或永久保證。' } });
+  assert.equal(await page.locator('.suggestion').count(), 4);
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'welcome-ui.png') });
+  await send({ kind: 'message', message: { id: 'real-error', role: 'error', text: '背景連線失敗，需要處理' } });
+  await page.locator('.message.error').waitFor({ state: 'visible' }); assert.equal(await page.locator('.suggestion').count(), 4);
+  await send({ kind: 'session', session: { id: 'fixture', title: 'Fixture', messages: [{ id: 'm1', role: 'assistant', text: '本機歷史' }], hasMore: true, before: 1, changes: [], plan: [] } });
+
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
   await send({ ...state, connection: { ready: false, authentication: 'required' } });
   await page.getByRole('button', { name: '登入 NTPU AI', exact: true }).waitFor({ state: 'visible' });
@@ -133,10 +145,16 @@ async function testUI(page, origin) {
   await page.locator('.session-row').filter({ hasText: '程式重構' }).click();
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'switch', id: 'other' });
   assert.equal(await page.locator('#drawer').isHidden(), true);
-  await page.locator('#history').click(); await search.fill('重構'); assert.equal(await page.locator('.session-item').count(), 1);
+  await page.locator('#history').click();
+  assert.equal(await page.locator('#historyNew').isVisible(), true);
+  await page.locator('#historyNew').click(); assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'new' });
+  assert.equal(await page.locator('#drawer').isHidden(), true); await page.locator('#history').click();
+  await search.fill('重構'); assert.equal(await page.locator('.session-item').count(), 1);
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [] });
   assert.equal(await search.inputValue(), '重構'); assert.equal(await search.evaluate(node => node === document.activeElement), true);
   await page.getByRole('button', { name: '編輯', exact: true }).click();
+  assert.equal(await page.locator('#historyNew').isVisible(), true); assert.equal(await page.locator('#drawerContent').getByRole('button', { name: '新增聊天', exact: true }).count(), 0);
+
   assert.equal(await page.locator('.session-select').count(), 1);
   await page.locator('.session-menu > summary').click(); await page.getByRole('button', { name: '重新命名', exact: true }).click();
   assert.equal(await page.evaluate(() => window.hostMessages.at(-1).id), 'other');

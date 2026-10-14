@@ -291,7 +291,7 @@ class AgentApp {
       this.parallelVerification = evidence;
       await this.context.globalState.update('ntpuAI.parallelVerification', evidence);
       await fs.writeFile(path.join(directory, 'concurrency.json'), JSON.stringify(evidence, null, 2), { mode: 0o600 });
-      this.notice(result.message); return result;
+      void vscode.window.showInformationMessage?.(result.message); return result;
     })();
     try { return await this.concurrencyOperation; }
     finally {
