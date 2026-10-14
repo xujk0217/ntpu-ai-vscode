@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.4 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.6.5 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 
@@ -49,12 +49,12 @@
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.6.4 安裝檔 |
+| 系統 | 0.6.5 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.4/ntpu-ai-coder-win32-x64-0.6.4.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.4/ntpu-ai-coder-darwin-arm64-0.6.4.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.4/ntpu-ai-coder-darwin-x64-0.6.4.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.4/ntpu-ai-coder-linux-x64-0.6.4.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-win32-x64-0.6.5.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-arm64-0.6.5.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-darwin-x64-0.6.5.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.5/ntpu-ai-coder-linux-x64-0.6.5.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -281,7 +281,7 @@ NTPU 模型本身不必具備搜尋工具。地球按鈕啟用本地 `web_search
 
 每個使用者任務建立一個暫時 NTPU AI 對話，同一任務多輪沿用；後續任務由本機脈絡接續，不依賴前次網站對話。未自行呼叫遠端刪除 API，也不聲稱刪除本機資料能清除校方留存。
 
-限制包括：網站改版、登入過期、限流、模型未遵守 JSON 協定、指令 60 秒限制及工具輪數限制。失敗或逾時不自動重送網站請求。超大 JSON Session 的 snapshot 寫入成本、學校 SSO／驗證網站變動、全部 PDF 模型路由及第三方 MCP 行為未全面驗證。文字秘密偵測是已知格式／上下文規則，無法保證辨識任意私人資訊或圖片憑證。Shell／stdio MCP 使用必要執行期唯讀目錄與工作區隔離，禁止網路；不能執行需要網路安裝的指令。依賴稽核、OCR 漏辨與未驗證的平台限制見下列文件。
+限制包括：網站改版、登入過期、限流、模型未遵守 JSON 協定、指令 60 秒限制及工具輪數限制。失敗或逾時不直接重送網站請求；重要的一般子任務失敗，可由主 Agent 附理由排回共用 Queue 一次，仍受服務限制及預算保護。超大 JSON Session 的 snapshot 寫入成本、學校 SSO／驗證網站變動、全部 PDF 模型路由及第三方 MCP 行為未全面驗證。文字秘密偵測是已知格式／上下文規則，無法保證辨識任意私人資訊或圖片憑證。Shell／stdio MCP 使用必要執行期唯讀目錄與工作區隔離，禁止網路；不能執行需要網路安裝的指令。依賴稽核、OCR 漏辨與未驗證的平台限制見下列文件。
 
 ## 開發與測試
 
@@ -345,7 +345,7 @@ npm run package
 完整依賴安裝、隔離範圍、OCR 保障及驗收限制見 [側欄瀏覽器與本機執行隔離](BROWSER_SURFACE_AND_SECURITY.md)。
 
 
-## 變更檢視與 Agent 多工（0.6.4）
+## 變更檢視與 Agent 多工（0.6.5）
 
 「檔案變更」中的修改預設已套用，可按 **保留檔案／撤回檔案**；展開文字檔後可 **保留這段／撤回這段**。同一任務的連續修改合併顯示。撤回前檢查目前檔案，遇到後續手動修改會拒絕覆蓋；新檔案撤回移入資源回收桶。圖片支援整個檔案撤回。任務執行中停用變更操作。
 
@@ -354,13 +354,14 @@ Agent 可在一個模型回合批次讀取 2–6 個獨立檔案或公開資料�
 - 固定最多四個未結束唯讀 Subagent；父任務最多八個子任務，子任務最多六個模型回合。父子共用輪數預算，保留兩輪供主 Agent 整合。
 - 模型請求在 1–4 間動態調整，預設從兩個開始；不需事前診斷或 24 小時驗證。八筆穩定成功回應升一級，調整至少相隔十秒；最近六至八筆中兩筆一般錯誤或三筆明顯延遲降一級。延遲以發送到首字／完成計算，不含排隊、速率等待、核准及使用者取消。
 - 明顯延遲門檻為首字超過 max(15 秒, 穩定基準 × 2.5)，或完成超過 max(90 秒, 穩定基準 × 2.5)。以多筆判斷降低長回答或單次波動造成的誤判；這是本機保守策略，非官方服務規格。
-- 超額模型請求使用 FIFO Queue，有名額才發送。一般錯誤不重試、不取消其他已開始請求；降低名額時等待既有請求完成。主 Agent 一般失敗收尾也讓子任務完成。
+- 超額模型請求使用 FIFO Queue，有名額才發送。一般錯誤不直接重送、不取消其他已開始請求；重要的一般失敗可由主 Agent 用 retry_task 附理由排回 Queue 一次，保留原紀錄；降低名額時等待既有請求完成。主 Agent 一般失敗收尾也讓子任務完成。
 - HTTP 429、登入失效及明確服務限制會鎖住新請求、降為一個並安全停止任務。處理原因後按工具頁「手動恢復發送」；從一個名額重新觀察，不重送失敗請求。鎖定期間不能用診斷另開聊天室重試。
 - 聊天灰色狀態列與工具頁顯示目前並行上限、運作中的 Agent（主 Agent 加最多四個子任務）、實際模型請求和排隊數。正在運作的 Agent 可能正在讀檔或等名額，不等同同時發送的模型請求。
 - `parallel.enabled` 可停用多工；`parallel.maxConcurrency` 為 0（自動，最高四個）或 1–4。舊 `maxSubagents` 設定不再影響固定四個上限，舊診斷與期限不參與正式排程。
 - `parallel.requestsPerMinute` 預設每 61 秒窗口八次，所有主／子請求共用，可調為 1–10。排隊可取消，校方及其他視窗的用量仍可能觸發 429；不透過重試或增加聊天室突破限制。
 - 選用的 2–4 診斷仍記錄成功率、耗時、串台、重疊及錯誤，預設成功組間等 60 秒，失敗立即停止。診斷結果只作資訊，不提高正式任務名額。舊五串流指令已移除。
-- macOS／Chrome 的先前五聊天室驗收為 0.6.3 結果；0.6.4 動態邏輯以本機單元與 localhost mock 驗收，尚未重新呼叫校方進行長時間負載測試。Windows／Linux 真人 SSO 尚待驗收。
+- 每個原始子任務最多一次重要重試，重試也共用四個子任務上限、八個總子任務、六輪／子任務與父子輪數預算。重試失敗不能改 ID 或標題再試；429、登入／服務限制、取消、本機保存失敗及預算不足不得重試。一般失敗後不能用 delegate_tasks 重開聊天室，只有 retry_task 可排回一次。
+- macOS／Chrome 的先前五聊天室驗收為 0.6.3 結果；0.6.4 已實際進行兩組有限負載（27 次請求），名額 2→3→4；第一組一筆逾時、第二組四子任務均成功，峰值三串流，未遇 429。0.6.5 新增重要重試以單元與 localhost mock 驗收，尚未在校方實測。Windows／Linux 真人 SSO 尚待驗收。
 
 分工與限流概念參考 [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)，由本專案自行實作，未複製其原始碼。
 

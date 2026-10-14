@@ -16,7 +16,7 @@ let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false, historyEditing = false;
 const selectedSessions = new Set();
 const nodes = new Map();
-const names = { cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const names = { cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 const md = new MarkdownIt({ html: false, breaks: false, linkify: false, highlight: (code, language) => {

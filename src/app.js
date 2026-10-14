@@ -490,8 +490,8 @@ class AgentApp {
         onBeforeCleanup: () => this.save(),
         onEvent: event => {
           const existing = this.session.messages.find(message => message.id === event.id);
-          const detail = JSON.stringify({ activity: event.activity, result: event.result, evidence: event.records }, null, 2).slice(0, 20000);
-          if (!existing) this.add('tool', '', { id: event.id, name: 'agent_task', args: { name: event.title, role: event.role }, status: event.status, startedAt: event.startedAt });
+          const detail = JSON.stringify({ activity: event.activity, retryOf: event.retryOf, retryReason: event.retryReason, result: event.result, evidence: event.records }, null, 2).slice(0, 20000);
+          if (!existing) this.add('tool', '', { id: event.id, name: 'agent_task', args: { name: event.title, role: event.role, retryOf: event.retryOf, retryReason: event.retryReason }, status: event.status, startedAt: event.startedAt });
           this.patch(event.id, { status: event.status, result: detail, finishedAt: event.endedAt }); this.state();
         } })) : baseTools;
       this.workers = workers;

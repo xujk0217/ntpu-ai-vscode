@@ -26,9 +26,9 @@ test('global scheduler limits all bridges to two requests and removes cancelled 
   const budget = new ModelBudget(3); assert.deepEqual([budget.consume(),budget.consume(),budget.consume(),budget.consume()], [1,2,3,null]);
 });
 test('readonly worker host blocks writes, shell, nested delegation and arbitrary MCP', async () => {
-  let calls = 0; const tools = readonly({ catalog: () => ['read_file','write_file','run_command','delegate_tasks'].map(name => ({ name })), execute: () => { calls++; return { ok: true }; } });
+  let calls = 0; const tools = readonly({ catalog: () => ['read_file','write_file','run_command','delegate_tasks','retry_task'].map(name => ({ name })), execute: () => { calls++; return { ok: true }; } });
   assert.deepEqual(tools.catalog().map(tool => tool.name), ['read_file']);
-  for (const name of ['write_file','run_command','delegate_tasks','mcp_other']) assert.throws(() => tools.execute(name, {}));
+  for (const name of ['write_file','run_command','delegate_tasks','retry_task','mcp_other']) assert.throws(() => tools.execute(name, {}));
   tools.execute('read_file', {}); assert.equal(calls, 1);
 });
 function fixture(runner) {
@@ -123,4 +123,38 @@ test('graceful parent failure leaves started workers running; explicit cancellat
 test('production worker pool rejects five subagents even when a stale setting asks for five',async()=>{
  const {workers}=fixture(async()=>({completed:true}));const {MAX_SUBAGENTS}=require('../src/adaptive-concurrency');assert.equal(MAX_SUBAGENTS,4);
  workers.maxWorkers=MAX_SUBAGENTS;assert.throws(()=>workers.delegate({tasks:Array.from({length:5},(_,i)=>({title:String(i),request:'read',role:'explore'}))}),/1–4/);await workers.close();
+});
+
+test('a failed subagent cannot be retried through a new conversation while existing workers finish', async () => {
+  let release;const {workers,closed}=fixture(async options=>{
+    if(options.request==='fail')throw new Error('response timeout');
+    await new Promise(resolve=>{release=resolve;});options.onFinal('completed evidence');return {completed:true};
+  });
+  workers.delegate({tasks:[{title:'failed task',role:'explore',request:'fail'},{title:'existing task',role:'explore',request:'read'}]});
+  await turn();assert.equal([...workers.jobs.values()][0].status,'error');
+  assert.throws(()=>workers.delegate({tasks:[{title:'different retry title',role:'explore',request:'fail'}]}),/禁止新增/);
+  assert.equal(workers.jobs.size,2);release();const result=await workers.collect();assert.equal(result.ok,false);assert.equal(result.tasks[1].status,'done');assert.equal(closed(),2);await workers.close();
+});
+
+test('important ordinary failure may queue one linked retry; original error and evidence survive',async()=>{
+ let attempts=0;const {workers}=fixture(async options=>{options.modelBudget.consume();if(++attempts===1)throw new Error('response timeout');options.onFinal('actual evidence');return {completed:true};});
+ const first=workers.delegate({tasks:[{title:'essential evidence',role:'explore',request:'read necessary file'}]}).tasks[0];await workers.collect();
+ assert.throws(()=>workers.retryTask({id:first.id,reason:''}),/重要性/);
+ const retry=workers.retryTask({id:first.id,reason:'The file is necessary to complete the user request.'}).tasks[0];assert.equal(retry.retryOf,first.id);
+ assert.throws(()=>workers.retryTask({id:first.id,reason:'important'}),/最多重試一次/);
+ const result=await workers.collect();assert.equal(result.ok,true);assert.equal(result.tasks[0].status,'done');assert.equal(workers.jobs.get(first.id).status,'error');assert.equal(workers.jobs.get(retry.id).retryReason,'The file is necessary to complete the user request.');assert.equal(workers.modelBudget.used,2);assert.equal(attempts,2);await workers.close();
+});
+test('failed retry cannot create a retry chain under a different ID or title',async()=>{
+ const {workers}=fixture(async()=>{throw new Error('socket reset');});const first=workers.delegate({tasks:[{title:'first',role:'explore',request:'read'}]}).tasks[0];await workers.collect();const retry=workers.retryTask({id:first.id,reason:'Needed to answer the request'}).tasks[0];await workers.collect();assert.throws(()=>workers.retryTask({id:retry.id,reason:'another title'}),/最多重試一次/);assert.throws(()=>workers.delegate({tasks:[{title:'new title',role:'explore',request:'read'}]}),/禁止新增/);assert.equal(workers.jobs.size,2);await workers.close();
+});
+test('important retry never bypasses service limits, cancellation, persistence failure or shared budget',async()=>{
+ for(const status of [401,403,429,503]){const {workers}=fixture(async()=>{throw Object.assign(new Error('provider restriction'),{status});});const id=workers.delegate({tasks:[{title:'failed',role:'explore',request:'read'}]}).tasks[0].id;await workers.collect();assert.throws(()=>workers.retryTask({id,reason:'important requirement'}),/禁止重試/);assert.equal(workers.jobs.size,1);await workers.close();}
+ const {workers}=fixture(async()=>{throw new Error('timeout');});const id=workers.delegate({tasks:[{title:'failed',role:'explore',request:'read'}]}).tasks[0].id;await workers.collect();workers.modelBudget.used=workers.modelBudget.limit-2;assert.throws(()=>workers.retryTask({id,reason:'important'}),/預算不足/);workers.modelBudget.used=0;workers.jobs.get(id).storageFailed=true;assert.throws(()=>workers.retryTask({id,reason:'important'}),/禁止重試/);workers.jobs.get(id).storageFailed=false;workers.jobs.get(id).status='interrupted';assert.throws(()=>workers.retryTask({id,reason:'important'}),/失敗子任務/);await workers.close();
+});
+test('queued important retry uses shared model slots and can be cancelled before any send',async()=>{
+ let sends=0;const {workers,controller}=fixture(async options=>{options.modelBudget.consume();await options.bridge.chat('fixture',{signal:options.signal});return {completed:true};});
+ workers.bridge.createChannel=async()=>({chat:async()=>{sends++;throw new Error('socket timeout');},close:async()=>{}});
+ const id=workers.delegate({tasks:[{title:'failed',role:'explore',request:'read'}]}).tasks[0].id;await workers.collect();let release1,release2;
+ const one=workers.scheduler.run(()=>new Promise(resolve=>{release1=resolve;})),two=workers.scheduler.run(()=>new Promise(resolve=>{release2=resolve;}));await turn();
+ workers.retryTask({id,reason:'Evidence needed to complete the task'});await turn();assert.equal(workers.scheduler.queue.length,1);assert.equal(sends,1);controller.abort();release1();release2();await Promise.all([one,two]);await workers.close();assert.equal(sends,1);assert.equal([...workers.jobs.values()][1].status,'interrupted');
 });
