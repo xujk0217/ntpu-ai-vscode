@@ -33,6 +33,7 @@ async function main() {
   const sockets = new Set();
   const ui = await assets();
   let requiresLogin = false;
+  const pairStreams = [];
   let activeStreams = 0, peakStreams = 0; const deletedIds = []; let failReset = false;
   const loginHtml = '<!doctype html><html><body><div id="auth-overlay">Fixture login</div><form action="/fixture-login" method="post"><input id="fixture-user" name="user"><button id="fixture-submit">Login</button></form></body></html>';
   const server = http.createServer((request, response) => {
@@ -50,9 +51,15 @@ async function main() {
       const marker = body.match(/NTPU_PARALLEL_[a-f0-9]+_[0-4]/)?.[0];
       const prefix = marker ? marker + '-' : body.startsWith('parallel-') ? body + '-' : 'mock-';
       response.write('data: ' + JSON.stringify({ type: 'token', content: prefix }) + '\n\n');
-      const timer = setTimeout(() => {
-        response.end('data: {"type":"token","content":"response"}\n\ndata: {"type":"done"}\n\n');
-      }, body.includes('slow') ? 10000 : marker || body.startsWith('parallel-') ? 800 : 40);
+      const finish = () => { if (!response.destroyed) response.end('data: {"type":"token","content":"response"}\n\ndata: {"type":"done"}\n\n'); };
+      const pair = ['parallel-A', 'parallel-B'].includes(body);
+      const timer = setTimeout(finish, body.includes('slow') ? 10000 : pair ? 10000 : marker || body.startsWith('parallel-') ? 800 : 40);
+      // The localhost pair test needs a deterministic rendezvous. Browser UI
+      // scheduling on a busy CI runner can exceed an arbitrary 800 ms stream.
+      if (pair) {
+        pairStreams.push({ response, finish, timer });
+        if (pairStreams.length === 2) setTimeout(() => { for (const stream of pairStreams) { clearTimeout(stream.timer); stream.finish(); } }, 80);
+      }
       response.on('close', () => { clearTimeout(timer); activeStreams--; });
     });
   });
