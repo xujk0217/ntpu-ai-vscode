@@ -1,5 +1,6 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { concurrencyLimit } = require('./parallel-policy');
 const { sanitize, redact } = require('./security/guard');
 
 const READ_BATCH_TOOLS = new Set(['list_files', 'read_file', 'search_text', 'web_search', 'web_fetch', 'ntpu_lookup']);
@@ -22,7 +23,7 @@ async function runReadBatch(calls, { tools, onTool, signal, message = '' }) {
 }
 
 class RequestScheduler {
-  constructor(limit = 1, onError = () => {}) { this.onError = onError; this.limit = Math.max(1, Math.min(2, Number(limit) || 1)); this.active = 0; this.queue = []; }
+  constructor(limit = 1, onError = () => {}) { this.onError = onError; this.limit = concurrencyLimit(limit); this.active = 0; this.queue = []; }
   run(work, signal) {
     if (signal?.aborted) return Promise.reject(new Error('已停止'));
     return new Promise((resolve, reject) => {

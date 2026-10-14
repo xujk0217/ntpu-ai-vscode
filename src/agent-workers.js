@@ -1,11 +1,12 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { runAgent } = require('./agent');
+const { concurrencyLimit } = require('./parallel-policy');
 const { batchNames } = require('./parallel');
 const { sanitize, redact } = require('./security/guard');
 const SAFE = new Set(['list_files', 'read_file', 'search_text', 'load_skill', 'web_search', 'web_fetch', 'ntpu_lookup']);
 const DEFINITIONS = [
-  { name: 'delegate_tasks', description: '背景分派 1–2 個獨立唯讀子任務；role 是 explore/research/review。子任務不能修改檔案或執行 shell；主 agent 負責整合、實作與驗證。每次父任務最多 4 個子任務，模型輪數共用父任務預算。', example: '{"tasks":[{"title":"找出入口","role":"explore","request":"檢查專案入口並附檔案行號"}]}' },
+  { name: 'delegate_tasks', description: '背景分派獨立唯讀子任務；role 是 explore/research/review。子任務不能修改檔案或執行 shell；主 agent 負責整合、實作與驗證。模型輪數共用父任務預算。', example: '{"tasks":[{"title":"找出入口","role":"explore","request":"檢查專案入口並附檔案行號"}]}' },
   { name: 'get_task_results', description: '等待子任務結束並收集真實結果；ids 可省略。錯誤或取消不能當成完成。', example: '{"ids":["task-id"]}' },
   { name: 'cancel_task', description: '取消指定唯讀子任務，保留已取得的證據。', example: '{"id":"task-id"}' },
 ];
@@ -17,11 +18,12 @@ function readonly(base) {
   } };
 }
 class AgentWorkers {
-  constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
+  constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, maxWorkers, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
     Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, onEvent, onBeforeCleanup, runner });
+    this.maxWorkers = concurrencyLimit(maxWorkers ?? scheduler.limit); this.maxTasks = Math.max(4, this.maxWorkers * 2);
     this.jobs = new Map(); this.closed = false;
   }
-  catalog() { return this.base.catalog().concat(DEFINITIONS); }
+  catalog() { return this.base.catalog().concat(DEFINITIONS.map(tool => tool.name === 'delegate_tasks' ? { ...tool, description: `背景分派 1–${this.maxWorkers} 個獨立唯讀子任務，role 是 explore/research/review；同時最多 ${this.maxWorkers} 個未結束子任務，父任務最多 ${this.maxTasks} 個。不能寫檔或執行 shell，六輪／子任務且共用父任務模型預算與請求排程。` } : tool)); }
   get skills() { return this.base.skills; }
   get loadedSkills() { return this.base.loadedSkills; }
   parallelNames() { return batchNames(this.base.catalog()); }
@@ -38,9 +40,9 @@ class AgentWorkers {
   }
   delegate({ tasks }) {
     if (this.closed || this.signal.aborted) throw new Error('已停止');
-    if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > 2 || this.jobs.size + tasks.length > 4 || tasks.some(task => !['explore', 'research', 'review'].includes(task?.role) || typeof task.request !== 'string' || !task.request.trim() || task.request.length > 6000 || typeof task.title !== 'string' || !task.title.trim() || task.title.length > 120)) throw new Error('需要 1–2 個有效唯讀子任務；父任務最多 4 個。');
+    if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > this.maxWorkers || this.jobs.size + tasks.length > this.maxTasks || tasks.some(task => !['explore', 'research', 'review'].includes(task?.role) || typeof task.request !== 'string' || !task.request.trim() || task.request.length > 6000 || typeof task.title !== 'string' || !task.title.trim() || task.title.length > 120)) throw new Error(`需要 1–${this.maxWorkers} 個有效唯讀子任務；父任務最多 ${this.maxTasks} 個。`);
     const pending = [...this.jobs.values()].filter(job => !job.endedAt).length;
-    if (pending + tasks.length > 2) throw new Error('最多兩個未結束子任務；請先收集結果。');
+    if (pending + tasks.length > this.maxWorkers) throw new Error(`最多 ${this.maxWorkers} 個未結束子任務；請先收集結果。`);
     const jobs = tasks.map(task => {
       const controller = new AbortController(); const abort = () => controller.abort();
       this.signal.addEventListener('abort', abort, { once: true });

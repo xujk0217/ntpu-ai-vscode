@@ -47,7 +47,7 @@ async function main() {
       activeStreams++; peakStreams = Math.max(peakStreams, activeStreams);
       response.writeHead(200, { 'content-type': 'text/event-stream' }); response.flushHeaders();
       response.write('data: {"type":"judge","model":"fixture"}\n\n');
-      const marker = body.match(/NTPU_PARALLEL_[a-f0-9]+_[01]/)?.[0];
+      const marker = body.match(/NTPU_PARALLEL_[a-f0-9]+_[0-4]/)?.[0];
       const prefix = marker ? marker + '-' : body.startsWith('parallel-') ? body + '-' : 'mock-';
       response.write('data: ' + JSON.stringify({ type: 'token', content: prefix }) + '\n\n');
       const timer = setTimeout(() => {
@@ -91,8 +91,8 @@ async function main() {
       try { await assert.rejects(slowWorker, /已停止/); assert.equal((await parentReply).text, 'parallel-parent-response'); }
       finally { clearTimeout(cancelWorker); }
     } finally { await firstChannel.close(); await secondChannel.close(); }
-    const concurrent = await probeConcurrency(bridge);
-    assert.equal(concurrent.verified, true); assert.equal(bridge.channels.size, 0);
+    const concurrent = await probeConcurrency(bridge, { groupPauseMs: 0 });
+    assert.equal(concurrent.verified, true); assert.equal(concurrent.recommendedConcurrency, 5); assert.deepEqual(concurrent.groups.map(group => group.concurrency), [2,3,4,5]); assert.ok(peakStreams >= 5); assert.equal(bridge.channels.size, 0);
     const selected = bridge.manager.info.label;
     await bridge.close(); bridge = new BrowserBridge(options); await bridge.open();
     assert.equal(await bridge.page.evaluate(() => document.cookie.includes('fixture_state=synthetic')), true);

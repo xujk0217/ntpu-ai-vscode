@@ -23,6 +23,7 @@ const { SandboxExecutor } = require('./security/sandbox');
 const { ChangeReview } = require('./change-review');
 const { AgentWorkers } = require('./agent-workers');
 const { RequestScheduler, ModelBudget } = require('./parallel');
+const { parallelPolicy, isServiceLimit } = require('./parallel-policy');
 const { probeConcurrency } = require('./browser/concurrency-probe');
 
 class AgentApp {
@@ -237,25 +238,39 @@ class AgentApp {
   parallelState() {
     const config = vscode.workspace.getConfiguration('ntpuAI');
     const verification = this.parallelVerification;
-    const verified = verification?.verified === true && verification.scope === this.parallelScope() && Date.now() - Date.parse(verification.timestamp) < 86400000;
-    const maxConcurrency = Math.max(1, Math.min(2, Number(config.get('parallel.maxConcurrency', 2)) || 1));
-    return { enabled: config.get('parallel.enabled', true), maxConcurrency,
-      verified, effectiveConcurrency: verified ? maxConcurrency : 1,
-      verification: verification ? { timestamp: verification.timestamp, message: verification.message, successful: verification.successful, streamOverlap: verification.streamOverlap } : null };
+    const policy = parallelPolicy(verification, { scope: this.parallelScope(), enabled: config.get('parallel.enabled', true),
+      maxConcurrency: config.get('parallel.maxConcurrency', 0), maxSubagents: config.get('parallel.maxSubagents', 0) });
+    return { ...policy, maxSubagents: config.get('parallel.maxSubagents', 0), maxTestConcurrency: config.get('parallel.probeMaxConcurrency', 5), probeIntervalSeconds: config.get('parallel.probeIntervalSeconds', 60),
+      verification: verification ? { timestamp: verification.timestamp, message: verification.message, stopReason: verification.stopReason,
+        serviceLimited: verification.serviceLimited, cancelled: verification.cancelled, groups: verification.groups || [] } : null };
+  }
+  async updateParallel(message) {
+    if (this.busy()) throw new Error('請先停止或完成目前任務再修改並行設定。');
+    const values = { maxConcurrency: [0,1,2,3,4,5], maxSubagents: [0,1,2,3,4,5], probeMaxConcurrency: [2,3,4,5], probeIntervalSeconds: [0,30,60,90,120] };
+    if (!values[message.key]?.includes(message.value)) throw new Error('無效的並行設定。');
+    await vscode.workspace.getConfiguration('ntpuAI').update('parallel.' + message.key, message.value, vscode.ConfigurationTarget.Global);
+    this.capabilities();
   }
   async testConcurrency() {
     await this.ready;
     if (this.busy() || this.changeReview.applying) throw new Error('請等目前任務完成或停止後再測試。');
     await this.login(false);
     if (!this.connection.ready) throw new Error('請先按「登入」完成學校登入，再執行並行測試。');
+    if (this.busy() || this.changeReview.applying) throw new Error('目前已有任務執行，請稍後再測試。');
     this.diagnosticController = new AbortController(); this.state();
     this.concurrencyOperation = (async () => {
+      this.parallelVerification = null; await this.context.globalState.update('ntpuAI.parallelVerification', undefined);
+      const directory = path.join(this.context.globalStorageUri.fsPath, 'diagnostics'); await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+      const partial = { schemaVersion: 2, timestamp: new Date().toISOString(), scope: this.parallelScope(), verified: false, groups: [], recommendedConcurrency: 1, inProgress: true };
       const result = await probeConcurrency(this.getBridge(), { signal: this.diagnosticController.signal,
-        onProgress: text => { this.progress = text; this.state(); } });
+        maxConcurrency: vscode.workspace.getConfiguration('ntpuAI').get('parallel.probeMaxConcurrency', 5),
+        groupPauseMs: vscode.workspace.getConfiguration('ntpuAI').get('parallel.probeIntervalSeconds', 60) * 1000,
+        onProgress: text => { this.progress = text; this.state(); },
+        onGroup: async group => { partial.groups.push(group); this.parallelVerification = partial; this.capabilities();
+          await fs.writeFile(path.join(directory, 'concurrency.json'), JSON.stringify(sanitize(partial), null, 2), { mode: 0o600 }); } });
       const evidence = sanitize({ ...result, scope: this.parallelScope(), platform: process.platform + '-' + process.arch, browser: this.bridge?.manager.info?.browser });
       this.parallelVerification = evidence;
       await this.context.globalState.update('ntpuAI.parallelVerification', evidence);
-      const directory = path.join(this.context.globalStorageUri.fsPath, 'diagnostics'); await fs.mkdir(directory, { recursive: true, mode: 0o700 });
       await fs.writeFile(path.join(directory, 'concurrency.json'), JSON.stringify(evidence, null, 2), { mode: 0o600 });
       this.notice(result.message); return result;
     })();
@@ -329,6 +344,7 @@ class AgentApp {
       case 'settings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI'); break;
       case 'privacySettings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI.privacy'); break;
       case 'terminalSettings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI.terminal'); break;
+      case 'parallelUpdate': await this.updateParallel(message); break;
       case 'parallelSettings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI.parallel'); break;
       case 'chooseWorkspace': await this.chooseWorkspace(); break;
     }
@@ -427,7 +443,7 @@ class AgentApp {
       this.activePolicy = policy;
       this.configureScanner();
       const scheduler = new RequestScheduler(this.parallelState().enabled ? this.parallelState().effectiveConcurrency : 1, error => {
-        if ([401, 403, 429].includes(error.status)) {
+        if (isServiceLimit(error)) {
           this.parallelVerification = null; void this.context.globalState.update('ntpuAI.parallelVerification', undefined);
           this.notice(redact(error.message), 'error'); this.stop();
         }
@@ -442,7 +458,7 @@ class AgentApp {
           onArtifact: artifact => this.artifact(artifact), onChange: change => this.changed({ ...change, taskId: item.id }),
           onCommandOutput: output => { if (this.activeToolId) this.patch(this.activeToolId, { liveOutput: output }); } });
       const tools = this.parallelState().enabled ? (workers = new AgentWorkers({ base: baseTools, bridge, scheduler, modelBudget, signal, context, workspace: root.name,
-        profile: this.session.options, timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
+        profile: this.session.options, maxWorkers: this.parallelState().workerConcurrency, timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
         createTools: (workerSignal, workerBridge, title) => new WorkspaceTools(root.uri, this.previews, workerSignal, () => {},
           (detail, requestSignal) => this.gate.request({ ...detail, title: title + ' · ' + detail.title }, requestSignal),
           { ...baseTools.options, policy: new PermissionPolicy({ mode: policy.mode, agent: 'research' }), bridge: workerBridge,

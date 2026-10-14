@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -50,7 +50,7 @@
       },
       {
         "command": "ntpuAI.testConcurrency",
-        "title": "NTPU AI: 測試兩個聊天室同時回覆"
+        "title": "NTPU AI: 逐步測試聊天室並行能力（2–5）"
       }
     ],
     "menus": {
@@ -226,18 +226,61 @@
         "ntpuAI.parallel.maxConcurrency": {
           "type": "integer",
           "enum": [
+            0,
             1,
-            2
+            2,
+            3,
+            4,
+            5
           ],
-          "default": 2,
+          "default": 0,
           "scope": "application",
-          "description": "最多同時模型請求數。未驗證、登入失效或超過一天時使用 1。"
+          "description": "模型請求的使用者上限；0 表示依有效測試結果自動設定。實際並行數不超過已驗證結果，未驗證／過期／登入或服務限制時使用 1。"
         },
         "ntpuAI.browser.cleanupTaskConversations": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "本機儲存任務後，透過校方網站刪除擴充套件自己建立的任務對話。校方後端保留政策仍適用；不刪除原有對話。"
+        },
+        "ntpuAI.parallel.maxSubagents": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "default": 0,
+          "scope": "application",
+          "description": "未結束唯讀子任務上限，0 為自動（保留主任務請求空間）。不超過有效模型並行數；所有請求仍共用排程器與模型預算。"
+        },
+        "ntpuAI.parallel.probeMaxConcurrency": {
+          "type": "integer",
+          "enum": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "default": 5,
+          "scope": "application",
+          "description": "逐組診斷的最高請求數，從 2 起逐步測試；完整 2–5 測試最多 14 個小型模型請求，可能消耗校方用量。遇到失敗即停止，不自動重試，不代表官方上限。"
+        },
+        "ntpuAI.parallel.probeIntervalSeconds": {
+          "type": "integer",
+          "enum": [
+            0,
+            30,
+            60,
+            90,
+            120
+          ],
+          "default": 60,
+          "scope": "application",
+          "description": "成功組之間的等待秒數，預設 60，降低累積請求觸發分鐘限制的機率；不是失敗後重試。遇到 429／服務限制立即停止，必須使用者再次手動啟動新的測試。"
         }
       }
     }

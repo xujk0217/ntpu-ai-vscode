@@ -359,7 +359,7 @@ class BrowserBridge {
     if (!event) return;
     if (event.type === 'judge') { pending.model = event.model || event.selected_model || event; pending.onJudge?.(event); }
     else if (event.type === 'token') { pending.text += event.content || ''; pending.onToken?.(event.content || ''); }
-    else if (event.type === 'error') this._fail(new Error(event.message || 'NTPU AI 回答失敗'));
+    else if (event.type === 'error') { const error = new Error(event.message || 'NTPU AI 回答失敗'); error.status = Number(event.status || event.status_code || event.code) || undefined; error.serviceLimited = /quota|rate.?limit|capacity|resource.?exhausted/i.test(String(event.code || '')); this._fail(error); }
     else if (event.type === 'done') {
       const result = { text: pending.text, model: pending.model, meta: event };
       this._clear();

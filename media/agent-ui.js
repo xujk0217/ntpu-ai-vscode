@@ -13,7 +13,7 @@ const send = (kind, extra = {}) => vscode.postMessage({ kind, ...extra });
 let state = { busy: false, options: { agent: 'build', depth: 'standard', permission: 'ask', web: true, skills: [] } };
 let session = { messages: [], changes: [] }, sessions = [], capabilities = { skills: [], servers: [], tools: [] }, approval = null, tab = 'sessions';
 let includeEditor = true;
-let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false;
+let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false, historyEditing = false;
 const selectedSessions = new Set();
 const nodes = new Map();
 const names = { cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
@@ -191,6 +191,7 @@ function renderState(value) {
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
   $('stop').hidden = !state.busy; updateComposer();
+  if (busyChanged && state.busy) resetHistoryEditing();
   if (busyChanged) renderChanges(session.changes || []);
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy; $('web').title = state.options.web ? '網路搜尋已開啟：Agent 可使用 Exa 搜尋和公開網頁讀取；按一下關閉。AI4X 是獨立的官方研究工具。' : '網路搜尋已關閉：按一下允許 Agent 使用 Exa 搜尋和公開網頁讀取。';
   $('skills').title = 'Skills：Agent 可依任務載入適用技能；在此選擇預先載入的技能。技能不會增加工具權限。';
@@ -229,23 +230,28 @@ function renderApproval(value) {
   renderState(state);
 }
 
-function openDrawer(nextTab) { tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
+function resetHistoryEditing() { historyEditing = false; includeArchived = false; selectedSessions.clear(); }
+function openDrawer(nextTab) { resetHistoryEditing(); tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
 function renderDrawer() {
   $('drawerTitle').textContent = { sessions: '聊天紀錄', skills: 'Skills', connection: '連線', security: '安全與權限', tools: '工具', memory: '記憶與隱私' }[tab];
+  $('historyEdit').hidden = tab !== 'sessions'; $('historyEdit').textContent = historyEditing ? '完成' : '編輯';
+  $('historyEdit').disabled = !historyEditing && (state.busy || !!approval);
+  $('historyEdit').title = historyEditing ? '結束編輯並清除選取' : '選取聊天以進行批次管理';
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === tab));
   const content = $('drawerContent'); content.replaceChildren();
   if (tab === 'sessions') {
     const locked = state.busy || !!approval;
-    const create = button('新增聊天', 'primary-button full-width', () => { send('new'); $('drawer').hidden = true; }, 'plus'); create.disabled = locked; content.append(create);
+    const create = button('新增聊天', 'primary-button full-width', () => { send('new'); $('drawer').hidden = true; }, 'plus'); create.disabled = locked; if (historyEditing) content.append(create);
     const search = element('input', 'history-search'); search.placeholder = '搜尋聊天名稱與任務'; search.setAttribute('aria-label', '搜尋聊天紀錄'); search.value = sessionQuery;
     search.addEventListener('input', () => { sessionQuery = search.value; selectedSessions.clear(); filterSessions(); }); content.append(search);
     const archived = element('label', 'privacy-option'); const show = element('input'); show.type = 'checkbox'; show.checked = includeArchived;
-    show.addEventListener('change', () => { includeArchived = show.checked; selectedSessions.clear(); filterSessions(); }); archived.append(show, element('span', '', '顯示已封存的聊天')); content.append(archived);
+    show.addEventListener('change', () => { includeArchived = show.checked; selectedSessions.clear(); filterSessions(); }); archived.append(show, element('span', '', '顯示已封存的聊天')); if (historyEditing) content.append(archived);
     for (const id of selectedSessions) if (!sessions.some(item => item.id === id)) selectedSessions.delete(id);
-    const toolbar = element('div', 'history-toolbar'); content.append(toolbar);
+    const toolbar = element('div', 'history-toolbar'); if (historyEditing) content.append(toolbar);
     const list = element('div', 'session-list'); content.append(list);
     let visible = [];
     function selectionToolbar() {
+      if (!historyEditing) return;
       toolbar.replaceChildren();
       const all = button(selectedSessions.size === visible.length && visible.length ? '取消全選' : '選取全部', 'text-button', () => {
         if (selectedSessions.size === visible.length && visible.length) selectedSessions.clear(); else for (const item of visible) selectedSessions.add(item.id);
@@ -267,16 +273,16 @@ function renderDrawer() {
         const card = element('div', 'session-item');
         const heading = element('div', 'session-card-header'); const check = element('input', 'session-select'); check.type = 'checkbox'; check.checked = selectedSessions.has(item.id); check.disabled = locked; check.setAttribute('aria-label', '選取聊天：' + item.title);
         check.addEventListener('change', () => { if (check.checked) selectedSessions.add(item.id); else selectedSessions.delete(item.id); selectionToolbar(); });
-        const row = button('', 'session-row' + (item.id === session.id ? ' current' : ''), () => { if (!locked) { send('switch', { id: item.id }); $('drawer').hidden = true; } });
+        const row = button('', 'session-row' + (item.id === session.id ? ' current' : ''), () => { if (locked) return; if (historyEditing) { if (selectedSessions.has(item.id)) selectedSessions.delete(item.id); else selectedSessions.add(item.id); filterSessions(); } else { send('switch', { id: item.id }); resetHistoryEditing(); $('drawer').hidden = true; } });
         row.append(element('strong', '', item.title), element('span', '', new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(item.updatedAt) + (item.pending ? ' · ' + item.pending + ' 個未完成任務' : '') + (item.archived ? ' · 已封存' : '')));
-        row.disabled = locked;
+        row.disabled = locked; row.title = (historyEditing ? '勾選／取消選取：' : '開啟聊天：') + item.title;
         const menu = element('details', 'session-menu'); const summary = element('summary', '', '⋯'); summary.setAttribute('aria-label', '管理聊天：' + item.title);
         menu.append(summary); const actions = element('div', 'session-menu-actions');
         for (const [text, kind] of [['重新命名', 'renameSession'], ['匯出 Markdown', 'exportSession'], [item.archived ? '取消封存' : '封存', 'archiveSession'], ['刪除', 'deleteSession']]) {
           const control = button(text, 'text-button' + (kind === 'deleteSession' ? ' danger-text' : ''), () => { menu.open = false; send(kind, { id: item.id }); }); control.disabled = locked; actions.append(control);
         }
         menu.addEventListener('toggle', () => { if (menu.open) for (const other of list.querySelectorAll('.session-menu')) if (other !== menu) other.open = false; });
-        menu.append(actions); heading.append(check, row, menu); card.append(heading); list.append(card);
+        menu.append(actions); if (historyEditing) heading.append(check, row, menu); else heading.append(row); card.append(heading); list.append(card);
       }
       if (!visible.length) list.append(element('p', 'panel-description', sessionQuery ? '找不到符合的聊天紀錄。' : '目前沒有聊天紀錄。'));
       selectionToolbar();
@@ -373,11 +379,38 @@ function renderDrawer() {
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));
     const parallel = capabilities.parallel || {};
-    content.append(element('h3', '', 'Agent 多工'), element('p', 'panel-description', parallel.verified ? `已驗證聊天室串流可重疊，目前最多 ${parallel.effectiveConcurrency} 個模型請求。` : '模型並行尚未確認，目前使用序列請求。Agent 仍可自動分派唯讀子任務及批次讀取。'));
+    content.append(element('h3', '', 'Agent 多工'), element('p', 'panel-description', parallel.enabled === false ? '多工已停用，使用單一模型請求。' : parallel.verified ? `當次已驗證 ${parallel.maxVerifiedConcurrency} 個同時請求，目前使用上限 ${parallel.effectiveConcurrency}，最多 ${parallel.workerConcurrency} 個唯讀子任務。` : '未取得有效的並行驗證，模型使用單一請求；獨立唯讀工具仍可批次處理。'));
     if (parallel.verification) content.append(element('p', 'panel-description', parallel.verification.message));
-    const probe = button('測試兩個聊天室同時回覆', 'secondary-button full-width', () => send('testConcurrency'));
+    for (const [key, label, values, current] of [
+      ['maxConcurrency', '模型請求上限', [0,1,2,3,4,5], parallel.maxConcurrency ?? 0],
+      ['maxSubagents', '子任務上限', [0,1,2,3,4,5], parallel.maxSubagents ?? 0],
+      ['probeMaxConcurrency', '逐組測試至', [2,3,4,5], parallel.maxTestConcurrency ?? 5],
+      ['probeIntervalSeconds', '組間等待（秒）', [0,30,60,90,120], parallel.probeIntervalSeconds ?? 60]
+    ]) {
+      const row = element('label', 'parallel-setting'); row.append(element('span', '', label));
+      const select = element('select', 'history-search'); select.setAttribute('aria-label', label); select.title = label + '：實際請求數仍受有效驗證結果及共用排程限制。';
+      for (const value of values) { const option = element('option', '', value === 0 && key !== 'probeIntervalSeconds' ? '自動' : String(value)); option.value = String(value); select.append(option); }
+      select.value = String(current); select.disabled = state.busy;
+      select.addEventListener('change', () => send('parallelUpdate', { key, value: Number(select.value) })); row.append(select); content.append(row);
+    }
+    const ceiling = Math.max(2, Math.min(5, parallel.maxTestConcurrency || 5));
+    const probe = button(`逐步測試並行能力（2–${ceiling}）`, 'secondary-button full-width', () => send('testConcurrency'));
+    probe.title = `依序測試 2 至 ${ceiling} 個請求，最多 ${ceiling * (ceiling + 1) / 2 - 1} 個小型模型請求；組間等待 ${parallel.probeIntervalSeconds ?? 60} 秒；失敗即停止，可能消耗校方用量。`;
     probe.disabled = state.busy || !state.connection?.ready; content.append(probe);
-    content.append(element('p', 'panel-description', '測試會使用兩個小型 NTPU AI 對話，不自動重試；驗證結果一天內有效。'), button('設定多工', 'text-button', () => send('parallelSettings'), 'gear'));
+    const groups = parallel.verification?.groups || [];
+    if (groups.length) {
+      const report = element('details', 'concurrency-report'); report.append(element('summary', '', '各組並行測試結果'));
+      for (const group of groups) {
+        const card = element('details', 'concurrency-group');
+        card.append(element('summary', '', `${group.concurrency} 個請求 · 成功 ${group.successCount}/${group.concurrency}（${Math.round(group.successRate * 100)}%） · ${group.verified ? '已驗證' : '未通過'}`));
+        card.append(element('p', 'panel-description', `串流峰值：${group.observedPeakConcurrency} · 全組重疊：${group.streamOverlap ? '是' : '否'} · 串台：${group.crossTalk ? '偵測到' : '未偵測到'} · 平均回應：${group.responseTimes?.averageMs ?? '—'} ms`));
+        if (group.stopReason) card.append(element('p', 'warning-text', '停止原因：' + ({ service_limit: '登入或服務限制', cancelled: '使用者停止', cross_talk: '回覆串台', reply_mismatch: '識別碼不匹配', no_overlap: '未確認全組串流重疊', request_failure: '請求失敗', startup_failure: '聊天室啟動失敗' }[group.stopReason] || group.stopReason) + (group.error ? ' · ' + group.error : '')));
+        for (const request of group.requests || []) card.append(element('p', 'panel-description', `請求 ${request.index + 1}：${request.durationMs ?? '—'} ms · 首字 ${request.firstTokenMs ?? '—'} ms${request.httpStatus ? ' · HTTP ' + request.httpStatus : ''}${request.error ? ' · ' + request.error : ''}`));
+        report.append(card);
+      }
+      content.append(report);
+    }
+    content.append(element('p', 'panel-description', '測試逐組建立獨立聊天室，預設組間等待 60 秒以避免短時間累積請求；降低等待時間可能觸發頻率限制。首次失敗即停止，不自動重試。登入／服務限制或使用者停止會降級為單一請求。驗證一天內有效，只代表當次環境，不是官方保證的上限。'), button('更多多工設定', 'text-button', () => send('parallelSettings'), 'gear'));
     content.append(button('開啟 VS Code 設定', 'text-button', () => send('settings'), 'gear'));
     content.append(element('p', 'panel-footnote', '程式碼、附件與工具結果會傳給 NTPU AI；外部工具也會收到執行它所需的參數。MCP 金鑰保存在 VS Code SecretStorage。'));
   }
@@ -410,8 +443,9 @@ $('prompt').addEventListener('input', () => {
 for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('change', event => send('option', { key, value: event.target.value }));
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));
 $('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('connection')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
-$('closeDrawer').addEventListener('click', () => { $('drawer').hidden = true; });
-document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
+$('closeDrawer').addEventListener('click', () => { resetHistoryEditing(); $('drawer').hidden = true; });
+$('historyEdit').addEventListener('click', () => { if (historyEditing) resetHistoryEditing(); else if (!state.busy && !approval) { historyEditing = true; selectedSessions.clear(); } renderDrawer(); });
+document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { if (tab !== item.dataset.tab) resetHistoryEditing(); tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
 for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });

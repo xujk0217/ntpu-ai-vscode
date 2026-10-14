@@ -86,3 +86,19 @@ test('worker keeps remote evidence when saving local results fails', async () =>
   workers.delegate({tasks:[{title:'read',role:'review',request:'read evidence'}]});
   const result=await workers.collect();assert.equal(result.ok,false);assert.match(result.tasks[0].result,/保留校方對話/);assert.equal(closes[0].cleanup,false);await workers.close();
 });
+
+test('scheduler supports verified limits 3,4,5 across all callers', async () => {
+  for(const limit of [3,4,5]){
+    const scheduler=new RequestScheduler(limit);let active=0,peak=0;
+    await Promise.all(Array.from({length:limit+2},()=>scheduler.run(async()=>{peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,5));active--;})));
+    assert.equal(peak,limit);
+  }
+});
+test('worker catalog and host enforce the selected subagent limit while maintaining read-only access', async () => {
+  const {workers,controller}=fixture(async options=>{await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));throw new Error('stopped');});
+  workers.maxWorkers=4;workers.maxTasks=8;
+  assert.match(workers.catalog().find(tool=>tool.name==='delegate_tasks').description,/1–4/);
+  assert.equal(workers.delegate({tasks:Array.from({length:4},(_,i)=>({title:String(i),request:'read',role:'explore'}))}).tasks.length,4);
+  assert.throws(()=>workers.delegate({tasks:[{title:'extra',request:'read',role:'review'}]}),/最多 4/);
+  await turn();controller.abort();await workers.close();
+});
