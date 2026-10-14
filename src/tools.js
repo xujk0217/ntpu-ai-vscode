@@ -7,7 +7,8 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { PermissionPolicy } = require('./permissions');
 const { DEFINITIONS } = require('./protocol');
-const { fetchPublic, pageText } = require('./network');
+const { fetchPublic, pageText, publicTarget } = require('./network');
+const { parseSkill } = require('./skills');
 const { imageMime, renderSvg } = require('./visuals');
 const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
@@ -44,7 +45,7 @@ class WorkspaceTools {
   }
 
   catalog() {
-    return DEFINITIONS.filter(tool => this.options.web !== false || !['web_search', 'web_fetch'].includes(tool.name))
+    return DEFINITIONS.filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file'].includes(tool.name))
       .concat((this.options.mcp?.catalog() || []).filter(tool => this.options.web !== false || tool.server !== 'exa')).slice(0, 40);
   }
 
@@ -87,15 +88,17 @@ class WorkspaceTools {
       list_files: () => this.list(args), read_file: () => this.read(args), search_text: () => this.search(args),
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
       update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
+      get_capabilities: () => this.getCapabilities(), refresh_skills: () => this.refreshSkills(),
+      install_skill: () => this.installSkill(args), connect_mcp: () => this.connectMcp(args), add_mcp: () => this.addMcp(args), download_file: () => this.download(args),
       ntpu_lookup: () => this.options.mcp.lookup(args, this.signal), web_search: () => this.webSearch(args), web_fetch: () => this.webFetch(args),
       inspect_image: () => this.inspect(args), create_visual: () => this.visual(args),
     };
-    const mcpTool = this.options.mcp?.tools.get(name);
+    const mcpTool = this.options.mcp?.tools?.get(name);
     if (!methods[name] && !mcpTool) throw new Error('未知工具。');
-    if (this.options.web === false && (['web_search', 'web_fetch'].includes(name) || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用網路搜尋。' };
+    if (this.options.web === false && (['web_search', 'web_fetch', 'download_file'].includes(name) || name === 'install_skill' && typeof args.url === 'string' || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用公開網路工具；請先開啟輸入框旁的地球按鈕。' };
     if (this.policy.decision(name, args, mcpTool) === 'deny') return { ok: false, denied: true, error: '目前 agent 模式禁止這個操作。' };
     try {
-      if (!['write_file', 'edit_file', 'run_command', 'create_visual'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
+      if (!['write_file', 'edit_file', 'run_command', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
     catch (error) { if (this.signal.aborted) throw error; return sanitize({ ok: false, error: error.message }); }
@@ -247,6 +250,103 @@ class WorkspaceTools {
     if (!skill) throw new Error('沒有可用的 skills catalog。');
     this.loadedSkills.set(skill.name, skill); this.options.onSkill?.(skill.name);
     return { ok: true, name: skill.name, instructions: skill.body };
+  }
+  getCapabilities() {
+    return { ok: true, workspace: path.basename(this.root.fsPath), workspaceScoped: true,
+      networkSearchEnabled: this.options.web !== false, mcp: this.options.mcp?.states?.() || [],
+      tools: this.catalog().map(({ name, server, description }) => ({ name, server, description })),
+      skills: this.skills?.list?.() || [], limits: { downloadBytes: 10 * 1024 * 1024,
+        downloadedFilesAreExecuted: false, skillInstallLocation: '.agents/skills/<name>/SKILL.md' } };
+  }
+  async refreshSkills() {
+    if (!this.skills || !this.root?.fsPath) throw new Error('沒有可重新掃描的 Skills catalog 或工作區。');
+    await this.skills.discover(this.root.fsPath);
+    this.options.onCatalogChange?.();
+    return { ok: true, skills: this.skills.list(), errors: this.skills.errors };
+  }
+  async installSkill(args) {
+    if (!this.skills || !this.root?.fsPath) throw new Error('沒有可安裝 Skills 的工作區。');
+    if (typeof args.name !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(args.name) ||
+        (typeof args.content === 'string') === (typeof args.url === 'string')) throw new Error('請提供有效名稱，並且只提供 SKILL.md 的 content 或公開 HTTPS url 其中一種。');
+    let text = args.content;
+    if (typeof args.url === 'string') {
+      inspectOutboundPayload({ url: args.url }, { reject: true });
+      if (!args.url.startsWith('https://')) throw new Error('Skills 來源只接受公開 HTTPS 網址。');
+      const response = await (this.options.fetchPublic || fetchPublic)(args.url, this.signal);
+      text = response.body;
+    }
+    if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > 24000) throw new Error('SKILL.md 必須是最多 24 KB 的文字。');
+    inspectOutboundPayload({ content: text }, { reject: true });
+    const parsed = parseSkill(text, args.name);
+    if (parsed.name !== args.name) throw new Error('SKILL.md 內的 name 必須與指定名稱一致。');
+    if (this.skills.items.has(args.name)) throw new Error('同名 skill 已存在；請先用新的名稱安裝，避免覆蓋內建或既有指引。');
+    const relative = `.agents/skills/${args.name}/SKILL.md`;
+    const absolute = await safePath(this.root.fsPath, relative);
+    try { await fs.access(absolute); throw new Error('目標 SKILL.md 已存在，為避免覆蓋不會安裝。'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const detail = `來源：${args.url || '提供的 SKILL.md 內容'}\n安裝位置：${relative}\n名稱：${parsed.name}\n說明：${parsed.description}\n\nSkills 是不可信任的任務指引，不能授予權限或覆蓋主機規則。`;
+    const answer = await this.onApproval?.({ title: '安裝 Skill：' + parsed.name, detail, accept: '安裝 Skill' }, this.signal);
+    this.checkStopped();
+    if (answer !== '安裝 Skill') return { ok: false, denied: true, message: '使用者未批准安裝。' };
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await safePath(this.root.fsPath, relative);
+    await fs.writeFile(absolute, text, { flag: 'wx', mode: 0o600 });
+    await this.skills.discover(this.root.fsPath);
+    const skill = this.skills.load(args.name);
+    this.loadedSkills.set(skill.name, skill); this.options.onSkill?.(skill.name); this.options.onCatalogChange?.();
+    this.options.onChange?.({ id: randomUUID(), path: relative, before: null, after: text, afterHash: hash(text), created: true, saved: true, binary: false });
+    return { ok: true, saved: true, created: true, path: relative, name: skill.name, description: skill.description };
+  }
+  async connectMcp(args) {
+    if (typeof args.name !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(args.name)) throw new Error('需要已設定的 MCP 名稱。');
+    const manager = this.options.mcp;
+    const config = [...(manager?.connections?.values?.() || [])].map(item => item.config).find(item => item.name === args.name) ||
+      [...(this.options.servers || []), ...(this.options.builtins || [])].find(item => item.name === args.name);
+    if (!config || typeof this.options.connectMcp !== 'function') throw new Error('這個 MCP 尚未設定。請先在工具與設定 → 新增 MCP 完成設定，再要求我連接。');
+    const target = config.type === 'stdio' ? `${config.command} ${(config.args || []).join(' ')}` : config.url;
+    const answer = await this.onApproval?.({ title: '連接 MCP：' + (config.label || config.name),
+      detail: `MCP：${config.name}\n連線目標：${target}\n連線後此伺服器會提供工具，後續外部工具呼叫仍依權限核准。憑證不會顯示或匯出。`,
+      accept: '連接 MCP' }, this.signal);
+    this.checkStopped();
+    if (answer !== '連接 MCP') return { ok: false, denied: true, message: '使用者未批准連接。' };
+    await this.options.connectMcp(config);
+    return { ok: true, name: config.name, tools: manager.catalog().filter(tool => tool.server === config.name).map(({ name, originalName, description, inputSchema }) => ({ name, originalName, description, inputSchema })) };
+  }
+  async addMcp(args) {
+    if (typeof args.name !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(args.name) || typeof args.url !== 'string') throw new Error('需要有效的 MCP 名稱與公開 HTTPS 網址。');
+    if (typeof this.options.addMcp !== 'function' || !this.options.mcp) throw new Error('目前工作階段不能新增 MCP。');
+    if ([...(this.options.servers || []), ...(this.options.builtins || [])].some(server => server.name === args.name)) throw new Error('同名 MCP 已設定。');
+    inspectOutboundPayload({ url: args.url }, { reject: true });
+    const config = { name: args.name, label: args.name, type: 'http', url: args.url, agentAdded: true, readOnly: false };
+    const target = await (this.options.publicTarget || publicTarget)(args.url);
+    if (target.url.protocol !== 'https:') throw new Error('新增 MCP 僅接受公開 HTTPS endpoint。');
+    const answer = await this.onApproval?.({ title: '新增並連接 MCP：' + config.name,
+      detail: `公開 HTTPS endpoint：${target.url.origin}${target.url.pathname}\n此 MCP 不包含登入憑證。連線會先驗證公開 DNS 目標並固定每次請求的解析結果。工具呼叫仍依權限核准。需要 API 金鑰的 server 請改從設定頁新增，讓金鑰存入 SecretStorage。`,
+      accept: '新增並連接 MCP' }, this.signal);
+    this.checkStopped();
+    if (answer !== '新增並連接 MCP') return { ok: false, denied: true, message: '使用者未批准新增 MCP。' };
+    await this.options.addMcp(config);
+    return { ok: true, name: config.name, tools: this.options.mcp.catalog().filter(tool => tool.server === config.name).map(({ name, originalName, description, inputSchema }) => ({ name, originalName, description, inputSchema })) };
+  }
+  async download(args) {
+    inspectOutboundPayload({ url: args.url }, { reject: true });
+    if (typeof args.url !== 'string' || !args.url.startsWith('https://')) throw new Error('檔案下載只接受公開 HTTPS 網址。');
+    if (typeof args.path !== 'string' || !args.path.trim() || args.path.endsWith('/') || args.path.includes('\\')) throw new Error('path 必須是工作區中的新檔案相對路徑。');
+    const absolute = await safePath(this.root.fsPath, args.path);
+    try { await fs.access(absolute); throw new Error('目標檔案已存在，為避免覆蓋不會下載。'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (!(await this.authorize('download_file', { url: args.url, path: args.path }, {
+      title: '確認下載公開檔案', detail: `網址：${args.url}\n存入：${args.path}\n最多 10 MB；不解壓、不執行。` }))) return { ok: false, denied: true, message: '使用者未批准下載。' };
+    const response = await (this.options.fetchPublic || fetchPublic)(args.url, this.signal, 0, { binary: true, maxBytes: 10 * 1024 * 1024 });
+    this.checkStopped();
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await safePath(this.root.fsPath, args.path);
+    const handle = await fs.open(absolute, 'wx', 0o600);
+    try { await handle.writeFile(response.body); } catch (error) { await handle.close().catch(() => {}); await fs.rm(absolute, { force: true }).catch(() => {}); throw error; }
+    await handle.close();
+    this.options.onChange?.({ id: randomUUID(), path: args.path, before: null, after: null, afterHash: hash(response.body), created: true, saved: true, binary: true, mimeType: response.mime });
+    this.onActivity('已下載 ' + args.path);
+    return { ok: true, saved: true, created: true, path: args.path, bytes: response.body.length, mimeType: response.mime, url: response.url, executed: false };
   }
   async webSearch(args) {
     inspectOutboundPayload(args, { reject: true });

@@ -128,3 +128,72 @@ test('isolation failure never falls back to an ordinary command even in full acc
   const result = await tools.execute('run_command', { command: 'echo unsafe > should-not-exist.txt' });
   assert.equal(result.ok, false); assert.match(result.error, /ISOLATION_FAILED/); await assert.rejects(fs.access(path.join(root, 'should-not-exist.txt')));
 });
+
+test('download saves bounded public bytes only after approval and never overwrites an existing file', async t => {
+  const root = await fixture(t), changes = []; let approvals = 0;
+  const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => {
+    approvals++; assert.equal(detail.title, '確認下載公開檔案'); return '確認下載公開檔案' === detail.title ? '允許這次操作' : undefined;
+  }, { policy: new PermissionPolicy({ mode: 'ask' }), fetchPublic: async () => ({ url: 'https://example.com/file.bin', mime: 'application/octet-stream', body: Buffer.from([0, 1, 2, 255]) }), onChange: change => changes.push(change) });
+  const result = await tools.execute('download_file', { url: 'https://example.com/file.bin', path: 'downloads/file.bin' });
+  assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.executed, false); assert.equal(approvals, 1);
+  assert.deepEqual(await fs.readFile(path.join(root, 'downloads/file.bin')), Buffer.from([0, 1, 2, 255]));
+  assert.equal(changes[0].binary, true); assert.equal(changes[0].mimeType, 'application/octet-stream');
+  const duplicate = await tools.execute('download_file', { url: 'https://example.com/file.bin', path: 'downloads/file.bin' });
+  assert.equal(duplicate.ok, false); assert.match(duplicate.error, /已存在/); assert.equal(approvals, 1);
+});
+
+test('skill install validates frontmatter, asks for approval, writes only a new workspace skill and reloads it', async t => {
+  const root = await fixture(t), changes = [], approvals = [];
+  const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const { SkillCatalog } = require('../src/skills');
+  const skills = new SkillCatalog(path.join(root, 'builtin'));
+  await skills.discover(root);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => { approvals.push(detail); return detail.accept; },
+    { policy: new PermissionPolicy({ mode: 'full' }), skills, onChange: change => changes.push(change) });
+  const content = '---\nname: web-research\ndescription: Search and cite public sources.\n---\nUse public search tools and cite sources.';
+  const result = await tools.execute('install_skill', { name: 'web-research', content });
+  assert.equal(result.ok, true); assert.equal(result.saved, true); assert.equal(approvals.length, 1);
+  assert.equal(skills.load('web-research').body, 'Use public search tools and cite sources.');
+  assert.equal(changes[0].path, '.agents/skills/web-research/SKILL.md');
+  const duplicate = await tools.execute('install_skill', { name: 'web-research', content });
+  assert.equal(duplicate.ok, false); assert.match(duplicate.error, /同名 skill 已存在/);
+});
+
+test('agent can connect only a named configured MCP and connection requires approval', async t => {
+  const root = await fixture(t); let connected = 0;
+  const manager = { connections: new Map(), catalog: () => [{ name: 'mcp_fixture_echo_abcd12', originalName: 'echo', server: 'fixture', description: 'echo', inputSchema: {} }] };
+  const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => detail.accept,
+    { policy: new PermissionPolicy({ mode: 'full' }), mcp: manager, servers: [{ name: 'fixture', type: 'http', url: 'https://example.com/mcp' }],
+      connectMcp: async () => { connected++; } });
+  const result = await tools.execute('connect_mcp', { name: 'fixture' });
+  assert.equal(result.ok, true); assert.equal(connected, 1); assert.equal(result.tools[0].originalName, 'echo');
+  const unknown = await tools.execute('connect_mcp', { name: 'not-configured' });
+  assert.equal(unknown.ok, false); assert.match(unknown.error, /尚未設定/);
+});
+
+test('agent can propose a public HTTPS MCP only after host validation and explicit approval', async t => {
+  const root = await fixture(t); let connected = null, approvals = 0; const available = [];
+  const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => {
+    approvals++; assert.match(detail.detail, /公開 HTTPS endpoint/); return detail.accept;
+  }, { policy: new PermissionPolicy({ mode: 'full' }), mcp: { catalog: () => available, connections: new Map() }, servers: [], builtins: [],
+    publicTarget: async value => ({ url: new URL(value), address: { address: '93.184.216.34', family: 4 } }),
+    addMcp: async config => { connected = config; available.push({ name: 'mcp_new_research_search_abc123', originalName: 'search', server: config.name, description: 'search', inputSchema: {} }); } });
+  const result = await tools.execute('add_mcp', { name: 'new-research', url: 'https://research.example/mcp' });
+  assert.equal(result.ok, true); assert.equal(approvals, 1); assert.equal(connected.agentAdded, true); assert.equal(connected.readOnly, false);
+  assert.equal(result.tools[0].originalName, 'search');
+});
+
+test('disabling workspace web access removes and blocks downloads and URL-based skill installs', async t => {
+  const root = await fixture(t); let fetches = 0;
+  const { WorkspaceTools, PreviewProvider } = loadTools(mockVscode());
+  const { SkillCatalog } = require('../src/skills'); const skills = new SkillCatalog(path.join(root, 'builtin')); await skills.discover(root);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => detail.accept,
+    { skills, web: false, fetchPublic: async () => { fetches++; throw new Error('unexpected fetch'); } });
+  assert.equal(tools.catalog().some(tool => tool.name === 'download_file'), false);
+  const download = await tools.execute('download_file', { url: 'https://example.com/file.bin', path: 'file.bin' });
+  const install = await tools.execute('install_skill', { name: 'remote-skill', url: 'https://example.com/SKILL.md' });
+  assert.equal(download.denied, true); assert.equal(install.denied, true); assert.equal(fetches, 0);
+});

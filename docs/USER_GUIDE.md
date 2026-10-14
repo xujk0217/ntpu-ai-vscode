@@ -4,7 +4,13 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.6 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.6.7 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+
+## Agent 能力與送出快捷鍵
+
+Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區。它會使用目前實際啟用的工具，不代表可任意讀取整台電腦。公開網路搜尋與網頁讀取由地球按鈕控制；下載公開 HTTPS 檔案、安裝 Skill 與連接 MCP 會依權限顯示核准，檔案只存入工作區、不會自動執行。Agent 可安裝已驗證格式的 `SKILL.md` 到 `.agents/skills/`，可連接已設定的 MCP，也能提出不含憑證的公開 HTTPS MCP，經主機檢查及你的核准後新增。需要 API 金鑰或本機 stdio 的 MCP，請從「設定 → 工具 → 新增 MCP」完成登記並保存憑證。
+
+聊天預設按 **Enter 送出**、按 **Shift+Enter 換行**。在「設定 → 工具 → 送出快捷鍵」可改為 **Enter 換行**、**Ctrl/⌘+Enter 送出**。輸入法組字和長按 Enter 不會觸發送出。
 
 本專案為非官方整合，與 NTPU AI、Microsoft、GitHub、OpenAI 或 Exa 無官方隸屬或背書關係。
 

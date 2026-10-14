@@ -19,3 +19,8 @@ test('web reader rejects private and mapped networks before issuing requests', a
   for (const url of ['http://127.0.0.1/', 'file:///etc/passwd', 'https://user:password@example.com/', 'http://10.0.0.1/', 'https://localhost/']) await assert.rejects(publicTarget(url));
   assert.equal(pageText('<script>ignore()</script><h1>Title</h1><p>A &amp; B</p>'), 'Title\nA & B');
 });
+
+test('agent-added MCP fetch rejects loopback targets before opening a connection', async () => {
+  const { pinnedPublicFetch } = require('../src/network');
+  await assert.rejects(pinnedPublicFetch()('https://127.0.0.1/mcp'), /不能用網頁工具存取本機|非公開網路/);
+});

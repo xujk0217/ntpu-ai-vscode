@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -83,6 +83,16 @@
     "configuration": {
       "title": "NTPU AI Coder",
       "properties": {
+        "ntpuAI.chat.submitMode": {
+          "type": "string",
+          "enum": [
+            "enter",
+            "modifierEnter"
+          ],
+          "default": "enter",
+          "scope": "application",
+          "description": "聊天送出快捷鍵。Enter 模式下 Enter 送出、Shift+Enter 換行；修飾鍵模式下 Enter 換行、Ctrl/⌘+Enter 送出。輸入法組字時不會誤送。"
+        },
         "ntpuAI.chromePath": {
           "type": "string",
           "default": "",

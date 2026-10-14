@@ -6,6 +6,7 @@ const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js'
 const { createHash } = require('node:crypto');
 const { inspectOutboundPayload, sanitize, redact } = require('./security/guard');
 const { SandboxExecutor } = require('./security/sandbox');
+const { pinnedPublicFetch } = require('./network');
 
 const EXA = { name: 'exa', type: 'http', url: 'https://mcp.exa.ai/mcp', builtin: true, readOnly: true };
 const AI4X = { name: 'ntpu_ai4x', label: 'NTPU AI4X · 官方研究資料', type: 'http', url: 'https://ai4x.mcp.ntpu.ai/mcp', builtin: true, readOnly: true };
@@ -67,7 +68,7 @@ class McpManager {
         transport.stderr?.on('data', () => {});
       } else {
         const Transport = config.type === 'sse' ? SSEClientTransport : StreamableHTTPClientTransport;
-        transport = new Transport(new URL(config.url), { requestInit: { headers } });
+        transport = new Transport(new URL(config.url), { requestInit: { headers }, ...(config.agentAdded ? { fetch: pinnedPublicFetch() } : {}) });
       }
       await client.connect(transport, { timeout: 20000 });
       const response = await client.listTools({}, { timeout: 20000 });

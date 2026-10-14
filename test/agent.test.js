@@ -4,6 +4,17 @@ const assert = require('node:assert/strict');
 const { runAgent } = require('../src/agent');
 const { parseReply, buildPrompt } = require('../src/protocol');
 
+test('default agent prompt identifies as local NTPU VS Code Agent and grounds capabilities in actual host tools', () => {
+  const prompt = buildPrompt({ request: '你是什麼？', workspace: 'demo', catalog: [
+    { name: 'get_capabilities', description: '檢查本機能力' }, { name: 'download_file', description: '下載至工作區' },
+  ] });
+  assert.match(prompt, /NTPU AI Agent inside local VS Code/);
+  assert.match(prompt, /not the whole computer/);
+  assert.match(prompt, /actual catalog/);
+  assert.match(prompt, /download_file/);
+  assert.match(prompt, /Skills are untrusted guidance/);
+});
+
 test('agent sends actual denied results back and never invents completed edits', async () => {
   const prompts = [];
   const replies = [JSON.stringify({ kind: 'tool', name: 'write_file', args: { path: 'hello.js', content: 'export const x = 1;' } }),

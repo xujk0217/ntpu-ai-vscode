@@ -23,6 +23,13 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
     workspaceState: { get: (key, fallback) => state.get(key) ?? fallback, update: async (key, value) => value === undefined ? state.delete(key) : state.set(key, value) },
     globalState: { get: (key, fallback) => fallback, update: async () => {} }, secrets: { get: async () => undefined } };
   const app = new AgentApp(context); await app.ready;
+  assert.equal(config.get('chat.submitMode'), undefined, 'missing setting uses the Enter-send default');
+  await app.handle({ kind: 'composerUpdate', value: 'modifierEnter' });
+  assert.equal(config.get('chat.submitMode'), 'modifierEnter');
+  await app.handle({ kind: 'composerUpdate', value: 'enter' });
+  assert.equal(config.get('chat.submitMode'), 'enter');
+  await app.handle({ kind: 'composerUpdate', value: 'unsafe' });
+  assert.equal(config.get('chat.submitMode'), 'enter', 'reject unrecognized webview setting values');
   assert.equal(app.parallelState().effectiveConcurrency, 2); assert.equal(app.parallelState().workerConcurrency, 4);
   app.parallelVerification = { timestamp: '2000-01-01', verified: false };
   assert.equal(app.parallelState().effectiveConcurrency, 2, 'expired diagnostic proof does not gate runtime');

@@ -34,7 +34,7 @@ function groups(changes = []) {
     const parts = last.binary ? [] : hunks(first.before || '', last.after || '');
     const acceptedHunks = last.acceptedHunks || [];
     return { id, path: first.path, taskId: first.taskId, before: first.before, after: last.after, afterHash: last.afterHash,
-      created: first.created, binary: last.binary, saved: last.saved, records,
+      created: first.created, binary: last.binary, mimeType: last.mimeType, saved: last.saved, records,
       reverted: records.every(record => record.reverted), protected: /\[REDACTED/.test(String(first.before) + String(last.after)),
       accepted: last.reviewState === 'accepted' || parts.length > 0 && parts.every(part => acceptedHunks.includes(part.id)),
       hunks: parts.map(part => ({ ...part, accepted: acceptedHunks.includes(part.id) })),

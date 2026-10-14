@@ -75,7 +75,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       const plan = [...records].reverse().find(record => record.name === 'update_plan' && record.result?.ok);
       const unfinished = (profile.agent || 'build') === 'build' && (plan?.result.steps || []).some(item => item.status !== 'completed');
       const implementation = profile.agent === 'build' && /建立|新增|實作|修正|修改|產生|implement|create|build|fix/i.test(request) && !/^(?:請)?(?:只(?:說明|解釋|規劃)|(?:不要|不需|無需)(?:修改|實作|建立))/.test(request);
-      const noAction = implementation && !records.some(record => record.result?.ok && (['write_file', 'edit_file', 'create_visual', 'run_command'].includes(record.name) || record.name?.startsWith('mcp_')));
+      const noAction = implementation && !records.some(record => record.result?.ok && (['write_file', 'edit_file', 'create_visual', 'run_command', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name?.startsWith('mcp_')));
       const denied = records.some(record => record.result?.denied);
       if ((unfinished || noAction) && !denied && reply.completed !== false && completionRetries++ < 2) {
         records.push({ type: 'completion_check', instruction: 'Your plan still has unfinished steps or implementation has no actual tool evidence. Complete the task using tools and update_plan, or report a specific blocker with completed:false. Do not stop at a proposal.' });

@@ -28,6 +28,7 @@ const { RequestRateGate } = require('./request-rate');
 const { AdaptiveConcurrency } = require('./adaptive-concurrency');
 const { isServiceLimit } = require('./parallel-policy');
 const { probeConcurrency } = require('./browser/concurrency-probe');
+const { publicTarget } = require('./network');
 
 class AgentApp {
   constructor(context) {
@@ -63,6 +64,7 @@ class AgentApp {
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.state()));
     this.ready = this.initializeMemory();
     const configurationListener = vscode.workspace.onDidChangeConfiguration?.(event => {
+      if (event.affectsConfiguration('ntpuAI.chat.submitMode')) this.state();
       if (['browser', 'customBrowserPath', 'chromePath', 'browserProfilePath'].some(key => event.affectsConfiguration('ntpuAI.' + key)) && !this.browserUpdating) {
         if (this.busy()) this.browserConfigurationChanged = true;
         else void this.reconnectBrowser(false).catch(error => this.notice(redact(error.message), 'error'));
@@ -119,8 +121,9 @@ class AgentApp {
       line: editor.selection.start.line + 1, endLine: editor.selection.end.line + 1 };
   }
   state() {
+    const config = vscode.workspace.getConfiguration('ntpuAI');
     this.post({ kind: 'state', busy: this.busy(), progress: this.progress, connection: this.connection, parallel: this.parallelState(),
-      model: this.model, options: this.session.options, workspace: this.workspace()?.name || '未開啟專案',
+      model: this.model, options: this.session.options, submitMode: config.get('chat.submitMode', 'enter'), submitModifier: process.platform === 'darwin' ? '⌘' : 'Ctrl', workspace: this.workspace()?.name || '未開啟專案',
       budget: this.budget, persistenceError: this.persistenceError, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
       attachment: this.attachment ? { name: this.attachment.name, mimeType: this.attachment.mimeType, preview: this.attachment.preview } : null,
       queue: this.queue.map(item => ({ id: item.id, request: item.request })), sessionId: this.session.id, sessionTitle: this.session.title });
@@ -367,6 +370,7 @@ class AgentApp {
         if (this.busy() || !this.connection.ready) throw new Error('請先完成任務與登入，再手動恢復。');
         this.adaptive.resume(); this.state(); this.capabilities(); break;
       case 'parallelUpdate': await this.updateParallel(message); break;
+      case 'composerUpdate': await this.updateComposer(message.value); break;
       case 'parallelSettings': await vscode.commands.executeCommand('workbench.action.openSettings', 'ntpuAI.parallel'); break;
       case 'chooseWorkspace': await this.chooseWorkspace(); break;
     }
@@ -384,6 +388,11 @@ class AgentApp {
       if (answer !== '啟用完整存取') { this.state(); return; }
     }
     this.session.options[key] = value; this.policies.delete(this.session.id); this.state(); this.persist();
+  }
+  async updateComposer(value) {
+    if (!['enter', 'modifierEnter'].includes(value)) return;
+    await vscode.workspace.getConfiguration('ntpuAI').update('chat.submitMode', value, vscode.ConfigurationTarget.Global);
+    this.state();
   }
   async chooseWorkspace() {
     if (this.busy()) return;
@@ -476,7 +485,18 @@ class AgentApp {
       const modelBudget = new ModelBudget(Math.min(config.get('maxSteps', 50), { quick: 12, standard: 50, deep: 100 }[this.session.options.depth] || 50));
       const baseTools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); this.capabilities(); },
         (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox,
-          selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, bridge: scheduler.bridge(bridge), parallel: this.parallelState().enabled,
+          selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, servers: this.servers, builtins: BUILTINS,
+          connectMcp: async server => { await this.mcp.connect(server); this.capabilities(); },
+          addMcp: async server => {
+            if (this.servers.some(item => item.name === server.name) || BUILTINS.some(item => item.name === server.name)) throw new Error('MCP 名稱已存在。');
+            await publicTarget(server.url); validateServer(server);
+            this.servers.push(server); await this.context.globalState.update('ntpuAI.mcpServers', this.servers);
+            try { await this.mcp.connect(server); }
+            catch (error) { this.servers = this.servers.filter(item => item.name !== server.name); await this.context.globalState.update('ntpuAI.mcpServers', this.servers); throw error; }
+            this.capabilities();
+          },
+          onCatalogChange: () => this.capabilities(),
+          bridge: scheduler.bridge(bridge), parallel: this.parallelState().enabled,
           reviewPaths: config.get('privacy.reviewPaths', []),
           onPlan: steps => { this.session.plan = steps; this.post({ kind: 'plan', steps }); this.persist(); },
           onSkill: name => { if (!this.session.options.skills.includes(name)) this.post({ kind: 'skillLoaded', name }); },

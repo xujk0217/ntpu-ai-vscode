@@ -1,6 +1,7 @@
 /* global acquireVsCodeApi */
 'use strict';
 const { loginPresentation } = require('./login-state');
+const { shouldSubmitEnter } = require('./composer-keys');
 const MarkdownIt = require('markdown-it');
 const highlight = require('highlight.js/lib/core');
 const languages = { javascript: require('highlight.js/lib/languages/javascript'), typescript: require('highlight.js/lib/languages/typescript'),
@@ -11,14 +12,14 @@ for (const [name, language] of Object.entries(languages)) highlight.registerLang
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const send = (kind, extra = {}) => vscode.postMessage({ kind, ...extra });
-let state = { busy: false, options: { agent: 'build', depth: 'standard', permission: 'ask', web: true, skills: [] } };
+let state = { busy: false, submitMode: 'enter', submitModifier: '⌘', options: { agent: 'build', depth: 'standard', permission: 'ask', web: true, skills: [] } };
 let session = { messages: [], changes: [] }, sessions = [], capabilities = { skills: [], servers: [], tools: [] }, approval = null, tab = 'sessions';
 let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false, historyEditing = false;
 const selectedSessions = new Set();
 const nodes = new Map();
-const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', update_plan: '更新計畫', ask_user: '詢問偏好' };
-const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', update_plan: 'check', search_text: 'search' };
+const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 const md = new MarkdownIt({ html: false, breaks: false, linkify: false, highlight: (code, language) => {
   if (code.length < 32000 && highlight.getLanguage(language)) { try { return highlight.highlight(code, { language, ignoreIllegals: true }).value; } catch {} }
@@ -216,15 +217,15 @@ function renderChanges(changes) {
   $('changes').hidden = !changes.length; $('changeRows').replaceChildren();
   const active = changes.filter(change => !change.reverted);
   $('changesTitle').textContent = `檔案變更 · ${new Set(active.map(change => change.path)).size}`;
-  $('changeStats').textContent = active.length && active.every(item => item.binary) ? active.length + ' 張圖片' : '+' + active.reduce((sum, item) => sum + (item.added || 0), 0) + ' −' + active.reduce((sum, item) => sum + (item.removed || 0), 0);
+  $('changeStats').textContent = active.length && active.every(item => item.binary) ? active.filter(item => item.mimeType?.startsWith('image/')).length === active.length ? active.length + ' 張圖片' : active.length + ' 個二進位檔' : '+' + active.reduce((sum, item) => sum + (item.added || 0), 0) + ' −' + active.reduce((sum, item) => sum + (item.removed || 0), 0);
   $('changeRows').append(element('p', 'change-explanation', '變更已套用。可保留檔案，或展開後撤回其中一段；停止任務後即可操作。'));
   for (const change of changes) {
     const card = element('details', 'change-file' + (change.reverted ? ' reverted' : ''));
     card.dataset.id = change.id; card.open = openFiles.has(change.id);
     const row = element('summary', 'change-row');
-    row.append(icon(change.binary ? 'image' : 'file'), button(change.path, 'change-name', () => send('change', { id: change.id })),
+    row.append(icon(change.mimeType?.startsWith('image/') || change.binary && !change.mimeType ? 'image' : 'file'), button(change.path, 'change-name', () => send('change', { id: change.id })),
       element('span', 'change-state', change.reverted ? '已撤回' : change.accepted ? '已保留' : '已套用'),
-      element('span', 'added', change.reverted ? '' : change.binary ? 'PNG' : '+' + change.added), element('span', 'removed', change.reverted || change.binary ? '' : '−' + change.removed));
+      element('span', 'added', change.reverted ? '' : change.binary ? (change.mimeType?.split('/')[1]?.toUpperCase() || 'PNG') : '+' + change.added), element('span', 'removed', change.reverted || change.binary ? '' : '−' + change.removed));
     card.append(row);
     const controls = element('div', 'change-controls');
     for (const [action, label] of [['accept', '保留檔案'], ['revert', '撤回檔案']]) {
@@ -260,6 +261,8 @@ function updateComposer() {
   $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
   $('sendLabel').hidden = !state.busy;
   $('sendHint').hidden = !!state.busy;
+  $('sendHint').textContent = state.submitMode === 'modifierEnter' ? `${state.submitModifier || 'Ctrl'} ↵` : 'Enter ↵';
+  $('sendHint').title = state.submitMode === 'modifierEnter' ? `${state.submitModifier || 'Ctrl'}+Enter 送出 · Enter 換行` : 'Enter 送出 · Shift+Enter 換行';
 }
 
 function renderState(value) {
@@ -267,6 +270,7 @@ function renderState(value) {
   state = value;
   if (state.sessionTitle) $('rename').textContent = state.sessionTitle;
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
+  if ($('submitMode')) { $('submitMode').value = state.submitMode || 'enter'; $('submitMode').title = $('submitMode').selectedOptions[0]?.textContent || '送出快捷鍵'; }
   $('workspace').querySelector('span').textContent = state.workspace;
   $('connect').classList.toggle('connected', !!state.connection?.ready); $('connect').title = state.connection?.message || '登入 NTPU AI';
   $('connectionLabel').textContent = state.connection?.connecting ? '正在連線…' : state.connection?.ready ? '已連線' : state.connection?.loginWindow ? '返回登入視窗' : state.connection?.authentication === 'unknown' ? '重新連線 NTPU AI' : '登入';
@@ -475,6 +479,12 @@ function renderDrawer() {
     if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.originalName || tool.name), element('p', '', tool.description)); list.append(row); } content.append(list); }
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));
+    content.append(element('h3', '', '送出快捷鍵'), element('p', 'panel-description', '調整 Enter 與 Shift+Enter 的行為；輸入法正在組字時不會送出。'));
+    const submitMode = element('select', 'history-search'); submitMode.id = 'submitMode'; submitMode.setAttribute('aria-label', '送出快捷鍵');
+    for (const [value, label] of [['enter', 'Enter 送出 · Shift+Enter 換行'], ['modifierEnter', `${state.submitModifier || 'Ctrl'}+Enter 送出 · Enter 換行`]]) {
+      const option = element('option', '', label); option.value = value; submitMode.append(option);
+    }
+    submitMode.value = state.submitMode || 'enter'; submitMode.addEventListener('change', () => send('composerUpdate', { value: submitMode.value })); content.append(submitMode);
     const parallel = state.parallel || capabilities.parallel || {};
     content.append(element('h3', '', 'Agent 多工'), element('p', 'panel-description', parallel.enabled === false ? '多工已停用。' : `Adaptive Concurrency：目前名額 ${parallel.effectiveConcurrency ?? 2}/4 · 執行中 Agent ${parallel.runningAgents ?? 0} · 模型請求 ${parallel.activeRequests ?? 0} · 排隊 ${parallel.queuedRequests ?? 0}。最多四個唯讀子任務，不需事先測試。`));
     if (parallel.reason) content.append(element('p', 'panel-description', parallel.reason));
@@ -531,7 +541,10 @@ window.addEventListener('message', event => {
 });
 
 $('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text) return; send('ask', { text, includeEditor }); $('prompt').value = ''; updateComposer(); $('prompt').style.height = ''; $('slashMenu').hidden = true; });
-$('prompt').addEventListener('keydown', event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); $('composer').requestSubmit(); } if (event.key === 'Escape') $('slashMenu').hidden = true; });
+$('prompt').addEventListener('keydown', event => {
+  if (shouldSubmitEnter(event, state.submitMode)) { event.preventDefault(); $('composer').requestSubmit(); }
+  if (event.key === 'Escape') $('slashMenu').hidden = true;
+});
 $('prompt').addEventListener('input', () => {
   updateComposer();
   $('prompt').style.height = 'auto'; $('prompt').style.height = Math.min(200, $('prompt').scrollHeight) + 'px';

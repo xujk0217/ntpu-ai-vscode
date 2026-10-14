@@ -20,6 +20,11 @@ test('read-only agent restrictions dominate full access and session grants', () 
     const policy = new PermissionPolicy({ mode: 'full', agent }); policy.grant('write_file');
     assert.equal(policy.decision('write_file'), 'deny');
     assert.equal(policy.decision('create_visual'), 'deny');
+    assert.equal(policy.decision('download_file'), 'deny');
+    assert.equal(policy.decision('install_skill'), 'deny');
+    assert.equal(policy.decision('connect_mcp'), 'deny');
+    assert.equal(policy.decision('add_mcp'), 'deny');
+    assert.equal(policy.decision('get_capabilities'), 'allow');
     assert.equal(policy.decision('run_command', { command: 'npm run build' }), 'deny');
     assert.equal(policy.decision('mcp_unknown', {}, { external: true, readOnly: false }), 'deny');
     assert.equal(policy.decision('web_search'), 'allow');
