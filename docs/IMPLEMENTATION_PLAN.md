@@ -128,3 +128,5 @@ BrowserManager 獨立偵測／驗證／啟動；Auto、Chrome、Edge、Chromium�
 ### 0.6.5 任務持續執行補充
 
 已完成一般逾時共用 Queue 恢復、連續三次模型不可用暫停所有後續提問、工具失敗證據與替代步驟、首問單次背景取名（十字／共用四子任務名額）、未登入主要提示。143 項單元測試；C 組找到子任務只有失敗證據卻標成完成的問題，已修正。D 組真人確認原失敗保留、建檔核准、重要重試成功、取名八字與對話清理。校方模型逾時恢復沒有刻意製造故障，以 mock 驗證。最終 CI 與發布完成後記錄。
+
+0.6.5 最終驗收：CI 38554614279，提交 178e7f703176eaf5d872d2bd53ce8eb60a7ee77e，四平台 × Node 20／22 全部八組通過（143 tests／build／localhost BrowserBridge 與 Webview／原生 VSIX）。新版真人取名及重要重試 D 組通過；模型逾時恢復以 mock 驗證，Windows／Linux 真人 SSO 與 Windows 完整 OS 沙箱仍待驗收。

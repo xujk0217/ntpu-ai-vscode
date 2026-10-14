@@ -16,6 +16,10 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 <img src="docs/images/changes.png" alt="檔案與區段變更檢視" width="380">
 
+未登入時提供主要登入入口，完成背景連線後提示會收起。
+
+<img src="docs/images/login.png" alt="未登入提示與主要登入按鈕（本機合成畫面）" width="340">
+
 ## 安裝與更新
 
 目前透過 GitHub Releases 提供 VSIX，尚未上架 VS Code Marketplace。

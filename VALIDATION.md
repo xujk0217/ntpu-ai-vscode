@@ -20,6 +20,7 @@
 - 新版模型逾時自動恢復尚未以真實校方請求驗收；A／B 是 0.6.4 的結果。
 - D 組修正後的真人重要重試通過：首次子任務 error（檔案不存在），主 Agent 經核准建立合成檔，再用原始 ID／理由呼叫 retry_task 一次。新子任務 done，實際 read_file 成功、未截斷，包含 LOAD-IMPORTANT-VERIFIED 及 value: 42；原始失敗仍保留。主 Agent 收集並完成，全程 14 個模型請求、149436 ms（含 Queue／速率／人工核准等待）、名額 2→3、SSE 峰值二；未有 429／登入或服務限制，校方對話清理完成。本組是本機缺檔恢復，不是校方逾時恢復驗證。
 - D 組首次取名成功為「任務重試驗收流程」（八字），取名請求包含於上述十四次。主機測試亦驗證連續三次模型逾時會鎖住父子共用排程、停止後續提問，檢查點保留；普通逾時恢復與不可用判定未刻意對真正校方製造故障。
+- [0.6.5 CI 38554614279](https://github.com/xujk0217/ntpu-ai-vscode/actions/runs/38554614279)，程式碼提交 `178e7f703176eaf5d872d2bd53ce8eb60a7ee77e`：Windows x64、macOS arm64／x64、Linux x64 × Node 20／22 全部八組成功，143 單元測試、build、localhost BrowserBridge／Webview fixture 與四平台原生 VSIX。Node 22 Unix 工作另含原生隔離與 OCR fixture；Windows 完整 OS 沙箱與真人 SSO 仍未實際驗證。
 
 ## 0.6.4 Adaptive Concurrency（2026-10-14）
 
