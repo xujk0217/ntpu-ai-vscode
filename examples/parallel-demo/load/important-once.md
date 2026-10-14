@@ -1,0 +1,2 @@
+LOAD-IMPORTANT-ONCE
+value: 42
