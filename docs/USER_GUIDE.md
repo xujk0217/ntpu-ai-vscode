@@ -163,9 +163,9 @@ Agent 執行或等待核准時，聊天管理操作會暫停，避免修改正�
 
 ## 瀏覽器與平台
 
-齒輪 → **工具／設定** 提供 Browser、Custom Browser Path、Browser Profile Location、連線結果及重新連線。Auto 先嘗試受支援的系統預設瀏覽器；預設為 Safari／Firefox 或不可用時，選擇已安裝的 Chrome、Edge、Chromium。Playwright 一律以 headless 啟動，不建立桌面視窗；只有 VS Code 內登入面板會在真人驗證期間傳送同一頁的即時畫面與使用者直接輸入。明確失敗時會顯示原因，不會僅開 URL 就宣稱成功。
+齒輪 → **工具／設定** 提供 Browser、Custom Browser Path、Browser Profile Location、連線結果及重新連線。Auto 先嘗試受支援的系統預設瀏覽器；預設為 Safari／Firefox 或不可用時，選擇已安裝的 Chrome、Edge、Chromium。平時使用 headless 背景連線；按「登入」才開啟正常大小的專用登入視窗。明確失敗時會顯示原因，不會僅開 URL 就宣稱成功。
 
-可手動選擇 Chrome／Edge／Chromium，或設定 Custom 的執行檔絕對路徑。程式不自動下載日常瀏覽器。Chromium 也可由開發者執行 `npx playwright-core install chromium` 安裝後偵測；登入驗證仍由使用者完成。所有啟動保留 Chromium sandbox，不使用 remote debugging attach 或一般瀏覽器 Profile。登入面板是同一個 BrowserContext 的畫面操作轉送，不是 iframe；不讀取、複製或匯出 Cookie／Token。
+可手動選擇 Chrome／Edge／Chromium，或設定 Custom 的執行檔絕對路徑。程式不自動下載日常瀏覽器。Chromium 也可由開發者執行 `npx playwright-core install chromium` 安裝後偵測；登入驗證仍由使用者完成。所有啟動保留 Chromium sandbox，不使用 remote debugging attach 或一般瀏覽器 Profile。真人登入後，同一專用 Profile 切回背景模式；不讀取、複製或匯出 Cookie／Token。
 
 Extension 使用 VS Code 本機私有儲存；獨立 BrowserManager 的預設資料根目錄則依平台選擇：
 
@@ -338,9 +338,9 @@ npm run package
 - [OpenCode permissions](https://opencode.ai/docs/permissions/)、[skills](https://opencode.ai/docs/skills/)：模式、權限與技能目錄。
 - [NTPU AI](https://ai.ntpu.edu.tw/)：實際模型服務。
 
-## VS Code 內真人登入與附件防護
+## 真人登入與背景接續及附件防護
 
-只有 NTPU AI 網站或學校登入頁需要真人輸入時，VS Code 側欄才會顯示登入操作面板。成功登入後，畫面自動隱藏，背景 BrowserContext 與登入 Profile 繼續保留供 Agent 使用；不會開啟桌面瀏覽器視窗。登入頁、操作輸入及畫面不存入 Session 或 Project Memory。設定分成連線、工具、安全，進階路徑預設收起。
+按「登入」後會開啟正常大小的專用瀏覽器視窗，由使用者完成學校登入／驗證。成功後提示可以關閉視窗，並回到 VS Code 背景連線；平時不用保持外部視窗開啟。既有 Profile 有效時直接在背景還原。登入頁、操作輸入及畫面不存入 Session 或 Project Memory。設定分成連線、工具、安全，進階路徑預設收起。
 
 完整依賴安裝、隔離範圍、OCR 保障及驗收限制見 [側欄瀏覽器與本機執行隔離](BROWSER_SURFACE_AND_SECURITY.md)。
 
