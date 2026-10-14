@@ -158,3 +158,11 @@ test('queued important retry uses shared model slots and can be cancelled before
  const one=workers.scheduler.run(()=>new Promise(resolve=>{release1=resolve;})),two=workers.scheduler.run(()=>new Promise(resolve=>{release2=resolve;}));await turn();
  workers.retryTask({id,reason:'Evidence needed to complete the task'});await turn();assert.equal(workers.scheduler.queue.length,1);assert.equal(sends,1);controller.abort();release1();release2();await Promise.all([one,two]);await workers.close();assert.equal(sends,1);assert.equal([...workers.jobs.values()][1].status,'interrupted');
 });
+
+test('login failure while opening a child channel blocks new parent and child sends before retry',async()=>{
+ const {AdaptiveConcurrency}=require('../src/adaptive-concurrency');const adaptive=new AdaptiveConcurrency();let errors=0,sends=0;
+ const {workers}=fixture(async()=>({completed:true}));workers.scheduler=new RequestScheduler(2,()=>errors++,{adaptive});
+ workers.bridge.createChannel=async()=>{throw Object.assign(new Error('login required'),{status:401});};
+ const id=workers.delegate({tasks:[{title:'read',role:'explore',request:'read'}]}).tasks[0].id;await workers.collect();assert.equal(adaptive.blocked,true);assert.equal(adaptive.limit,1);assert.equal(errors,1);
+ await assert.rejects(workers.scheduler.run(()=>sends++),/login/);assert.equal(sends,0);assert.throws(()=>workers.retryTask({id,reason:'necessary evidence'}),/禁止重試/);await workers.close();workers.scheduler.close();
+});

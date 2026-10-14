@@ -89,7 +89,12 @@ class AgentWorkers {
         onFinal: text => { job.result = redact(text).slice(0, 10000); },
       });
       job.status = job.controller.signal.aborted ? 'interrupted' : result.completed ? 'done' : 'error';
-    } catch (error) { job.status = job.controller.signal.aborted ? 'interrupted' : 'error'; job.result = redact(error.message); job.serviceLimited = isServiceLimit(error); }
+    } catch (error) {
+      job.serviceLimited = isServiceLimit(error);
+      // Channel startup can fail before a model call reaches the scheduler.
+      if (job.serviceLimited && this.scheduler.adaptive && !this.scheduler.adaptive.blocked) { this.scheduler.adaptive.block(error); this.scheduler.onError(error); }
+      job.status = job.controller.signal.aborted ? 'interrupted' : 'error'; job.result = redact(error.message);
+    }
     finally {
       this.signal.removeEventListener('abort', job.abort); job.endedAt = Date.now(); this.emit(job);
       let saved = true; try { await this.onBeforeCleanup(); } catch { saved = false; job.storageFailed = true; job.status = 'error'; job.result = (job.result || '') + '\n本機保存失敗，已保留校方對話。'; this.emit(job); }
