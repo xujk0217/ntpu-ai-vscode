@@ -28,6 +28,7 @@ class RequestScheduler {
     Object.assign(this, { rateGate, onWait, adaptive, onState, now, onError });
     this.fixedLimit = Math.min(4, concurrencyLimit(limit)); this.active = 0; this.queue = []; this.pendingRate = null;
     this.streamActive = 0; this.peakStreams = 0; this.requests = 0; this.closed = false;
+    this.liveStreams = new Set();
     this.unsubscribe = adaptive?.subscribe(() => { this.drain(); this.publish(); });
   }
   get limit() { return this.adaptive?.limit ?? this.fixedLimit; }
@@ -73,16 +74,24 @@ class RequestScheduler {
     }
   }
   bridge(bridge) { return { chat: (prompt, options = {}) => this.run(async () => {
-    let opened = false, firstTokenAt = null; const startedAt = this.now();
+    let opened = false, firstTokenAt = null, lastTokenAt = null, responseCharacters = 0, maxTokenGapMs = 0;
+    const observed = { concurrentRequests: 1 }; const startedAt = this.now();
     try {
       const result = await bridge.chat(prompt, { ...options,
-        onOpen: () => { if (!opened) { opened = true; this.peakStreams = Math.max(this.peakStreams, ++this.streamActive); } options.onOpen?.(); },
-        onToken: (...args) => { firstTokenAt ??= this.now(); options.onToken?.(...args); } });
-      this.adaptive?.observe({ success: true, firstTokenMs: firstTokenAt === null ? null : firstTokenAt - startedAt, durationMs: this.now() - startedAt, cancelled: options.signal?.aborted });
+        onOpen: () => { if (!opened) { opened = true; this.liveStreams.add(observed); this.peakStreams = Math.max(this.peakStreams, ++this.streamActive);
+          for (const stream of this.liveStreams) stream.concurrentRequests = Math.max(stream.concurrentRequests, this.streamActive); } options.onOpen?.(); },
+        onToken: (...args) => {
+          if (typeof args[0] === 'string' && args[0].length) { const at = this.now(); firstTokenAt ??= at;
+            if (lastTokenAt !== null) maxTokenGapMs = Math.max(maxTokenGapMs, at - lastTokenAt);
+            lastTokenAt = at; responseCharacters += args[0].length; }
+          options.onToken?.(...args);
+        } });
+      this.adaptive?.observe({ success: true, firstTokenMs: firstTokenAt === null ? null : firstTokenAt - startedAt, durationMs: this.now() - startedAt, cancelled: options.signal?.aborted,
+        responseCharacters: Math.max(responseCharacters, result.text?.length || 0), promptCharacters: prompt.length, concurrentRequests: observed.concurrentRequests, maxTokenGapMs });
       return result;
     } catch (error) {
       this.adaptive?.observe({ success: false, error, cancelled: options.signal?.aborted }); throw error;
-    } finally { if (opened) this.streamActive--; }
+    } finally { if (opened) { this.streamActive--; this.liveStreams.delete(observed); } }
   }, options.signal) }; }
   close() { this.closed = true; this.unsubscribe?.(); this.drain(); }
 }

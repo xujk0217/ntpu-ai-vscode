@@ -122,7 +122,7 @@ class AgentApp {
   }
   state() {
     const config = vscode.workspace.getConfiguration('ntpuAI');
-    this.post({ kind: 'state', busy: this.busy(), progress: this.progress, connection: this.connection, parallel: this.parallelState(),
+    this.post({ kind: 'state', busy: this.busy(), progress: this.progress, modelRequest: this.modelRequest, connection: this.connection, parallel: this.parallelState(),
       model: this.model, options: this.session.options, submitMode: config.get('chat.submitMode', 'enter'), submitModifier: process.platform === 'darwin' ? '⌘' : 'Ctrl', workspace: this.workspace()?.name || '未開啟專案',
       budget: this.budget, persistenceError: this.persistenceError, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
       attachment: this.attachment ? { name: this.attachment.name, mimeType: this.attachment.mimeType, preview: this.attachment.preview } : null,
@@ -541,7 +541,16 @@ class AgentApp {
         budget: config.get('contextCharacters', 64000), timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
         onActivity: text => { this.progress = text; this.state(); this.capabilities(); }, onBudget: budget => { this.budget = budget; this.state(); },
         onJudge: event => { this.model = event.model || ''; this.state(); },
-        onStream: text => { if (!this.streamId) this.streamId = this.add('stream', '').id; this.patch(this.streamId, { text }); },
+        onResponseMetadata: metadata => {
+          task.requests ||= []; task.requests.push(sanitize(metadata));
+          if (metadata.outcome === 'empty') this.notice('NTPU AI 這輪沒有回傳內容，已保留任務進度。');
+        },
+        onRequestState: request => { this.modelRequest = request; this.state(); },
+        onStream: text => {
+          if (!text) { if (this.streamId) { this.patch(this.streamId, { role: 'notice', text: '回覆未完成，正在接續任務。' }); this.streamId = null; } return; }
+          if (!this.streamId) this.streamId = this.add('stream', '').id;
+          this.patch(this.streamId, { text });
+        },
         onFinal: text => { answer = text; if (this.streamId) { this.patch(this.streamId, { role: 'assistant', text }); this.streamId = null; } else this.add('assistant', text); },
         onCheckpoint: async records => {
           task.records = sanitize(records);

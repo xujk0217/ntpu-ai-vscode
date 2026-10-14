@@ -20,6 +20,27 @@ test('single outlier/error and cancellations do not cause downgrade; repeated la
 test('service limits latch at one, successes cannot resume, manual resume does not retry',()=>{
  for(const status of [401,403,429,503]){const c=new AdaptiveConcurrency({cooldownMs:0});c.observe({success:false,error:Object.assign(new Error('service'),{status})});assert.equal(c.limit,1);assert.equal(c.blocked,true);healthy(c,30);assert.equal(c.limit,1);c.resume();assert.equal(c.blocked,false);assert.equal(c.limit,1);healthy(c);assert.equal(c.limit,2);}
 });
+test('large code replies and sequential reasoning do not count as parallel congestion',()=>{
+ const large=new AdaptiveConcurrency({cooldownMs:0});healthy(large);
+ for(let i=0;i<8;i++)large.observe({success:true,firstTokenMs:85000,durationMs:95000,responseCharacters:10000,promptCharacters:28000,concurrentRequests:2,maxTokenGapMs:500});
+ assert.equal(large.limit,4);
+ const sequential=new AdaptiveConcurrency({cooldownMs:0});healthy(sequential);
+ for(let i=0;i<8;i++)sequential.observe({success:true,firstTokenMs:85000,durationMs:150000,concurrentRequests:1});
+ assert.equal(sequential.limit,4);
+});
+test('repeated real stream stalls and empty provider failures still cause a bounded downgrade',()=>{
+ const stalled=new AdaptiveConcurrency({cooldownMs:0});healthy(stalled);
+ for(let i=0;i<3;i++)stalled.observe({success:true,firstTokenMs:1000,durationMs:95000,responseCharacters:10000,concurrentRequests:2,maxTokenGapMs:45000});
+ healthy(stalled,3);assert.equal(stalled.limit,2);
+ const empty=new AdaptiveConcurrency({cooldownMs:0});healthy(empty,4);
+ for(let i=0;i<2;i++)empty.observe({success:false,error:Object.assign(new Error('empty'),{code:'EMPTY_MODEL_RESPONSE'})});
+ assert.equal(empty.limit,1);assert.match(empty.reason,/模型請求失敗/);
+});
+test('adaptive downgrade at the floor stays at one instead of wrapping to four',()=>{
+ const c=new AdaptiveConcurrency({cooldownMs:0});c.configure(1);
+ for(let i=0;i<6;i++)c.observe({success:i>=2,firstTokenMs:i>=2?1000:null,durationMs:i>=2?5000:null,error:i<2?Object.assign(new Error('empty'),{code:'EMPTY_MODEL_RESPONSE'}):undefined});
+ assert.equal(c.limit,1);assert.deepEqual(c.decisions.at(-1),{at:c.lastChange,from:1,to:1,reason:'近期多筆模型請求失敗，降低新請求名額'});
+});
 test('FIFO queue honors a reduced limit without cancelling started calls and cancellation removes only queued job',async()=>{
  const c=new AdaptiveConcurrency({cooldownMs:0}),s=new RequestScheduler(2,()=>{},{adaptive:c});const started=[],release=[];
  const call=i=>s.run(()=>{started.push(i);return new Promise(resolve=>release.push(resolve));});

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { ensureAttachment } = require('./security/attachments');
 const { inspectOutboundPayload } = require('./security/guard');
+const { responseWatchdog } = require('./browser/response-watchdog');
 
 const ORIGIN = 'https://ai.ntpu.edu.tw';
 const PROFILE = path.join(dataDirectory(), 'browser-profiles');
@@ -75,7 +76,7 @@ function installStreamObserver(bindingName) {
             }
             buffer += decoder.decode();
             if (buffer) await line(buffer);
-            if (!completed) await emit({ kind: 'failure', message: '網站串流中斷，未收到完成事件；沒有自動重送。' });
+            if (!completed) await emit({ kind: 'failure', code: 'INCOMPLETE_MODEL_RESPONSE', message: '網站串流中斷，未收到完成事件。' });
           } catch (error) {
             await emit({ kind: 'failure', message: controller.signal.aborted ? '已停止' : error.message });
           } finally {
@@ -314,18 +315,20 @@ class BrowserBridge {
     const result = new Promise((a, b) => { resolve = a; reject = b; });
     // Attach immediately: a click failure can reject before the final await.
     result.catch(() => {});
-    const timer = setTimeout(() => {
-      this._fail(new Error('等待回答逾時；這次回覆未完成，Agent 將依恢復規則處理。'));
+    const watchdog = responseWatchdog({ idleMs: options.timeoutMs || 240000, onTimeout: code => {
+      this._fail(Object.assign(new Error(code === 'TOTAL_RESPONSE_TIMEOUT' ? '模型請求已達總等待上限；回覆未完成，Agent 將依恢復規則處理。' :
+        '等待回答逾時；網站長時間未送回新內容，Agent 將依恢復規則處理。'), { code }));
       void this._abortPage();
-    }, options.timeoutMs || 240000);
+    } });
     const abort = () => { this._fail(new Error('已停止')); void this._abortPage(); };
     options.signal?.addEventListener('abort', abort, { once: true });
-    this.pending = { id, resolve, reject, timer, text: '', model: null,
+    this.pending = { id, resolve, reject, watchdog, text: '', model: null, startedAt: Date.now(), promptCharacters: prompt.length,
+      opened: false, tokenEvents: 0, eventCounts: {}, onResponseMetadata: options.onResponseMetadata,
       ownsConversation: options.newConversation !== false, onToken: options.onToken, onJudge: options.onJudge, onOpen: options.onOpen, signal: options.signal, abort };
     try {
       await this.page.evaluate(requestId => { window.__ntpuLocalBridge.active = requestId; }, id);
       if (options.signal?.aborted) abort();
-      else await this.page.locator('#sendBtn').click({ timeout: 10000 });
+      else { options.onSend?.(); await this.page.locator('#sendBtn').click({ timeout: 10000 }); }
       return await result;
     } catch (error) {
       this._fail(error);
@@ -348,22 +351,32 @@ class BrowserBridge {
     const pending = this.pending;
     if (!pending || payload?.id !== pending.id) return;
     if (payload.kind === 'conversation') { if (pending.ownsConversation && typeof payload.sessionId === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(payload.sessionId)) this.ownedConversations.add(payload.sessionId); return; }
-    if (payload.kind === 'opened') { pending.onOpen?.(); return; }
+    if (payload.kind === 'opened') { pending.opened = true; pending.onOpen?.(); return; }
     if (payload.kind === 'failure') {
       const suffix = [401, 403].includes(payload.status) ? ' 請回瀏覽器重新登入或完成驗證。' :
         payload.status === 429 ? ' 已達網站用量限制，請等待或使用學校帳號；不會自動重試。' : '';
       const error = new Error((payload.message || '網站請求失敗') + suffix); error.status = payload.status;
+      if (payload.code === 'INCOMPLETE_MODEL_RESPONSE') error.code = payload.code;
       return this._fail(error);
     }
     const event = payload.event;
     if (!event) return;
+    const eventType = ['judge', 'token', 'done', 'error', 'search', 'search_quota'].includes(event.type) ? event.type : 'unknown';
+    pending.eventCounts[eventType] = (pending.eventCounts[eventType] || 0) + 1;
     if (event.type === 'judge') { pending.model = event.model || event.selected_model || event; pending.onJudge?.(event); }
-    else if (event.type === 'token') { pending.text += event.content || ''; pending.onToken?.(event.content || ''); }
+    else if (event.type === 'token') {
+      pending.tokenEvents++; const token = typeof event.content === 'string' ? event.content : '';
+      if (token && pending.firstTokenMs === undefined) pending.firstTokenMs = Date.now() - pending.startedAt;
+      if (token) pending.watchdog?.progress();
+      pending.text += token; pending.onToken?.(token);
+    }
     else if (event.type === 'error') { const error = new Error(event.message || 'NTPU AI 回答失敗'); error.status = Number(event.status || event.status_code || event.code) || undefined; error.serviceLimited = /quota|rate.?limit|capacity|resource.?exhausted/i.test(String(event.code || '')); this._fail(error); }
     else if (event.type === 'done') {
       const result = { text: pending.text, model: pending.model, meta: event };
+      pending.siteElapsedMs = Number.isFinite(event.answer_elapsed_ms) ? event.answer_elapsed_ms : undefined;
+      const diagnostics = this._responseMetadata(pending, result.text.trim() ? 'completed' : 'empty');
       this._clear();
-      if (!result.text.trim()) pending.reject(new Error('網站回傳空白回答。'));
+      if (!result.text.trim()) pending.reject(Object.assign(new Error('網站已結束回答，但沒有回傳內容。'), { code: 'EMPTY_MODEL_RESPONSE', diagnostics }));
       else pending.resolve(result);
     }
   }
@@ -372,6 +385,7 @@ class BrowserBridge {
     if (!this.pending) return;
     const id = this.pending.id;
     clearTimeout(this.pending.timer);
+    this.pending.watchdog?.stop();
     this.pending.signal?.removeEventListener('abort', this.pending.abort);
     this.pending = null;
     this.page?.evaluate(requestId => {
@@ -379,7 +393,16 @@ class BrowserBridge {
     }, id).catch(() => {});
   }
 
-  _fail(error) { const pending = this.pending; this._clear(); pending?.reject(error); }
+  _responseMetadata(pending, outcome, error) {
+    const metadata = { outcome, promptCharacters: pending.promptCharacters, durationMs: Date.now() - pending.startedAt,
+      opened: pending.opened, tokenEvents: pending.tokenEvents, responseCharacters: pending.text.length, firstTokenMs: pending.firstTokenMs ?? null,
+      events: { ...pending.eventCounts }, model: typeof pending.model === 'string' ? pending.model : undefined,
+      siteElapsedMs: pending.siteElapsedMs, code: error?.code, status: error?.status };
+    try { pending.onResponseMetadata?.(metadata); } catch {}
+    return metadata;
+  }
+
+  _fail(error) { const pending = this.pending; if (pending) error.diagnostics = this._responseMetadata(pending, 'failed', error); this._clear(); pending?.reject(error); }
 
   async _abortPage() {
     if (!this.page || this.page.isClosed()) return;

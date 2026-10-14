@@ -7,7 +7,7 @@ const { isTransientRequestError } = require('./request-recovery');
 
 async function runAgent({ bridge, tools, request, context, workspace, signal, maxSteps = 12,
   budget = 48000, timeoutMs = 240000, onActivity = () => {}, onFinal = () => {}, onJudge = () => {},
-  onTool = () => {}, onBudget = () => {}, onStream = () => {}, onCheckpoint = () => {},
+  onTool = () => {}, onBudget = () => {}, onStream = () => {}, onCheckpoint = () => {}, onResponseMetadata = () => {}, onRequestState = () => {},
   initialRecords = [], attachment, profile = {}, modelBudget }) {
   const records = sanitize(initialRecords);
   const repeated = [];
@@ -27,8 +27,13 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     onBudget({ used: prompt.length, total: budget });
     let rawReply = '';
     let response;
+    let sentAt;
+    const requestState = phase => onRequestState({ phase, startedAt: sentAt, lastTokenAt: characters ? Date.now() : undefined,
+      characters, round, total: modelBudget?.limit || maxSteps });
+    requestState('queued');
     try { response = await bridge.chat(prompt, {
-      signal, timeoutMs, onJudge, newConversation: step === 0, attachment: firstResponse ? attachment : undefined,
+      signal, timeoutMs, onJudge, onResponseMetadata, newConversation: step === 0, attachment: firstResponse ? attachment : undefined,
+      onSend: () => { sentAt = Date.now(); requestState('waiting'); },
       onUpload: name => onActivity('正在上傳附件 ' + name),
       onToken: token => {
         rawReply += token;
@@ -36,6 +41,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
         if (Date.now() - lastProgress > 500) {
           lastProgress = Date.now();
           onActivity(`AI 正在回答（${characters} 字）`);
+          requestState('streaming');
           if (/"kind"\s*:\s*"final"/.test(rawReply)) {
             const match = rawReply.match(/"message"\s*:\s*"((?:\\.|[^"\\])*)/);
             if (match) { try { onStream(JSON.parse('"' + match[1] + '"')); } catch {} }
@@ -47,13 +53,15 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     } catch (error) {
       if (signal.aborted || isServiceLimit(error) || !isTransientRequestError(error)) throw error;
       consecutiveFailures++;
-      records.push({ type: 'request_error', message: redact(error.message), attempt: consecutiveFailures, instruction: 'No tool executed from this failed response. Continue from saved evidence; verify ambiguous external results before using them.' });
+      records.push({ type: 'request_error', message: redact(error.message), code: error.code, diagnostics: sanitize(error.diagnostics), attempt: consecutiveFailures,
+        instruction: 'No tool executed from this failed response. Continue from saved evidence; verify ambiguous external results before using them.' +
+          (error.code === 'EMPTY_MODEL_RESPONSE' ? ' The provider finished without output. Choose a smaller next step: inspect one relevant section or write one small complete module; avoid generating an entire large implementation in one response. Preserve the task scope and existing successful tools.' : '') });
       await checkpoint();
       if (consecutiveFailures >= 3) throw Object.assign(new Error('NTPU AI 連續三次無法完成模型請求，暫判服務不可用。已保留任務檢查點：' + redact(error.message)), { serviceLimited: true });
       onActivity(`回答未完成，排回共用佇列（恢復 ${consecutiveFailures}/2）`);
       onStream('');
       continue;
-    }
+    } finally { onRequestState(null); }
     if (signal.aborted) throw new Error('已停止');
     let reply;
     try { reply = sanitize(parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined, tools.parallelNames?.() || new Set())); }

@@ -44,6 +44,13 @@ async function testUI(page, origin) {
   await send({ ...state, connection: { ready: false, authentication: 'unknown' } });
   await page.waitForFunction(() => document.getElementById('loginNoticeTitle').textContent === 'NTPU AI 尚未連線');
   await send(state); await page.waitForFunction(() => document.getElementById('loginNotice').hidden);
+  await send({ ...state, busy: true, modelRequest: { phase: 'waiting', startedAt: Date.now() - 72000, round: 4, total: 50 }, progress: 'AI 正在處理（4/50）' });
+  await page.locator('.model-activity').waitFor({ state: 'visible' });
+  assert.match(await page.locator('.model-activity').textContent(), /等待 NTPU AI 回覆.*第 4\/50 輪.*已等待 1 分/);
+  assert.equal(await page.locator('#messages > :last-child').getAttribute('class'), 'model-activity');
+  await send({ ...state, busy: true, modelRequest: { phase: 'streaming', startedAt: Date.now() - 10000, round: 4, total: 50, characters: 9713 } });
+  await page.waitForFunction(() => document.querySelector('.model-activity').textContent.includes('9713 字'));
+  await send(state); await page.waitForFunction(() => !document.querySelector('.model-activity'));
   // Queueing a draft and stopping a task have separate, clearly labelled
   // controls. Blank clicks and keyboard submissions must emit neither action.
   await send({ ...state, busy: true, progress: 'AI 正在處理（5/50）' });

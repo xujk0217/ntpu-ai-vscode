@@ -18,6 +18,7 @@ let includeEditor = true;
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false, historyEditing = false;
 const selectedSessions = new Set();
 const nodes = new Map();
+let modelActivity;
 const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
@@ -158,6 +159,25 @@ function renderMessage(message) {
   return wrapper;
 }
 function nearBottom() { return $('messages').scrollHeight - $('messages').scrollTop - $('messages').clientHeight < 100; }
+function renderModelActivity() {
+  const request = state.busy && !approval ? state.modelRequest : null;
+  if (!request) { modelActivity?.remove(); modelActivity = null; return; }
+  const follow = nearBottom();
+  if (!modelActivity) {
+    modelActivity = element('div', 'model-activity'); modelActivity.setAttribute('aria-live', 'off');
+    modelActivity.append(element('span', 'pulse'), element('span', 'model-phase'), element('span', 'model-wait-time'));
+  }
+  const elapsed = Math.max(0, Math.floor((Date.now() - (request.startedAt || Date.now())) / 1000));
+  const duration = elapsed < 60 ? `${elapsed} 秒` : `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`;
+  const label = request.phase === 'streaming' ? `正在接收 NTPU AI 回覆 · ${request.characters || 0} 字` :
+    request.phase === 'waiting' ? '等待 NTPU AI 回覆' : state.progress?.startsWith('等待本機') ? state.progress : '模型請求排隊／準備中';
+  modelActivity.querySelector('.model-phase').textContent = label;
+  modelActivity.querySelector('.model-wait-time').textContent = request.startedAt ? `第 ${request.round}/${request.total} 輪 · ${request.phase === 'waiting' ? '已等待' : '已執行'} ${duration}` : '';
+  modelActivity.title = request.phase === 'waiting' ? '已送出模型請求，尚未收到回答內容。收到工具指令後才會開始下一項操作；不是等待核准。' : '目前模型請求的即時狀態';
+  if ($('messages').lastElementChild !== modelActivity) $('messages').append(modelActivity);
+  if (follow) $('messages').scrollTop = $('messages').scrollHeight;
+}
+setInterval(() => { if (state.busy && state.modelRequest) renderModelActivity(); }, 1000);
 function addMessage(message, replace = false) {
   if (isDiagnosticNotice(message)) return;
   const follow = nearBottom(); const old = nodes.get(message.id); const open = old?.querySelector('details')?.open; const rawOpen = old?.querySelector('.raw-result')?.open; const userExpanded = old?.querySelector('.user-expand')?.getAttribute('aria-expanded') === 'true';
@@ -182,7 +202,7 @@ function addMessage(message, replace = false) {
       } else $('messages').append(item);
     } else $('messages').append(item);
   }
-  nodes.set(message.id, item); if (follow) $('messages').scrollTop = $('messages').scrollHeight;
+  nodes.set(message.id, item); renderModelActivity(); if (follow) $('messages').scrollTop = $('messages').scrollHeight;
 }
 function renderSession(value) {
   const expandedUsers = new Set([...$('messages').querySelectorAll('.user-expand[aria-expanded="true"]')].map(node => node.closest('.message').dataset.id));
@@ -204,7 +224,7 @@ function renderSession(value) {
     else if ([...group.querySelectorAll('.message.tool')].some(row => openTools.has(row.dataset.id))) { group.dataset.manual = 'true'; group.open = true; }
   }
   if (value.hasMore) $('messages').prepend(button('載入較早訊息（' + value.before + ' 則）', 'secondary-button history-more', () => send('historyPage', { before: value.before })));
-  renderPlan(value.plan || []); renderChanges(value.changes || []); $('messages').scrollTop = $('messages').scrollHeight;
+  renderPlan(value.plan || []); renderChanges(value.changes || []); renderModelActivity(); $('messages').scrollTop = $('messages').scrollHeight;
 }
 function renderPlan(steps) {
   $('plan').hidden = !steps.length; $('planSteps').replaceChildren();
@@ -290,6 +310,7 @@ function renderState(value) {
   $('parallelStatus').textContent = liveParallel ? `並行上限 ${liveParallel.effectiveConcurrency}/4 · 執行中 Agent ${liveParallel.runningAgents} · 模型請求 ${liveParallel.activeRequests} · 排隊 ${liveParallel.queuedRequests}${liveParallel.queuedTasks ? ' · 待執行提問 ' + liveParallel.queuedTasks : ''}${liveParallel.blocked ? ' · 已暫停發送' : ''}` : '';
   $('parallelStatus').title = 'Agent 包含主 Agent 和運作中的唯讀子任務；模型請求排隊共用動態名額與每分鐘節奏。';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
+  renderModelActivity();
   $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
   $('stop').hidden = !state.busy; updateComposer();
   if (busyChanged && state.busy) resetHistoryEditing();

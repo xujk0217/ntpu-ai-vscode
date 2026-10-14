@@ -117,11 +117,26 @@ test('transport failures requeue with shared budget and retain failure evidence 
   assert.match(prompts[2], /request_error/); assert.ok(events.some(text => text.includes('共用佇列'))); scheduler.close();
 });
 test('three consecutive transport failures stop as unavailable, service limits and cancellations never retry', async () => {
-  for (const [error, expected] of [[new Error('timeout'), 3], [Object.assign(new Error('limit'), { status: 429 }), 1], [new Error('尚未登入'), 1], [new Error('invalid request'), 1]]) {
+  for (const [error, expected] of [[new Error('timeout'), 3], [Object.assign(new Error('empty'), { code: 'EMPTY_MODEL_RESPONSE' }), 3], [Object.assign(new Error('incomplete'), { code: 'INCOMPLETE_MODEL_RESPONSE' }), 3], [Object.assign(new Error('limit'), { status: 429, code: 'EMPTY_MODEL_RESPONSE' }), 1], [new Error('尚未登入'), 1], [new Error('invalid request'), 1]]) {
     let calls = 0; await assert.rejects(runAgent({ request: 'x', tools: {}, signal: new AbortController().signal, bridge: { chat: async () => { calls++; throw error; } } })); assert.equal(calls, expected);
   }
   const controller = new AbortController(); let calls = 0;
   await assert.rejects(runAgent({ request: 'x', tools: {}, signal: controller.signal, bridge: { chat: async () => { calls++; controller.abort(); throw new Error('timeout'); } } })); assert.equal(calls, 1);
+});
+test('empty responses resume saved tool evidence through the shared queue without repeating tools', async () => {
+  const { RequestScheduler, ModelBudget } = require('../src/parallel');
+  const scheduler = new RequestScheduler(1), budget = new ModelBudget(5); let calls = 0, reads = 0; const prompts = [], fresh = [];
+  const result = await runAgent({ request: '檢查', profile: { agent: 'ask' }, signal: new AbortController().signal, tools: { execute: async () => { reads++; return { ok: true, content: 'verified source' }; } },
+    modelBudget: budget, maxSteps: 5, bridge: scheduler.bridge({ chat: async (prompt, options) => {
+      prompts.push(prompt); fresh.push(options.newConversation); calls++;
+      if (calls === 1) return { text: '{"kind":"tool","name":"read_file","args":{"path":"main.js"}}' };
+      if (calls === 2) throw Object.assign(new Error('網站已結束回答，但沒有回傳內容。'), { code: 'EMPTY_MODEL_RESPONSE', diagnostics: { opened: true, tokenEvents: 0, events: { done: 1 } } });
+      return { text: '{"kind":"final","message":"完成"}' };
+    } }) });
+  assert.equal(result.completed, true); assert.equal(reads, 1); assert.equal(scheduler.requests, 3);
+  assert.equal(budget.used, 3); assert.deepEqual(fresh, [true, false, false]);
+  assert.match(prompts[2], /verified source/); assert.match(prompts[2], /EMPTY_MODEL_RESPONSE/); assert.match(prompts[2], /smaller next step/);
+  scheduler.close();
 });
 test('ordinary tool failure becomes evidence and parent tries another safe step', async () => {
   const replies = [{ kind: 'tool', name: 'read_file', args: { path: 'missing' } }, { kind: 'final', completed: false, message: '讀取失败' }, { kind: 'tool', name: 'read_file', args: { path: 'README.md' } }, { kind: 'final', message: '已完成' }];

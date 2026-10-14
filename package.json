@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -118,7 +118,7 @@
           "default": 240,
           "minimum": 30,
           "maximum": 600,
-          "description": "每次網站回答最長等待秒數。逾時不自動重送。"
+          "description": "模型連續沒有新回答內容的等待秒數；收到內容會延長閒置等待，單次總上限為四倍、最多 15 分鐘。一般失敗依共用 Queue 最多恢復兩次；登入及服務限制立即停止。"
         },
         "ntpuAI.contextCharacters": {
           "type": "integer",

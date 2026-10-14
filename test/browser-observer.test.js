@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { installStreamObserver } = require('../src/browser');
+const { installStreamObserver, BrowserBridge } = require('../src/browser');
 
 function observer(fetch, receive) {
   const window = { fetch, binding: receive };
@@ -59,4 +59,27 @@ test('observer reports only session identity for an owned UI request, never its 
   await window.fetch('/chat/stream',{method:'POST',body:JSON.stringify({session_id:'task-owned-1',message:'private prompt'}),headers:{Authorization:'Bearer secret'}});
   assert(events.some(event=>event.kind==='conversation'&&event.sessionId==='task-owned-1'));
   assert.doesNotMatch(JSON.stringify(events),/private prompt|Bearer|secret/);
+});
+
+test('a completed empty stream reports a typed recoverable error and content-free receipt', () => {
+  const bridge = new BrowserBridge(), receipts = []; let rejected;
+  bridge.pending = { id: 'request', startedAt: Date.now(), promptCharacters: 26000, text: '', tokenEvents: 0, eventCounts: {},
+    reject: error => { rejected = error; }, onResponseMetadata: receipt => receipts.push(receipt) };
+  bridge._receive({ id: 'request', kind: 'opened' });
+  bridge._receive({ id: 'request', event: { type: 'judge', model: 'fixture-model' } });
+  bridge._receive({ id: 'request', event: { type: 'done', answer_elapsed_ms: 800 } });
+  assert.equal(rejected.code, 'EMPTY_MODEL_RESPONSE'); assert.equal(bridge.pending, null);
+  assert.equal(receipts.length, 1); assert.deepEqual(receipts[0].events, { judge: 1, done: 1 });
+  assert.equal(receipts[0].opened, true); assert.equal(receipts[0].responseCharacters, 0);
+  assert.equal(receipts[0].siteElapsedMs, 800); assert.equal(receipts[0].outcome, 'empty');
+  assert.doesNotMatch(JSON.stringify(receipts), /authorization|cookie|prompt\":/i);
+});
+
+test('incomplete streams retain their typed error and callback failures do not break completion', () => {
+  const bridge = new BrowserBridge(); let rejected;
+  bridge.pending = { id: 'request', startedAt: Date.now(), promptCharacters: 20, text: 'partial', tokenEvents: 1, eventCounts: { token: 1 },
+    reject: error => { rejected = error; }, onResponseMetadata: () => { throw new Error('diagnostics callback'); } };
+  bridge._receive({ id: 'request', kind: 'failure', code: 'INCOMPLETE_MODEL_RESPONSE', message: '串流中斷' });
+  assert.equal(rejected.code, 'INCOMPLETE_MODEL_RESPONSE'); assert.equal(rejected.diagnostics.responseCharacters, 7);
+  assert.equal(bridge.pending, null);
 });
