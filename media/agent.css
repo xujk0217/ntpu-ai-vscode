@@ -71,3 +71,5 @@
 .drawer-header>strong{flex:1;min-width:0}.history-edit{margin-right:10px;flex:none}.session-list .session-row{width:100%}
 
 .parallel-setting{display:flex;align-items:center;gap:10px;font-size:11px;margin:7px 0}.parallel-setting>span{flex:1}.parallel-setting select{width:100px;margin:0}.concurrency-report{font-size:11px;margin:12px 0}.concurrency-report summary{cursor:pointer;padding:6px 0}.concurrency-group{border-top:1px solid var(--line);padding:3px 0}.concurrency-group .panel-description{margin:5px 0}
+
+#parallelStatus{margin:0;padding:4px 10px;font-size:10px;color:var(--muted);flex-shrink:0}

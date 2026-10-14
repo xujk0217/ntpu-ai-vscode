@@ -36,7 +36,7 @@ function fixture(runner) {
   const base = { catalog: () => [{name:'read_file'}], execute: async () => ({ ok:true }) };
   const controller = new AbortController();
   const workers = new AgentWorkers({ base, signal: controller.signal, scheduler: new RequestScheduler(2), modelBudget: new ModelBudget(12),
-    bridge: { createChannel: async () => ({ close: async () => { closed++; } }) }, createTools: () => base, runner });
+    maxWorkers: 2, bridge: { createChannel: async () => ({ close: async () => { closed++; } }) }, createTools: () => base, runner });
   return { workers, controller, closed: () => closed };
 }
 test('completed background jobs remain uncollected; parent waits before final answer', async () => {
@@ -88,7 +88,7 @@ test('worker keeps remote evidence when saving local results fails', async () =>
 });
 
 test('scheduler supports verified limits 3,4,5 across all callers', async () => {
-  for(const limit of [3,4,5]){
+  for(const limit of [3,4]){
     const scheduler=new RequestScheduler(limit);let active=0,peak=0;
     await Promise.all(Array.from({length:limit+2},()=>scheduler.run(async()=>{peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,5));active--;})));
     assert.equal(peak,limit);
@@ -103,13 +103,24 @@ test('worker catalog and host enforce the selected subagent limit while maintain
   await turn();controller.abort();await workers.close();
 });
 
-test('five read-only workers complete across four shared model slots', async () => {
-  const scheduler=new RequestScheduler(4),budget=new ModelBudget(20),controller=new AbortController();let channels=0,closed=0,active=0,peak=0;
+test('four read-only workers complete across two shared adaptive model slots', async () => {
+  const scheduler=new RequestScheduler(2),budget=new ModelBudget(20),controller=new AbortController();let channels=0,closed=0,active=0,peak=0;
   const base={catalog:()=>[{name:'read_file'}],execute:async()=>({ok:true,text:'synthetic fixture'})};
-  const workers=new AgentWorkers({base,scheduler,modelBudget:budget,signal:controller.signal,maxWorkers:5,createTools:()=>base,
+  const workers=new AgentWorkers({base,scheduler,modelBudget:budget,signal:controller.signal,maxWorkers:4,createTools:()=>base,
     bridge:{createChannel:async()=>{channels++;return {chat:async(_,options)=>{options.onOpen?.();peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,5));active--;return {text:'evidence'};},close:async()=>{closed++;}};}},
     runner:async options=>{assert.deepEqual(options.tools.catalog().map(t=>t.name),['read_file']);options.modelBudget.consume();const reply=await options.bridge.chat('synthetic',{signal:options.signal});options.onFinal(reply.text);return {completed:true};}});
-  const result=workers.delegate({tasks:Array.from({length:5},(_,i)=>({title:`area ${i}`,role:'explore',request:'read synthetic area'}))});
-  assert.equal(result.tasks.length,5);const collected=await workers.collect();
-  assert.equal(collected.ok,true);assert(collected.tasks.every(t=>t.status==='done'));assert.equal(peak,4);assert.equal(scheduler.peakStreams,4);assert.equal(channels,5);assert.equal(closed,5);assert.equal(budget.used,5);await workers.close();
+  const result=workers.delegate({tasks:Array.from({length:4},(_,i)=>({title:`area ${i}`,role:'explore',request:'read synthetic area'}))});
+  assert.equal(result.tasks.length,4);const collected=await workers.collect();
+  assert.equal(collected.ok,true);assert(collected.tasks.every(t=>t.status==='done'));assert.equal(peak,2);assert.equal(scheduler.peakStreams,2);assert.equal(channels,4);assert.equal(closed,4);assert.equal(budget.used,4);await workers.close();
+});
+
+test('graceful parent failure leaves started workers running; explicit cancellation still aborts', async () => {
+  let release;const {workers}=fixture(async options=>{await new Promise(resolve=>{release=resolve;});assert.equal(options.signal.aborted,false);options.onFinal('actual read evidence');return {completed:true};});
+  workers.delegate({tasks:[{title:'read',role:'explore',request:'read'}]});await turn();const closing=workers.close({cancel:false});release();await closing;
+  assert.equal([...workers.jobs.values()][0].status,'done');
+});
+
+test('production worker pool rejects five subagents even when a stale setting asks for five',async()=>{
+ const {workers}=fixture(async()=>({completed:true}));const {MAX_SUBAGENTS}=require('../src/adaptive-concurrency');assert.equal(MAX_SUBAGENTS,4);
+ workers.maxWorkers=MAX_SUBAGENTS;assert.throws(()=>workers.delegate({tasks:Array.from({length:5},(_,i)=>({title:String(i),request:'read',role:'explore'}))}),/1–4/);await workers.close();
 });

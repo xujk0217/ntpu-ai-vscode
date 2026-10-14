@@ -11,7 +11,7 @@ test('rate reservation is atomic for a diagnostic group and waiting cancellation
 test('five agent requests share both concurrency and pacing, with accurate stream counters',async()=>{
  const gate=new RequestRateGate(5,{windowMs:25}),scheduler=new RequestScheduler(5,()=>{},{rateGate:gate});let attempts=0,active=0,peak=0;
  const bridge=scheduler.bridge({chat:async(_,options)=>{attempts++;peak=Math.max(peak,++active);options.onOpen();await new Promise(resolve=>setTimeout(resolve,8));active--;return {text:'ok'};}});
- await Promise.all(Array.from({length:7},()=>bridge.chat('fixture')));assert.equal(attempts,7);assert.equal(peak,5);assert.equal(scheduler.peakStreams,5);assert.equal(scheduler.streamActive,0);assert.equal(scheduler.requests,7);gate.close();
+ await Promise.all(Array.from({length:7},()=>bridge.chat('fixture')));assert.equal(attempts,7);assert.equal(peak,4);assert.equal(scheduler.peakStreams,4);assert.equal(scheduler.streamActive,0);assert.equal(scheduler.requests,7);gate.close();
 });
 test('aborting a task while pacing prevents queued model calls and cleanup rejects waiting entries',async()=>{
  const gate=new RequestRateGate(1,{windowMs:100}),controller=new AbortController();await gate.acquire();let calls=0;

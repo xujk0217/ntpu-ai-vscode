@@ -93,20 +93,19 @@ async function testUI(page, origin) {
     verification: { message: '當次驗證結果', groups: [{ concurrency: 4, successCount: 4, successRate: 1, verified: true, streamOverlap: true, crossTalk: false, observedPeakConcurrency: 4, responseTimes: { averageMs: 1500 }, requests: [{ index: 0, durationMs: 1500, firstTokenMs: 700 }] }] } } });
   await page.getByRole('combobox', { name: '模型請求上限', exact: true }).selectOption('0');
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'maxConcurrency', value: 0 });
-  await page.getByRole('combobox', { name: '子任務上限', exact: true }).selectOption('3');
-  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'maxSubagents', value: 3 });
-  await page.getByRole('combobox', { name: '逐組測試至', exact: true }).selectOption('4');
+  assert.equal(await page.getByRole('combobox', { name: '子任務上限', exact: true }).count(), 0);
+  await send({ ...state, busy: true, parallel: { enabled: true, effectiveConcurrency: 3, runningAgents: 5, activeRequests: 3, queuedRequests: 2, queuedTasks: 0 } });
+  await page.waitForFunction(() => document.getElementById('parallelStatus').textContent.includes('排隊 2'));
+  assert.match(await page.locator('#parallelStatus').textContent(), /並行上限 3\/4.*Agent 5.*排隊 2/);
+  await send({ ...state, parallel: { enabled: true, blocked: true, effectiveConcurrency: 1, runningAgents: 0, activeRequests: 0, queuedRequests: 0, reason: '服務限制' } });
+  const resume=page.getByRole('button', { name: '手動恢復發送', exact: true }); await resume.click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'resumeParallel' });
+  await send(state);
+  await page.getByRole('combobox', { name: '選用診斷至', exact: true }).selectOption('4');
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'probeMaxConcurrency', value: 4 });
-  assert.match(await page.getByRole('button', { name: '逐步測試並行能力（2–5）', exact: true }).getAttribute('title'), /14/);
+  assert.match(await page.getByRole('button', { name: '選用並行診斷（2–4）', exact: true }).getAttribute('title'), /9/);
   await page.getByRole('combobox', { name: '每分鐘請求節奏', exact: true }).selectOption('6');
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'requestsPerMinute', value: 6 });
-  const fiveProbe=page.getByRole('button', { name: '單獨驗證五個串流', exact: true });
-  // Capabilities render on the next animation frame; wait for the actual UI
-  // readiness instead of sampling the previous disabled button during repaint.
-  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === '單獨驗證五個串流' && !button.disabled));
-  assert.equal(await fiveProbe.isEnabled(),true);await fiveProbe.click();
-  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'testFiveConcurrency' });
-
   await page.locator('.concurrency-report > summary').click(); await page.locator('.concurrency-group > summary').click();
   assert.match(await page.locator('.concurrency-group').textContent(), /成功 4\/4（100%）/);
   assert.match(await page.locator('.concurrency-group').textContent(), /1500 ms/);

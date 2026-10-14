@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -50,11 +50,7 @@
       },
       {
         "command": "ntpuAI.testConcurrency",
-        "title": "NTPU AI: 逐步測試聊天室並行能力（2–5）"
-      },
-      {
-        "command": "ntpuAI.testFiveConcurrency",
-        "title": "NTPU AI: 單獨驗證五個串流（較長有限回覆）"
+        "title": "NTPU AI: 選用並行診斷（2–4，不影響動態排程）"
       }
     ],
     "menus": {
@@ -225,7 +221,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "啟用獨立唯讀工具批次與子任務。模型並行只在近期測試通過後啟用。"
+          "description": "啟用唯讀子任務與批次工具。模型請求從 2 開始依多筆回應在 1–4 動態調整，不需事先測試。"
         },
         "ntpuAI.parallel.maxConcurrency": {
           "type": "integer",
@@ -234,12 +230,11 @@
             1,
             2,
             3,
-            4,
-            5
+            4
           ],
           "default": 0,
           "scope": "application",
-          "description": "模型請求的使用者上限；0 表示依有效測試結果自動設定。實際並行數不超過已驗證結果，未驗證／過期／登入或服務限制時使用 1。"
+          "description": "動態模型請求的最高值，0 為自動（最多 4）；可以調低，服務限制會暫停新請求。"
         },
         "ntpuAI.browser.cleanupTaskConversations": {
           "type": "boolean",
@@ -247,31 +242,16 @@
           "scope": "application",
           "description": "本機儲存任務後，透過校方網站刪除擴充套件自己建立的任務對話。校方後端保留政策仍適用；不刪除原有對話。"
         },
-        "ntpuAI.parallel.maxSubagents": {
-          "type": "integer",
-          "enum": [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5
-          ],
-          "default": 0,
-          "scope": "application",
-          "description": "未結束唯讀子任務上限，0 為自動（依獨立聊天室成功證據，最多 5）。子任務數可高於串流名額，但父子任務共用已驗證的模型請求排程與輪數預算；超額請求等待名額。"
-        },
         "ntpuAI.parallel.probeMaxConcurrency": {
           "type": "integer",
           "enum": [
             2,
             3,
-            4,
-            5
+            4
           ],
-          "default": 5,
+          "default": 4,
           "scope": "application",
-          "description": "逐組診斷的最高請求數，從 2 起逐步測試；完整 2–5 測試最多 14 個小型模型請求，可能消耗校方用量。遇到失敗即停止，不自動重試，不代表官方上限。"
+          "description": "選用診斷的最高請求數（2–4），不影響正式任務的動態並行控制；遇到失敗停止，不自動重試。"
         },
         "ntpuAI.parallel.probeIntervalSeconds": {
           "type": "integer",

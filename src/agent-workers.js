@@ -1,7 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { runAgent } = require('./agent');
-const { concurrencyLimit } = require('./parallel-policy');
+const { MAX_SUBAGENTS } = require('./adaptive-concurrency');
 const { batchNames } = require('./parallel');
 const { sanitize, redact } = require('./security/guard');
 const SAFE = new Set(['list_files', 'read_file', 'search_text', 'load_skill', 'web_search', 'web_fetch', 'ntpu_lookup']);
@@ -20,7 +20,7 @@ function readonly(base) {
 class AgentWorkers {
   constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, maxWorkers, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
     Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, onEvent, onBeforeCleanup, runner });
-    this.maxWorkers = concurrencyLimit(maxWorkers ?? scheduler.limit); this.maxTasks = Math.max(4, this.maxWorkers * 2);
+    this.maxWorkers = Math.min(MAX_SUBAGENTS, Math.max(1, Math.floor(Number(maxWorkers) || MAX_SUBAGENTS))); this.maxTasks = Math.max(4, this.maxWorkers * 2);
     this.jobs = new Map(); this.closed = false;
   }
   catalog() { return this.base.catalog().concat(DEFINITIONS.map(tool => tool.name === 'delegate_tasks' ? { ...tool, description: `背景分派 1–${this.maxWorkers} 個獨立唯讀子任務，role 是 explore/research/review；同時最多 ${this.maxWorkers} 個未結束子任務，父任務最多 ${this.maxTasks} 個。不能寫檔或執行 shell，六輪／子任務且共用父任務模型預算與請求排程。` } : tool)); }
@@ -83,6 +83,6 @@ class AgentWorkers {
     jobs.forEach(job => { job.collected = true; });
     return sanitize({ ok: jobs.every(job => job.status === 'done'), tasks: jobs.map(job => ({ id: job.id, title: job.title, status: job.status, result: job.result, evidence: job.records.slice(-4) })) });
   }
-  async close() { this.closed = true; for (const job of this.jobs.values()) if (!job.endedAt) job.controller.abort(); await Promise.all([...this.jobs.values()].map(job => job.promise)); }
+  async close({ cancel = true } = {}) { this.closed = true; for (const job of this.jobs.values()) if (cancel && !job.endedAt) job.controller.abort(); await Promise.all([...this.jobs.values()].map(job => job.promise)); }
 }
 module.exports = { AgentWorkers, readonly };

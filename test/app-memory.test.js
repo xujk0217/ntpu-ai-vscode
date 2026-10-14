@@ -23,6 +23,10 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
     workspaceState: { get: (key, fallback) => state.get(key) ?? fallback, update: async (key, value) => value === undefined ? state.delete(key) : state.set(key, value) },
     globalState: { get: (key, fallback) => fallback, update: async () => {} }, secrets: { get: async () => undefined } };
   const app = new AgentApp(context); await app.ready;
+  assert.equal(app.parallelState().effectiveConcurrency, 2); assert.equal(app.parallelState().workerConcurrency, 4);
+  app.parallelVerification = { timestamp: '2000-01-01', verified: false };
+  assert.equal(app.parallelState().effectiveConcurrency, 2, 'expired diagnostic proof does not gate runtime');
+  config.set('parallel.maxSubagents', 5); assert.equal(app.parallelState().workerConcurrency, 4);
   assert.equal(app.session.id, 'legacy-session'); assert.equal(state.has('ntpuAI.sessions.v2'), false);
   const editorFile = path.join(directory, 'settings.js'); await fs.writeFile(editorFile, 'API_KEY=only-test-editor');
   mock.window.activeTextEditor = { document: { uri: uri(editorFile), getText: () => 'API_KEY=only-test-editor' },
@@ -41,13 +45,16 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   assert.equal(app.session.tasks.length, 2); assert.equal(app.session.tasks[0].status, 'blocked');
   assert.equal(prompts[1].account, 'B'); assert.match(prompts[1].prompt, /使用 TypeScript/);
   assert.equal(app.session.checkpoint.records.length, 1); assert.equal((await app.store.project(app.session.workspace)).entries[0].text, '使用 TypeScript');
+  app.adaptive.block(Object.assign(new Error('rate limit'), { status: 429 }));
+  const beforeBlocked = prompts.length; await assert.rejects(app.testConcurrency(), /暫停/); assert.equal(prompts.length, beforeBlocked);
+  await app.handle({ kind: 'resumeParallel' }); assert.equal(app.parallelState().effectiveConcurrency, 1); assert.equal(prompts.length, beforeBlocked);
   await app.dispose();
   const reopened = new AgentApp(context); await reopened.ready;
   assert.equal(reopened.session.messages[0].text, '原本的需求'); assert.match(reopened.session.checkpoint.request, /檢查登入系統/);
   reopened.getBridge = () => bridge; completed = true; await reopened.ask('繼續', false);
   assert.equal(reopened.session.checkpoint, null);
-  assert.equal(reopened.session.tasks[0].resolvedBy, reopened.session.tasks[2].id);
-  assert.equal(reopened.session.tasks[1].resolvedBy, reopened.session.tasks[2].id);
+  assert.equal(reopened.session.tasks[0].resolvedBy, reopened.session.tasks.at(-1).id);
+  assert.equal(reopened.session.tasks[1].resolvedBy, reopened.session.tasks.at(-1).id);
   assert.equal((await reopened.store.project(reopened.session.workspace)).entries.filter(entry => entry.kind === 'pending' && !entry.stale).length, 0);
   const inactive = reopened.store.create(reopened.session.workspace); inactive.title = '另一筆聊天';
   reopened.store.add(inactive, { role: 'user', text: '指定的完整內容 PASSWORD=only-test-export' }); await reopened.store.save(inactive);
