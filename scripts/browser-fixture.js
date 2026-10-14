@@ -124,8 +124,14 @@ async function main() {
     assert.equal((await bridge.finishLogin()).loginWindow, true);
     await bridge.page.locator('#fixture-user').fill('synthetic');
     await bridge.page.locator('#fixture-submit').click();
-    await bridge.page.waitForSelector('#sendBtn');
-    assert.equal((await bridge.finishLogin()).loginComplete, true);
+    await bridge.page.waitForFunction(() => {
+      const overlay = document.getElementById('auth-overlay');
+      return overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none') &&
+        document.getElementById('input') && document.getElementById('sendBtn');
+    });
+    assert.equal((await bridge.status()).ready, true, 'fixture login returns to an authenticated home page');
+    const loginResult = await bridge.finishLogin();
+    assert.equal(loginResult.loginComplete, true, JSON.stringify(loginResult));
     assert.equal(await bridge.page.getByRole('heading', { name: '登入成功' }).count(), 1);
     assert.equal(await bridge.page.getByText('可以關閉此視窗，回到 VS Code。', { exact: false }).isVisible(), true);
     await fs.mkdir(path.join(__dirname, '..', '.local'), { recursive: true });

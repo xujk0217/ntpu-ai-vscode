@@ -58,6 +58,8 @@ async function testUI(page, origin) {
   assert.equal((await taskMessages()).length, 1);
   await page.evaluate(() => { window.hostMessages = []; });
   await send({ ...state, submitMode: 'modifierEnter', submitModifier: '⌘' });
+  await page.waitForFunction(() => document.getElementById('sendHint').textContent.includes('↵') &&
+    document.getElementById('sendHint').title.startsWith('⌘+Enter'));
   await page.locator('#prompt').fill('舊模式 Enter 換行'); await page.locator('#prompt').press('Enter');
   assert.equal(await page.locator('#prompt').inputValue(), '舊模式 Enter 換行\n'); assert.deepEqual(await taskMessages(), []);
   await page.locator('#prompt').press('Control+Enter');
