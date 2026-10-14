@@ -101,6 +101,9 @@ async function testUI(page, origin) {
   await page.getByRole('combobox', { name: '每分鐘請求節奏', exact: true }).selectOption('6');
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'parallelUpdate', key: 'requestsPerMinute', value: 6 });
   const fiveProbe=page.getByRole('button', { name: '單獨驗證五個串流', exact: true });
+  // Capabilities render on the next animation frame; wait for the actual UI
+  // readiness instead of sampling the previous disabled button during repaint.
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === '單獨驗證五個串流' && !button.disabled));
   assert.equal(await fiveProbe.isEnabled(),true);await fiveProbe.click();
   assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'testFiveConcurrency' });
 
