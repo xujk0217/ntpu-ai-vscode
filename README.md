@@ -31,10 +31,10 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.10.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.10.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.10.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.10.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.11.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.11.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.11.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.11.vsix` |
 
 更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 

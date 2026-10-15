@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const { ensureAttachment } = require('./security/attachments');
 const { inspectOutboundPayload } = require('./security/guard');
 const { responseWatchdog } = require('./browser/response-watchdog');
+const { browserFailure, browserError } = require('./browser/diagnostics');
 
 const ORIGIN = 'https://ai.ntpu.edu.tw';
 const PROFILE = path.join(dataDirectory(), 'browser-profiles');
@@ -156,8 +157,10 @@ class BrowserBridge {
 
   async _open(headless = true) {
     const previous = this.context;
-    this.context = null; this.page = null;
-    if (previous) await previous.close();
+    this.context = null; this.page = null; this.mode = null;
+    this.manager.info = null;
+    try { if (previous) await previous.close(); }
+    catch (error) { throw browserError([browserFailure(error, { stage: 'handoff', headless })]); }
     // Pin the selected browser on handoff: an Auto fallback must not silently
     // switch profiles after the user has just authenticated.
     const launched = await this.manager.launch({ selection: this.selectedBrowser || this.options.browser || (this.options.chromePath ? 'custom' : 'auto'),
@@ -167,30 +170,39 @@ class BrowserBridge {
     this.mode = headless ? 'background' : 'login'; this.loginWindowClosed = false;
     this.loginNoticeAt = 0; this.loginAcknowledged = false;
     const context = this.context;
-    context.on('close', () => { if (this.context === context && !headless) this.loginWindowClosed = true; });
-    await this.context.exposeBinding(this.binding, (source, payload) => {
-      if (source.page !== this.page || !source.frame.url().startsWith(this.origin + '/')) return;
-      if (payload?.kind === 'loginComplete' && this.mode === 'login' && this.loginNoticeAt) { this.loginAcknowledged = true; return; }
-      this._receive(payload);
-    });
-    await this.context.addInitScript(installStreamObserver, this.binding);
-    this.page = this.context.pages()[0] || await this.context.newPage();
-    this.page.on('close', () => {
-      if (this.context !== context) return;
-      if (!headless && !context.pages().some(page => !page.isClosed())) this.loginWindowClosed = true;
-      this._fail(new Error('瀏覽器已中斷。請重新連線 NTPU AI。'));
-    });
-    this.page.on('framenavigated', frame => {
-      if (frame === this.page?.mainFrame() && this.pending) this._fail(new Error('回答期間網頁已離開，請重新確認登入狀態。'));
-    });
-    await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    // The page restores its existing session asynchronously after DOMContentLoaded.
-    // Wait for that bootstrap before reporting a false login failure. This only
-    // observes normal UI state and never completes a login or CAPTCHA.
-    if (headless && this.page.url().startsWith(this.origin + '/')) await this.page.waitForFunction(() => {
-      const overlay = document.getElementById('auth-overlay');
-      return overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none') && document.getElementById('input');
-    }, null, { timeout: this.options.bootstrapTimeoutMs || 12000 }).catch(() => {});
+    let stage = 'bindings';
+    try {
+      context.on('close', () => { if (this.context === context && !headless) this.loginWindowClosed = true; });
+      await this.context.exposeBinding(this.binding, (source, payload) => {
+        if (source.page !== this.page || !source.frame.url().startsWith(this.origin + '/')) return;
+        if (payload?.kind === 'loginComplete' && this.mode === 'login' && this.loginNoticeAt) { this.loginAcknowledged = true; return; }
+        this._receive(payload);
+      });
+      await this.context.addInitScript(installStreamObserver, this.binding);
+      this.page = this.context.pages()[0] || await this.context.newPage();
+      this.page.on('close', () => {
+        if (this.context !== context) return;
+        if (!headless && !context.pages().some(page => !page.isClosed())) this.loginWindowClosed = true;
+        this._fail(new Error('瀏覽器已中斷。請重新連線 NTPU AI。'));
+      });
+      this.page.on('framenavigated', frame => {
+        if (frame === this.page?.mainFrame() && this.pending) this._fail(new Error('回答期間網頁已離開，請重新確認登入狀態。'));
+      });
+      stage = 'navigation';
+      await this.page.goto(this.origin, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      // The page restores its existing session asynchronously after DOMContentLoaded.
+      // Wait for that bootstrap before reporting a false login failure. This only
+      // observes normal UI state and never completes a login or CAPTCHA.
+      if (headless && this.page.url().startsWith(this.origin + '/')) await this.page.waitForFunction(() => {
+        const overlay = document.getElementById('auth-overlay');
+        return overlay && (overlay.classList.contains('hidden') || getComputedStyle(overlay).display === 'none') && document.getElementById('input');
+      }, null, { timeout: this.options.bootstrapTimeoutMs || 12000 }).catch(() => {});
+    } catch (error) {
+      this.context = null; this.page = null; this.mode = null; this.manager.info = null;
+      await context.close().catch(() => {});
+      throw browserError([browserFailure(error, { stage, headless,
+        candidate: { id: launched.info.browser, label: launched.info.label, executablePath: launched.info.executablePath } })]);
+    }
   }
 
   async finishLogin() {
@@ -242,7 +254,8 @@ class BrowserBridge {
       if (!this.loginAcknowledged && Date.now() - this.loginNoticeAt < duration)
         return { ready: false, authentication: 'authenticated', loginWindow: true, loginComplete: true, message: '登入成功，可以關閉登入視窗或按「返回 VS Code」。正在準備背景連線。' };
     }
-    await this.open();
+    try { await this.open(); }
+    catch (error) { error.message = '登入後背景交接失敗。\n' + error.message; throw error; }
     // Confirm the background browser really restored authentication before
     // showing success. A school session may expire or refuse headless access.
     const background = await this.status();

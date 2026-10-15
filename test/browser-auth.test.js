@@ -99,3 +99,31 @@ test('active requests cannot switch into the login window or acquire another pro
   await assert.rejects(f.bridge.openLogin(), /停止目前任務/);
   assert.equal(f.launches.length, 0); f.bridge.pending = null;
 });
+
+test('page initialization and navigation failures close owned contexts and report the failing stage', async () => {
+  for (const stage of ['bindings', 'navigation']) {
+    const f = loginFixture(); const launch = f.bridge.manager.launch;
+    let closed = 0;
+    f.bridge.manager.launch = async options => {
+      const result = await launch(options), close = result.context.close;
+      result.context.close = async () => { closed++; await close(); };
+      if (stage === 'bindings') result.context.exposeBinding = async () => { throw new Error('binding unavailable'); };
+      else result.page.goto = async () => { throw new Error('page.goto: net::ERR_NAME_NOT_RESOLVED at https://sso.example/?ticket=private-ticket'); };
+      return result;
+    };
+    await assert.rejects(f.bridge.openLogin(), error => {
+      assert.equal(error.failures[0].stage, stage); assert.ok(!error.message.includes('private-ticket')); return true;
+    });
+    assert.equal(closed, 1); assert.equal(f.bridge.context, null); assert.equal(f.bridge.mode, null);
+    assert.equal(f.bridge.manager.info, null); assert.equal((await f.bridge.status()).authentication, 'unknown');
+  }
+});
+
+test('a failed background handoff reports its operation and never reports authentication success', async () => {
+  const f = loginFixture(); await f.bridge.openLogin(); f.authenticate();
+  await f.bridge.finishLogin(); f.bridge.loginAcknowledged = true;
+  f.bridge.manager.launch = async () => { throw new Error('Chromium spawn failed'); };
+  await assert.rejects(f.bridge.finishLogin(), /登入後背景交接失敗[\s\S]*Chromium spawn failed/);
+  assert.equal(f.bridge.context, null); assert.equal(f.bridge.mode, null);
+  assert.equal((await f.bridge.status()).authentication, 'unknown');
+});

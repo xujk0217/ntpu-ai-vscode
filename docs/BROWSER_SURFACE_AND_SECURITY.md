@@ -51,4 +51,4 @@ Shell 可讀寫選定工作區及私人暫存區；唯讀 Agent 與 stdio MCP �
 - `npm run ocr:fixture`：真實本機 Tesseract／Poppler，乾淨圖片／PDF 通過、合成秘密拒絕。
 - 真實 NTPU SSO：依 `docs/BROWSER_PLATFORM_REQUIREMENTS.md` 人工登入流程驗收；不得自動完成 CAPTCHA 或提取憑證。0.5.4 登入／背景切換只用 localhost mock 回歸，學校 SSO／CAPTCHA 尚未重新人工驗收。
 
-Windows、Linux 桌面與 Intel Mac SSO 尚未實測。CI 是 Mock 網站及原生工具測試，不代表學校 SSO 驗收。
+2026-10-15 Linux 桌面已驗證既有登入恢復、真人確認視窗與背景真實請求，詳見 [Linux 驗收紀錄](LINUX_LOGIN_VALIDATION.md)。全新學校 SSO、Windows 與 Intel Mac SSO 尚未重新實測。CI 是 Mock 網站及原生工具測試，不代表學校 SSO 驗收。

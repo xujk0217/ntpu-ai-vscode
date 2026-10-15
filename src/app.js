@@ -184,6 +184,9 @@ class AgentApp {
         this.connection = { ...this.connection, connecting: true }; this.state();
         await bridge.openLogin(); await this.checkConnection();
       }
+    } catch (error) {
+      this.connection = { ready: false, authentication: 'unknown', message: redact(error.message) };
+      throw error;
     } finally {
       this.connection = { ...this.connection, connecting: false }; this.state(); this.capabilities();
     }

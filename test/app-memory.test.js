@@ -115,6 +115,13 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   await reopened.login();
   assert.equal(loginWindows, 1, 'explicit login opens the native login window');
   assert.equal(reopened.connection.loginWindow, true);
+  const open = bridge.open;
+  bridge.mode = 'background'; bridge.open = async () => { throw new Error('Chromium 啟動：Permission denied'); };
+  reopened.connection = { ready: true, authentication: 'authenticated' };
+  await assert.rejects(reopened.login(), /Permission denied/);
+  assert.equal(reopened.connection.ready, false); assert.equal(reopened.connection.authentication, 'unknown');
+  assert.equal(reopened.connection.connecting, false); assert.match(reopened.connection.message, /Permission denied/);
+  bridge.open = open;
   bridge.mode = 'background'; bridge.status = async () => ({ ready: true });
   let unavailableCalls = 0;
   bridge.chat = async () => { if (++unavailableCalls === 1) await reopened.ask('後續排隊提問', false); throw new Error('timeout'); };
