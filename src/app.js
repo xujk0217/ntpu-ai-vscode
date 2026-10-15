@@ -411,6 +411,7 @@ class AgentApp {
   }
 
   async setOption(key, value) {
+    await this.ready;
     if (this.busy() || this.gate.pending || this.agentSettingsBusy) return;
     const allowed = OPTION_VALUES;
     if (allowed[key] && !allowed[key].includes(value)) return;
@@ -421,7 +422,19 @@ class AgentApp {
       const answer = await this.gate.request({ title: '啟用完整存取？', detail: FULL_ACCESS_NOTICE, accept: '啟用完整存取' }, new AbortController().signal);
       if (answer !== '啟用完整存取') { this.state(); return; }
     }
-    this.session.options[key] = value; this.policies.delete(this.session.id); this.state(); this.persist();
+    const session = this.session, before = session.options[key], permissionChoice = session.permissionChoice;
+    session.options[key] = value;
+    if (key === 'permission') session.permissionChoice = value;
+    this.policies.delete(session.id);
+    try { await this.save(); }
+    catch (error) {
+      session.options[key] = before;
+      if (key === 'permission') {
+        if (permissionChoice === undefined) delete session.permissionChoice; else session.permissionChoice = permissionChoice;
+      }
+      this.state(); throw error;
+    }
+    this.state();
   }
   async updateComposer(value) {
     if (!['enter', 'modifierEnter'].includes(value)) return;

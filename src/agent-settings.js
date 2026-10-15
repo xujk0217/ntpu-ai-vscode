@@ -178,9 +178,16 @@ class AgentSettingsFiles {
         detail: describeAgentSettings(next) + (full ? '\n\n' + FULL_ACCESS_NOTICE : ''), accept }, this.controller.signal);
       if (answer !== accept) return false;
       this.assertIdle(session, options);
-      const before = session.options; session.options = next; this.app.policies.delete(session.id);
+      const before = session.options, permissionChoice = session.permissionChoice;
+      session.options = next;
+      if (Object.hasOwn(patch, 'permission')) session.permissionChoice = next.permission;
+      this.app.policies.delete(session.id);
       try { await this.app.save(); }
-      catch (error) { session.options = before; this.app.state(); throw error; }
+      catch (error) {
+        session.options = before;
+        if (permissionChoice === undefined) delete session.permissionChoice; else session.permissionChoice = permissionChoice;
+        this.app.state(); throw error;
+      }
       this.app.state(); this.app.capabilities(); return true;
     });
   }

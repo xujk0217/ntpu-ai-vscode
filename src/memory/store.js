@@ -179,7 +179,10 @@ class MemoryStore {
     }
     // Always import with new IDs: restoring never destroys existing sessions.
     for (const source of backup.sessions) {
-      const session = new SessionStore([sanitize(source)]).get(source.id); session.id = randomUUID(); session.revision = 0;
+      const imported = sanitize(source);
+      // Restored backups are new chats, not a user gesture enabling a mode.
+      delete imported.permissionChoice;
+      const session = new SessionStore([imported]).get(source.id); session.id = randomUUID(); session.revision = 0;
       session.title += '（還原）'; this.loaded.set(session.id, session); await this.save(session);
     }
     for (const source of backup.projects) await this.updateProject(source.workspace, target => {

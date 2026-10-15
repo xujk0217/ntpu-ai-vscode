@@ -257,10 +257,11 @@ test('save failure restores prior options and unlocks the settings UI', async t 
   const operation = f.settings.importFile(), assertion = assert.rejects(operation, /fixture disk error/), approval = await f.pending();
   f.app.gate.decide(approval.id, true); await assertion;
   assert.equal(f.app.session.options, before); assert.equal(f.app.session.options.permission, 'ask');
+  assert.equal(f.app.session.permissionChoice, undefined);
   assert.equal(f.app.agentSettingsBusy, false); assert.equal(f.app.capabilityUpdates, undefined);
 });
 
-test('real memory store preserves session/project memory while imported options persist with safe restart permission', async t => {
+test('real memory store preserves session/project memory and the explicitly approved permission across restart', async t => {
   const f = await fixture(t), store = await new MemoryStore(path.join(f.directory, 'storage')).initialize();
   f.app.session = store.create(f.uri(f.directory).toString());
   store.add(f.app.session, { role: 'user', text: '這段聊天必須保留' });
@@ -275,5 +276,5 @@ test('real memory store preserves session/project memory while imported options 
   assert.equal(stored.messages[0].text, '這段聊天必須保留'); assert.equal(stored.checkpoint.request, '保留 checkpoint');
   assert.equal(JSON.stringify(await store.project(f.app.session.workspace)), projectBefore);
   const reopened = new SessionStore([stored]).get(stored.id);
-  assert.equal(reopened.options.depth, 'deep'); assert.equal(reopened.options.permission, 'ask', 'restart keeps the existing approval reset');
+  assert.equal(reopened.options.depth, 'deep'); assert.equal(reopened.options.permission, 'full', 'restart retains the explicitly approved mode');
 });

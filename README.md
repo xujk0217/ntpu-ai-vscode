@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.12 · 實驗性專案 · MIT License**
+**版本：0.6.13 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -31,10 +31,10 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.12.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.12.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.12.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.12.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.13.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.13.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.13.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.13.vsix` |
 
 更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 
@@ -52,7 +52,7 @@ Agent 會依任務選用工具、載入 skills，並分派最多四個探索、�
 
 複雜工作會先評估可獨立分派的範圍，為子任務指定問題和預期結果；確實無法拆分時記錄理由，主 Agent 接續處理。一般子任務失敗不會封鎖其他獨立工作；仍保留共用預算、一次重要重試及服務限制。詳見[分工策略](docs/DELEGATION.md)。
 
-在 **設定 → 工具 → Agent 設定檔** 可編輯專案 `.ntpu-ai.json`、匯出目前選項，或預覽後套用設定檔至目前聊天。分析深度與核准模式都能寫入檔案，詳細欄位與範例見[設定檔說明](docs/AGENT_SETTINGS.md)。
+在 **設定 → 工具 → Agent 設定檔** 可編輯專案 `.ntpu-ai.json`、匯出目前選項，或預覽後套用設定檔至目前聊天。分析深度與核准模式都能寫入檔案，核准模式會在同一聊天保存並於重新載入後恢復；首次完整存取仍需確認。詳細欄位與範例見[設定檔說明](docs/AGENT_SETTINGS.md)。
 
 <img src="docs/images/agent-settings.png" alt="Agent 設定檔編輯、套用與匯出（本機測試畫面）" width="340">
 
