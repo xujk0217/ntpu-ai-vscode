@@ -1,5 +1,14 @@
 # 本地使用驗證
 
+## 0.6.10 空白聊天重用與警告收起（2026-10-15）
+
+- 本機 177 項單元測試、build 與 macOS Chrome localhost BrowserBridge／Webview fixture 通過。
+- 真實 AgentApp 搭配 mock VS Code 驗證連按新增八次只保留同一空白聊天室、由既有聊天切回空白聊天室、切換專案重用該專案空白紀錄；原空白頁的附件與檔案脈絡保留。忙碌或讀取儲存期間開始任務時不切換。
+- MemoryStore 驗證重新啟動、舊版索引缺少 empty 提示、跨專案／封存排除，以及對話、任務、計畫、檢查點、turns／changes 不誤判為空白；沒有刪除既有重複空白紀錄。
+- 紅色警告的關閉按鈕經真實 Webview 程式驗證可收起、重繪保持隱藏、新錯誤正常顯示。主機測試確認 dismissed 狀態保存、原始錯誤保留，且不取消任務、不解除服務限制、不隱藏一般對話。
+- 已檢視 340px 側欄截圖，關閉圖示位於警告右上角並有「關閉警告」標籤。
+- Linux 登入修復 prompt 是交給故障 Linux 桌面的任務交接；此版未在該電腦修復或驗證真人 SSO。
+
 ## 0.6.9 調查、替代方法與工作區網頁開啟（2026-10-15）
 
 - 175 項單元測試、build 及 macOS Chrome localhost BrowserBridge／Webview fixture 通過。

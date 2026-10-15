@@ -331,7 +331,12 @@ class AgentApp {
       case 'stop': this.stop(); break;
       case 'cancelWorker': if (this.workers && typeof message.id === 'string') await this.workers.execute('cancel_task', { id: message.id }); break;
       case 'cancelQueue': { const task = this.session.tasks?.find(item => item.id === message.id); if (task) { task.status = 'stopped'; task.result = '已取消佇列'; task.endedAt = Date.now(); } const queued = this.queue.find(item => item.id === message.id); if (queued) this.patch(queued.messageId, { queued: false, canceled: true }); this.queue = this.queue.filter(item => item.id !== message.id); this.state(); break; }
-      case 'new': if (!this.busy() && !this.gate.pending) { await this.save(); this.session = this.store.create(this.workspace()?.uri.toString() || ''); this.contextFiles = []; this.attachment = null; this.streamId = null; await this.refreshSkills(); this.render(); this.persist(); } break;
+      case 'new': await this.newSession(); break;
+      case 'dismissWarning': {
+        const warning = this.session.messages.find(item => item.id === message.id && item.role === 'error');
+        if (warning && !warning.dismissed) { this.patch(warning.id, { dismissed: true }); clearTimeout(this.saveTimer); await this.save(); }
+        break;
+      }
       case 'switch': if (!this.busy() && !this.gate.pending && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'rename': await this.memoryActions.handle({ kind: 'renameSession', id: this.session.id }); break;
       case 'option': await this.setOption(message.key, message.value); break;
@@ -376,6 +381,26 @@ class AgentApp {
     }
   }
 
+  async newSession(targetWorkspace) {
+    if (this.newSessionOperation) return this.newSessionOperation;
+    this.newSessionOperation = (async () => {
+      await this.ready;
+      if (this.busy() || this.gate.pending || this.changeReview.applying || this.memoryActions.managingSessions) return;
+      clearTimeout(this.saveTimer); await this.save();
+      const workspace = targetWorkspace ?? (this.workspace()?.uri.toString() || '');
+      const empty = await this.store.findEmpty(workspace, this.session.id);
+      // A task or approval may have started while storage was being read.
+      if (this.busy() || this.gate.pending || this.changeReview.applying || this.memoryActions.managingSessions) return;
+      const next = empty || this.store.create(workspace);
+      if (next.id !== this.session.id) {
+        this.session = next; this.contextFiles = []; this.attachment = null; this.streamId = null;
+        await this.refreshSkills();
+      }
+      await this.save(); this.render();
+    })();
+    try { return await this.newSessionOperation; } finally { this.newSessionOperation = null; }
+  }
+
   async setOption(key, value) {
     if (this.busy() || this.gate.pending) return;
     const allowed = { agent: ['build', 'plan', 'review', 'research', 'ask'], permission: ['ask', 'assisted', 'full'], depth: ['quick', 'standard', 'deep'] };
@@ -399,7 +424,7 @@ class AgentApp {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders?.length) { await vscode.commands.executeCommand('workbench.action.files.openFolder'); return; }
     const chosen = await vscode.window.showQuickPick(folders.map(folder => ({ label: folder.name, folder })), { title: '工作階段的專案' });
-    if (chosen && chosen.folder.uri.toString() !== this.session.workspace) { this.session = this.store.create(chosen.folder.uri.toString()); await this.refreshSkills(); this.render(); this.persist(); }
+    if (chosen && chosen.folder.uri.toString() !== this.session.workspace) await this.newSession(chosen.folder.uri.toString());
   }
   async editorContext(root, includeEditor, files = this.contextFiles) {
     const pieces = [];

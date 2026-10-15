@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.9 · 實驗性專案 · MIT License**
+**版本：0.6.10 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -31,10 +31,10 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.9.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.9.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.9.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.9.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.10.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.10.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.10.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.10.vsix` |
 
 更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 
@@ -128,3 +128,12 @@ Skills 是任務指引，不能授予權限。選擇 skills 代表預先載入�
 一般工具失敗時，Agent 會檢查實際錯誤與檔案、確認可用能力，必要時使用已啟用的網路／MCP 查官方資料，整理替代方法後繼續執行。尚未恢復的失敗不會因讀到文件或更新計畫就算完成。可以用 `open_browser` 交給預設瀏覽器開啟工作區 HTML，取代沙箱中無法呼叫桌面服務的 shell `open`。它仍遵循權限與敏感檔案防護，接受開啟不等於已驗證畫面。
 
 有新工具證據時會繼續調查，仍受共用輪數、取消與無進展停止條件約束；使用者拒絕、登入失效或服務限制不會被繞過。完整流程與參考來源見 [Agent 恢復說明](docs/AGENT_RECOVERY.md)。
+
+
+## 聊天整理與 Linux 修復交接（0.6.10）
+
+新增聊天會優先開啟同專案既有的未封存空白聊天室；不重複建立空白紀錄，也不刪除舊聊天。有任務、計畫、檢查點或檔案變更的工作階段不算空白。
+
+紅色警告右上角的「關閉警告」可收起該則提示。關閉狀態會保存，原始紀錄與任務狀態保留；服務限制仍須依既有流程處理。新發生的錯誤不會被一起隱藏。
+
+Linux 若遇到瀏覽器自動化啟動失敗，可將 [Linux 登入修復 prompt](docs/LINUX_LOGIN_REPAIR_PROMPT.md) 交給該 Linux 電腦上的 Codex。內容包含完整背景、已知程式位置與驗收要求；本版未宣稱修復所有 Linux 登入環境。

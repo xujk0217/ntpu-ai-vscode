@@ -3,6 +3,11 @@ const { randomUUID } = require('node:crypto');
 const { sanitize } = require('./security/guard');
 
 const DEFAULT_OPTIONS = { agent: 'build', permission: 'ask', depth: 'standard', web: true, skills: [] };
+function isEmptySession(session) {
+  return !session.archived && !session.checkpoint &&
+    !['tasks', 'turns', 'changes', 'plan'].some(key => session[key]?.length) &&
+    !(session.messages || []).some(message => !['notice', 'error'].includes(message.role));
+}
 class SessionStore {
   constructor(saved = []) {
     this.sessions = Array.isArray(saved) ? sanitize(saved.filter(item => item?.id && Array.isArray(item.messages))) : [];
@@ -28,4 +33,4 @@ class SessionStore {
       turns: session.turns || [], changes: session.changes || [] }))); 
   }
 }
-module.exports = { SessionStore, DEFAULT_OPTIONS };
+module.exports = { SessionStore, DEFAULT_OPTIONS, isEmptySession };

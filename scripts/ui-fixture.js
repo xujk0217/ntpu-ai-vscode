@@ -32,6 +32,18 @@ async function testUI(page, origin) {
   await page.screenshot({ path: path.join(__dirname, '..', '.local', 'welcome-ui.png') });
   await send({ kind: 'message', message: { id: 'real-error', role: 'error', text: '背景連線失敗，需要處理' } });
   await page.locator('.message.error').waitFor({ state: 'visible' }); assert.equal(await page.locator('.suggestion').count(), 4);
+  const closeWarning = page.getByRole('button', { name: '關閉警告', exact: true });
+  assert.equal(await closeWarning.getAttribute('title'), '關閉警告');
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'dismissible-warning-ui.png') });
+  await closeWarning.click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'dismissWarning', id: 'real-error' });
+  assert.equal(await page.locator('.message.error').isHidden(), true);
+  const dismissed = { id: 'real-error', role: 'error', text: '背景連線失敗，需要處理', dismissed: true };
+  await send({ kind: 'patch', message: dismissed });
+  await send({ kind: 'session', session: { id: 'welcome-fixture', title: '新工作階段', messages: [dismissed], changes: [], plan: [] } });
+  assert.equal(await page.locator('.message.error').isHidden(), true, 'dismissed warning stays hidden on rerender');
+  await send({ kind: 'message', message: { id: 'new-error', role: 'error', text: '另一個新的錯誤' } });
+  await page.locator('.message.error[data-id="new-error"]').waitFor({ state: 'visible' });
   await send({ kind: 'session', session: { id: 'fixture', title: 'Fixture', messages: [{ id: 'm1', role: 'assistant', text: '本機歷史' }], hasMore: true, before: 1, changes: [], plan: [] } });
 
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);

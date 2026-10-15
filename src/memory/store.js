@@ -2,7 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
-const { SessionStore } = require('../sessions');
+const { SessionStore, isEmptySession } = require('../sessions');
 const { sanitize } = require('../security/guard');
 const SCHEMA = 1;
 const projectId = workspace => createHash('sha256').update(workspace || 'no-workspace').digest('hex');
@@ -87,7 +87,7 @@ class MemoryStore {
   }
   metadata(session) {
     return sanitize({ id: session.id, title: session.title, workspace: session.workspace, updatedAt: session.updatedAt,
-      archived: !!session.archived, tasks: (session.tasks || []).map(task => ({ id: task.id, request: task.request, status: task.status,
+      archived: !!session.archived, empty: isEmptySession(session), tasks: (session.tasks || []).map(task => ({ id: task.id, request: task.request, status: task.status,
         resolvedBy: task.resolvedBy, agent: task.agent,
         endedAt: task.endedAt, startedAt: task.startedAt, files: task.files || [], result: String(task.result || '').slice(0, 1800), pending: task.pending || [] })) });
   }
@@ -96,6 +96,16 @@ class MemoryStore {
     this.loaded.set(session.id, session); this.sessions.unshift(this.metadata(session)); return session;
   }
   get(id) { return this.loaded.get(id); }
+  async findEmpty(workspace, preferredId) {
+    const candidates = this.sessions.filter(item => item.workspace === workspace && !item.archived && item.empty !== false);
+    const preferred = candidates.find(item => item.id === preferredId);
+    if (preferred) { candidates.splice(candidates.indexOf(preferred), 1); candidates.unshift(preferred); }
+    for (const item of candidates) {
+      const session = await this.openSession(item.id);
+      if (isEmptySession(session)) return session;
+    }
+    return null;
+  }
   async openSession(id) {
     if (this.loaded.has(id)) return this.loaded.get(id);
     const data = await this.read(this.file(id));

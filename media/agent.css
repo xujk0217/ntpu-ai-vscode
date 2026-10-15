@@ -94,7 +94,8 @@
 .message.commentary{margin:10px 0 12px;padding-left:9px;border-left:2px solid var(--line)}
 .message.commentary .notice-text{font-size:12px;line-height:1.75;color:var(--vscode-foreground)}
 .message.notice{padding:7px 9px;border-radius:6px;background:var(--raised);margin:10px 0}
-.message.error{padding:10px 12px;border:1px solid color-mix(in srgb,var(--red) 50%,var(--line));border-radius:7px;margin:12px 0;background:var(--raised)}
+.message.error{position:relative;padding:10px 34px 10px 12px;border:1px solid color-mix(in srgb,var(--red) 50%,var(--line));border-radius:7px;margin:12px 0;background:var(--raised)}
+.dismiss-warning{position:absolute;top:5px;right:5px;color:var(--muted)}.dismiss-warning:hover{color:var(--vscode-foreground)}
 .notice-title{display:block;font-size:12px;margin-bottom:5px;color:var(--vscode-errorForeground,var(--red))}
 .message.error .notice-text{border:0;padding:0;font-size:12px;line-height:1.75}
 .message:focus-within .message-heading .icon-button{opacity:1}

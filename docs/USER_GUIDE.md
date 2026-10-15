@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.9 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+**版本：0.6.10 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
 
 ## Agent 能力與送出快捷鍵
 
@@ -57,10 +57,10 @@ Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區�
 
 | 系統 | 0.6.5 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-win32-x64-0.6.9.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-darwin-arm64-0.6.9.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-darwin-x64-0.6.9.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.9/ntpu-ai-coder-linux-x64-0.6.9.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-win32-x64-0.6.10.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-darwin-arm64-0.6.10.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-darwin-x64-0.6.10.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-linux-x64-0.6.10.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -413,3 +413,12 @@ Agent 可在一個模型回合批次讀取 2–6 個獨立檔案或公開資料�
 一般工具失敗時，Agent 會檢查實際錯誤與檔案、確認可用能力，必要時使用已啟用的網路／MCP 查官方資料，整理替代方法後繼續執行。尚未恢復的失敗不會因讀到文件或更新計畫就算完成。可以用 `open_browser` 交給預設瀏覽器開啟工作區 HTML，取代沙箱中無法呼叫桌面服務的 shell `open`。它仍遵循權限與敏感檔案防護，接受開啟不等於已驗證畫面。
 
 有新工具證據時會繼續調查，仍受共用輪數、取消與無進展停止條件約束；使用者拒絕、登入失效或服務限制不會被繞過。完整流程與參考來源見 [Agent 恢復說明](AGENT_RECOVERY.md)。
+
+
+## 聊天整理與 Linux 修復交接（0.6.10）
+
+新增聊天會優先開啟同專案既有的未封存空白聊天室；不重複建立空白紀錄，也不刪除舊聊天。有任務、計畫、檢查點或檔案變更的工作階段不算空白。
+
+紅色警告右上角的「關閉警告」可收起該則提示。關閉狀態會保存，原始紀錄與任務狀態保留；服務限制仍須依既有流程處理。新發生的錯誤不會被一起隱藏。
+
+Linux 若遇到瀏覽器自動化啟動失敗，可將 [Linux 登入修復 prompt](LINUX_LOGIN_REPAIR_PROMPT.md) 交給該 Linux 電腦上的 Codex。內容包含完整背景、已知程式位置與驗收要求；本版未宣稱修復所有 Linux 登入環境。

@@ -11,6 +11,40 @@ async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ntpu-memory-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   return { root, store: await new MemoryStore(path.join(root, 'storage')).initialize() };
 }
+
+test('empty chat reuse is workspace scoped, skips archived and meaningful state, and survives restart', async t => {
+  const { store } = await fixture(t);
+  const blank = store.create('project-a');
+  store.add(blank, { role: 'error', text: 'browser launch failed', dismissed: true });
+  const otherProject = store.create('project-b');
+  const archived = store.create('project-a'); archived.archived = true;
+  const protectedSessions = [];
+  for (const field of ['messages', 'tasks', 'turns', 'changes', 'plan', 'checkpoint']) {
+    const session = store.create('project-a');
+    if (field === 'messages') store.add(session, { role: 'user', text: 'real conversation' });
+    else session[field] = field === 'checkpoint' ? { records: [] } : [{ id: field }];
+    protectedSessions.push(session);
+  }
+  for (const session of [blank, otherProject, archived, ...protectedSessions]) await store.save(session);
+  assert.equal((await store.findEmpty('project-a')).id, blank.id);
+  assert.equal((await store.findEmpty('project-b')).id, otherProject.id);
+  assert.equal(await store.findEmpty('project-c'), null);
+  const restored = await new MemoryStore(store.directory).initialize();
+  for (const metadata of restored.sessions) delete metadata.empty; // Legacy indexes lack the hint.
+  assert.equal((await restored.findEmpty('project-a')).id, blank.id);
+  assert.equal((await restored.openSession(blank.id)).messages[0].text, 'browser launch failed');
+  assert.equal(restored.sessions.length, 9, 'reuse never deletes or creates history');
+});
+
+test('current empty chat is preferred over another empty chat without deleting existing duplicates', async t => {
+  const { store } = await fixture(t);
+  const current = store.create('project'), other = store.create('project');
+  await store.save(current); await store.save(other);
+  assert.equal((await store.findEmpty('project', current.id)).id, current.id);
+  assert.equal(store.sessions.length, 2);
+  store.add(current, { role: 'assistant', text: 'preserve actual answer' }); await store.save(current);
+  assert.equal((await store.findEmpty('project', current.id)).id, other.id);
+});
 test('complete history survives restart beyond previous message/session limits with pagination', async t => {
   const { root, store } = await fixture(t); const active = store.create('file:///one');
   for (let i = 0; i < 155; i++) store.add(active, { role: 'user', text: 'message ' + i });

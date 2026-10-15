@@ -140,7 +140,15 @@ function renderMessage(message) {
     const actions = element('div', 'artifact-actions'); actions.append(button('檢視圖片', 'text-button', () => send('openArtifact', { id: message.artifactId }), 'image'), button('另存圖片', 'text-button', () => send('saveArtifact', { id: message.artifactId }), 'export')); wrapper.append(actions);
     return wrapper;
   }
-  if (['notice', 'error', 'commentary'].includes(message.role)) { wrapper.hidden = !message.text?.trim(); if (message.role === 'error') wrapper.append(element('strong', 'notice-title', '需要處理')); wrapper.append(element('div', 'notice-text', message.text)); return wrapper; }
+  if (['notice', 'error', 'commentary'].includes(message.role)) {
+    wrapper.hidden = !message.text?.trim() || message.role === 'error' && message.dismissed === true;
+    if (message.role === 'error') {
+      wrapper.append(element('strong', 'notice-title', '需要處理'));
+      const dismiss = iconButton('close', '關閉警告', () => { message.dismissed = true; wrapper.hidden = true; send('dismissWarning', { id: message.id }); });
+      dismiss.classList.add('dismiss-warning'); wrapper.append(dismiss);
+    }
+    wrapper.append(element('div', 'notice-text', message.text)); return wrapper;
+  }
   const top = element('div', 'message-heading');
   if (message.role === 'user') top.append(element('span', '', message.canceled ? '你 · 已取消' : message.queued ? '你 · 已排入佇列' : '你'));
   else { const mark = element('span', 'assistant-mark', 'N'); top.append(mark, element('span', '', 'NTPU AI')); }
@@ -576,10 +584,11 @@ for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('cha
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));
 $('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('connection')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
 $('closeDrawer').addEventListener('click', () => { resetHistoryEditing(); $('drawer').hidden = true; });
-$('historyNew').addEventListener('click', () => { resetHistoryEditing(); send('new'); $('drawer').hidden = true; });
+function requestNewSession() { resetHistoryEditing(); send('new'); $('drawer').hidden = true; $('prompt').focus(); }
+$('historyNew').addEventListener('click', requestNewSession);
 $('historyEdit').addEventListener('click', () => { if (historyEditing) resetHistoryEditing(); else if (!state.busy && !approval) { historyEditing = true; selectedSessions.clear(); } renderDrawer(); });
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { if (tab !== item.dataset.tab) resetHistoryEditing(); tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
-for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', () => send(kind));
+for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', id === 'new' ? requestNewSession : () => send(kind));
 $('loginPrimary').addEventListener('click', () => send('login'));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });
