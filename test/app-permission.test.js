@@ -97,9 +97,12 @@ test('real AgentApp uses one durable approval choice across old, new, restored a
   });
   await t.test('global save failure reports an error and changes no effective chat mode', async () => {
     const update = globalState.update; globalState.update = async () => { throw new Error('fixture disk full'); };
+    const states = [], post = app.post;
+    app.post = message => { if (message.kind === 'state') states.push(structuredClone(message)); };
     try { await assert.rejects(app.setOption('permission', 'assisted'), /fixture disk full/); }
-    finally { globalState.update = update; }
+    finally { globalState.update = update; app.post = post; }
     assert.equal(app.session.options.permission, 'full'); assert.equal(await globalMode(), 'full');
+    assert.equal(states.at(-1).options.permission, 'full', 'the visible selector is reset to the actual saved mode');
     for (const session of app.store.loaded.values()) assert.equal(session.options.permission, 'full');
   });
   await t.test('switching back to ask is also durable', async () => {

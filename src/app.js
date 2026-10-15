@@ -447,7 +447,10 @@ class AgentApp {
     }
     this.state();
   }
-  async savePermissionMode(mode) { await this.approvalPreferences.set(mode); }
+  async savePermissionMode(mode) {
+    try { await this.approvalPreferences.set(mode); }
+    catch (error) { this.state(); throw error; }
+  }
   async updateComposer(value) {
     if (!['enter', 'modifierEnter'].includes(value)) return;
     await vscode.workspace.getConfiguration('ntpuAI').update('chat.submitMode', value, vscode.ConfigurationTarget.Global);
