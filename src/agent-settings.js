@@ -174,18 +174,24 @@ class AgentSettingsFiles {
       const next = { ...session.options, ...patch };
       const full = next.permission === 'full' && session.options.permission !== 'full';
       const accept = full ? '啟用完整存取並套用' : '套用設定';
-      const answer = await this.app.gate.request({ title: '套用 Agent 設定至目前聊天？',
-        detail: describeAgentSettings(next) + (full ? '\n\n' + FULL_ACCESS_NOTICE : ''), accept }, this.controller.signal);
+      const answer = await this.app.gate.request({ title: Object.hasOwn(patch, 'permission') ? '套用 Agent 設定？核准模式影響所有聊天' : '套用 Agent 設定至目前聊天？',
+        detail: describeAgentSettings(next) + (Object.hasOwn(patch, 'permission') ? '\n\n核准模式會保存並套用至所有聊天；其他選項只套用目前聊天。' : '') + (full ? '\n\n' + FULL_ACCESS_NOTICE : ''), accept }, this.controller.signal);
       if (answer !== accept) return false;
       this.assertIdle(session, options);
-      const before = session.options, permissionChoice = session.permissionChoice;
+      const before = session.options;
       session.options = next;
-      if (Object.hasOwn(patch, 'permission')) session.permissionChoice = next.permission;
       this.app.policies.delete(session.id);
-      try { await this.app.save(); }
+      let saved = false;
+      try {
+        await this.app.save(); saved = true;
+        if (Object.hasOwn(patch, 'permission')) await this.app.savePermissionMode(next.permission);
+      }
       catch (error) {
         session.options = before;
-        if (permissionChoice === undefined) delete session.permissionChoice; else session.permissionChoice = permissionChoice;
+        if (saved) {
+          try { await this.app.save(); }
+          catch { throw new Error('全域核准設定保存失敗，聊天選項也無法回復保存；請檢查本機儲存空間後重試。'); }
+        }
         this.app.state(); throw error;
       }
       this.app.state(); this.app.capabilities(); return true;

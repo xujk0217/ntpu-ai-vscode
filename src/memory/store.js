@@ -24,8 +24,16 @@ async function atomicJson(file, value) {
 }
 
 class MemoryStore {
-  constructor(directory) {
+  constructor(directory, { permissionMode } = {}) {
     this.directory = directory; this.sessions = []; this.loaded = new Map(); this.tail = Promise.resolve(); this.errors = [];
+    this.permissionMode = permissionMode;
+  }
+  applyPermission(session) {
+    if (this.permissionMode) {
+      const mode = this.permissionMode();
+      session.options.permission = ['ask', 'assisted', 'full'].includes(mode) ? mode : 'ask';
+    }
+    return session;
   }
   file(id) { if (!validId(id)) throw new Error('無效的 Session ID。'); return path.join(this.directory, 'sessions', id + '.json'); }
   async read(file, fallback) {
@@ -92,7 +100,7 @@ class MemoryStore {
         endedAt: task.endedAt, startedAt: task.startedAt, files: task.files || [], result: String(task.result || '').slice(0, 1800), pending: task.pending || [] })) });
   }
   create(workspace = '') {
-    const session = new SessionStore().create(workspace); session.tasks = []; session.revision = 0;
+    const session = this.applyPermission(new SessionStore().create(workspace)); session.tasks = []; session.revision = 0;
     this.loaded.set(session.id, session); this.sessions.unshift(this.metadata(session)); return session;
   }
   get(id) { return this.loaded.get(id); }
@@ -107,12 +115,13 @@ class MemoryStore {
     return null;
   }
   async openSession(id) {
-    if (this.loaded.has(id)) return this.loaded.get(id);
+    if (this.loaded.has(id)) return this.applyPermission(this.loaded.get(id));
     const data = await this.read(this.file(id));
     if (!data || data.schema !== SCHEMA) throw new Error('找不到相容的 Session 資料。');
     const session = new SessionStore([data.session]).get(id);
     if (!session) throw new Error('Session 資料不完整，已保留原始檔案。');
     session.tasks ||= [];
+    this.applyPermission(session);
     for (const task of session.tasks) if (['running', 'queued'].includes(task.status)) task.status = 'interrupted';
     this.loaded.set(id, session); return session;
   }
@@ -179,10 +188,7 @@ class MemoryStore {
     }
     // Always import with new IDs: restoring never destroys existing sessions.
     for (const source of backup.sessions) {
-      const imported = sanitize(source);
-      // Restored backups are new chats, not a user gesture enabling a mode.
-      delete imported.permissionChoice;
-      const session = new SessionStore([imported]).get(source.id); session.id = randomUUID(); session.revision = 0;
+      const session = this.applyPermission(new SessionStore([sanitize(source)]).get(source.id)); session.id = randomUUID(); session.revision = 0;
       session.title += '（還原）'; this.loaded.set(session.id, session); await this.save(session);
     }
     for (const source of backup.projects) await this.updateProject(source.workspace, target => {

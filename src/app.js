@@ -30,6 +30,7 @@ const { isServiceLimit } = require('./parallel-policy');
 const { probeConcurrency } = require('./browser/concurrency-probe');
 const { publicTarget } = require('./network');
 const { AgentSettingsFiles, OPTION_VALUES, FULL_ACCESS_NOTICE } = require('./agent-settings');
+const { ApprovalPreferences } = require('./approval-preferences');
 
 class AgentApp {
   constructor(context) {
@@ -40,6 +41,11 @@ class AgentApp {
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
     this.session = this.store.get(context.workspaceState.get('ntpuAI.activeSession')) || this.store.sessions[0] || this.store.create(workspace);
     this.queue = []; this.contextFiles = []; this.attachment = null; this.policies = new Map();
+    this.approvalPreferences = new ApprovalPreferences(context.globalState, mode => {
+      for (const session of this.store.loaded?.values() || []) session.options.permission = mode;
+      this.session.options.permission = mode;
+      this.policies.clear(); this.state();
+    });
     this.connection = { ready: false, message: '尚未連線' }; this.progress = '就緒'; this.model = '';
     this.budget = { used: 0, total: 48000 }; this.streamId = null;
     this.gate = new ApprovalGate(approval => {
@@ -63,6 +69,10 @@ class AgentApp {
     this.poller.unref();
     context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('ntpu-ai-preview', this.previews));
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.state()));
+    const focusListener = vscode.window.onDidChangeWindowState?.(state => {
+      if (state.focused && !this.busy() && !this.gate.pending && !this.agentSettingsBusy) this.approvalPreferences.refresh();
+    });
+    if (focusListener) context.subscriptions.push(focusListener);
     this.agentSettings = new AgentSettingsFiles(this, vscode);
     this.ready = this.initializeMemory();
     const configurationListener = vscode.workspace.onDidChangeConfiguration?.(event => {
@@ -77,7 +87,8 @@ class AgentApp {
 
   async initializeMemory() {
     const legacy = this.context.workspaceState.get('ntpuAI.sessions.v2', []);
-    this.store = await new MemoryStore(path.join(this.context.globalStorageUri.fsPath, 'agent-memory')).initialize(legacy,
+    this.store = await new MemoryStore(path.join(this.context.globalStorageUri.fsPath, 'agent-memory'),
+      { permissionMode: () => this.approvalPreferences.mode }).initialize(legacy,
       vscode.workspace.workspaceFolders?.map(folder => folder.uri.toString()).join('|') || 'no-workspace');
     const id = this.context.workspaceState.get('ntpuAI.activeSession');
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
@@ -322,6 +333,7 @@ class AgentApp {
 
   async handle(message) {
     if (!message || typeof message !== 'object' || typeof message.kind !== 'string') return;
+    if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy) this.approvalPreferences.refresh();
     switch (message.kind) {
       case 'ready': await this.ready; this.render(); if (!this.initialAutoConnect) { this.initialAutoConnect = true; await this.login(false); } break;
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
@@ -342,7 +354,7 @@ class AgentApp {
         if (warning && !warning.dismissed) { this.patch(warning.id, { dismissed: true }); clearTimeout(this.saveTimer); await this.save(); }
         break;
       }
-      case 'switch': if (!this.busy() && !this.gate.pending && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
+      case 'switch': if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'rename': await this.memoryActions.handle({ kind: 'renameSession', id: this.session.id }); break;
       case 'option': await this.setOption(message.key, message.value); break;
       case 'openAgentSettings': await this.agentSettings.openProject(); break;
@@ -394,6 +406,8 @@ class AgentApp {
     if (this.newSessionOperation) return this.newSessionOperation;
     this.newSessionOperation = (async () => {
       await this.ready;
+      await this.approvalPreferences.tail.catch(() => {});
+      this.approvalPreferences.refresh();
       if (this.busy() || this.gate.pending || this.agentSettingsBusy || this.changeReview.applying || this.memoryActions.managingSessions) return;
       clearTimeout(this.saveTimer); await this.save();
       const workspace = targetWorkspace ?? (this.workspace()?.uri.toString() || '');
@@ -419,23 +433,21 @@ class AgentApp {
     if (key === 'skills') { if (!Array.isArray(value)) return; value = value.filter(name => this.skills.items.has(name)).slice(0, 4); }
     if (!allowed[key] && !['web', 'skills'].includes(key)) return;
     if (key === 'permission' && value === 'full') {
-      const answer = await this.gate.request({ title: '啟用完整存取？', detail: FULL_ACCESS_NOTICE, accept: '啟用完整存取' }, new AbortController().signal);
+      const answer = await this.gate.request({ title: '所有聊天啟用完整存取？', detail: '核准模式會保存並套用至所有聊天。\n\n' + FULL_ACCESS_NOTICE, accept: '啟用完整存取' }, new AbortController().signal);
       if (answer !== '啟用完整存取') { this.state(); return; }
     }
-    const session = this.session, before = session.options[key], permissionChoice = session.permissionChoice;
+    if (key === 'permission') { await this.savePermissionMode(value); return; }
+    const session = this.session, before = session.options[key];
     session.options[key] = value;
-    if (key === 'permission') session.permissionChoice = value;
     this.policies.delete(session.id);
     try { await this.save(); }
     catch (error) {
       session.options[key] = before;
-      if (key === 'permission') {
-        if (permissionChoice === undefined) delete session.permissionChoice; else session.permissionChoice = permissionChoice;
-      }
       this.state(); throw error;
     }
     this.state();
   }
+  async savePermissionMode(mode) { await this.approvalPreferences.set(mode); }
   async updateComposer(value) {
     if (!['enter', 'modifierEnter'].includes(value)) return;
     await vscode.workspace.getConfiguration('ntpuAI').update('chat.submitMode', value, vscode.ConfigurationTarget.Global);
@@ -472,6 +484,8 @@ class AgentApp {
     if (this.agentSettingsBusy) throw new Error('請先完成 Agent 設定檔操作，再送出任務。');
     if (this.changeReview.applying) throw new Error('正在處理變更，請稍候再送出任務。');
     await this.ready;
+    await this.approvalPreferences.tail.catch(() => {});
+    if (!this.busy() && !this.gate.pending) this.approvalPreferences.refresh();
     request = redact(request.trim()); if (!request) return;
     if (request.length > 20000) throw new Error('提問超過 20000 字。');
     const slash = request.match(/^\/(build|plan|review|research|ask)\b\s*/);
@@ -912,7 +926,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

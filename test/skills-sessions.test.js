@@ -27,14 +27,3 @@ test('sessions survive serialization while unconfirmed full access and interrupt
   assert.equal(restored.messages[1].interrupted, true);
   assert.equal(restored.messages[0].status, 'interrupted');
 });
-test('only matching explicit permission choices persist; new and unconfirmed sessions stay ask', () => {
-  for (const permission of ['ask', 'assisted', 'full']) {
-    const store = new SessionStore(), session = store.create('file:///project');
-    session.options.permission = permission; session.permissionChoice = permission;
-    const restored = new SessionStore(store.serialize()).get(session.id);
-    assert.equal(restored.options.permission, permission);
-    assert.equal(store.create('file:///project', { permission }).options.permission, 'ask');
-    session.options.permission = 'full'; session.permissionChoice = 'assisted';
-    assert.equal(new SessionStore(store.serialize()).get(session.id).options.permission, 'ask');
-  }
-});

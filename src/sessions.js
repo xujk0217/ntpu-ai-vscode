@@ -12,11 +12,7 @@ class SessionStore {
   constructor(saved = []) {
     this.sessions = Array.isArray(saved) ? sanitize(saved.filter(item => item?.id && Array.isArray(item.messages))) : [];
     for (const session of this.sessions) {
-      // Persist a user's explicit selection, while old/unconfirmed serialized
-      // modes remain ask. Temporary tool grants are never serialized here.
-      const permission = ['ask', 'assisted', 'full'].includes(session.permissionChoice) &&
-        session.permissionChoice === session.options?.permission ? session.permissionChoice : 'ask';
-      session.options = { ...DEFAULT_OPTIONS, ...session.options, permission };
+      session.options = { ...DEFAULT_OPTIONS, ...session.options, permission: 'ask' };
       session.messages = session.messages.map(item => item?.role === 'stream' ? { ...item, role: 'assistant', interrupted: true, incomplete: true } : item);
       for (const message of session.messages) if (message.role === 'user' && message.queued) { message.queued = false; message.canceled = true; }
       for (const message of session.messages) if (message.role === 'tool' && ['running', 'approval'].includes(message.status)) {

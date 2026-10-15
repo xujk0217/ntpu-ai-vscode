@@ -47,6 +47,7 @@ async function testUI(page, origin) {
   await send({ kind: 'session', session: { id: 'fixture', title: 'Fixture', messages: [{ id: 'm1', role: 'assistant', text: '本機歷史' }], hasMore: true, before: 1, changes: [], plan: [] } });
 
   await send(state); await page.waitForFunction(() => document.getElementById('connectionActions').hidden);
+  assert.match(await page.locator('#permissionDescription').textContent(), /所有聊天共用/);
   await send({ ...state, connection: { ready: false, authentication: 'required' } });
   await page.getByRole('button', { name: '登入 NTPU AI', exact: true }).waitFor({ state: 'visible' });
   assert.equal(await page.locator('#loginNoticeTitle').textContent(), '尚未登入 NTPU AI');

@@ -60,7 +60,7 @@ class MemoryActions {
   async handle(message) {
     const { app, vscode } = this;
     if (message.kind === 'memory') return this.view();
-    if (app.busy() || app.gate.pending) throw new Error('請先停止目前任務，再管理記憶。');
+    if (app.busy() || app.gate.pending || app.agentSettingsBusy) throw new Error('請先停止目前任務或完成設定操作，再管理記憶。');
     if (['renameSession', 'exportSession', 'sessionsAction', 'archiveSession', 'deleteSession'].includes(message.kind)) {
       if (message.kind === 'archiveSession') message = { ...message, action: app.store.sessions.find(item => item.id === message.id)?.archived ? 'unarchive' : 'archive' };
       if (message.kind === 'deleteSession') message = { ...message, action: 'delete' };

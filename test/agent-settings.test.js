@@ -8,6 +8,7 @@ const { setImmediate: tick } = require('node:timers/promises');
 const { ApprovalGate } = require('../src/approval');
 const { DEFAULT_OPTIONS, SessionStore } = require('../src/sessions');
 const { MemoryStore } = require('../src/memory/store');
+const { ApprovalPreferences } = require('../src/approval-preferences');
 const { AgentSettingsFiles, SETTINGS_FILE, MAX_SETTINGS_BYTES, OPTION_VALUES, FULL_ACCESS_NOTICE,
   parseAgentSettings, serializeAgentSettings, readAgentSettings, saveAgentSettings } = require('../src/agent-settings');
 
@@ -21,6 +22,10 @@ async function fixture(t) {
     skills: { items: new Map([['review', {}]]) }, workspace: () => ({ uri: uri(directory) }),
     gate: new ApprovalGate(value => events.push(value)), state() { events.push({ busy: !!this.agentSettingsBusy }); },
     saves: [], async save() { this.saves.push(structuredClone(this.session)); }, capabilities() { this.capabilityUpdates = (this.capabilityUpdates || 0) + 1; } };
+  const globalState = new Map();
+  app.approvalPreferences = new ApprovalPreferences({ get: (key, fallback) => globalState.get(key) ?? fallback,
+    update: async (key, value) => globalState.set(key, value) });
+  app.savePermissionMode = mode => app.approvalPreferences.set(mode);
   const vscode = { Uri: { file: uri }, workspace: { isTrusted: true, textDocuments: [], openTextDocument: async target => target },
     window: { showOpenDialog: async () => [uri(file)], showSaveDialog: async () => uri(file), showTextDocument: async target => opened.push(target) } };
   const settings = new AgentSettingsFiles(app, vscode);
@@ -261,8 +266,8 @@ test('save failure restores prior options and unlocks the settings UI', async t 
   assert.equal(f.app.agentSettingsBusy, false); assert.equal(f.app.capabilityUpdates, undefined);
 });
 
-test('real memory store preserves session/project memory and the explicitly approved permission across restart', async t => {
-  const f = await fixture(t), store = await new MemoryStore(path.join(f.directory, 'storage')).initialize();
+test('real memory store preserves history while the approved global mode applies after restart', async t => {
+  const f = await fixture(t), store = await new MemoryStore(path.join(f.directory, 'storage'), { permissionMode: () => f.app.approvalPreferences.mode }).initialize();
   f.app.session = store.create(f.uri(f.directory).toString());
   store.add(f.app.session, { role: 'user', text: '這段聊天必須保留' });
   f.app.session.checkpoint = { request: '保留 checkpoint', records: [{ name: 'read_file', result: { ok: true } }] };
@@ -275,6 +280,6 @@ test('real memory store preserves session/project memory and the explicitly appr
   assert.equal(stored.options.depth, 'deep'); assert.equal(stored.options.permission, 'full');
   assert.equal(stored.messages[0].text, '這段聊天必須保留'); assert.equal(stored.checkpoint.request, '保留 checkpoint');
   assert.equal(JSON.stringify(await store.project(f.app.session.workspace)), projectBefore);
-  const reopened = new SessionStore([stored]).get(stored.id);
+  const reopened = await (await new MemoryStore(store.directory, { permissionMode: () => f.app.approvalPreferences.mode }).initialize()).openSession(stored.id);
   assert.equal(reopened.options.depth, 'deep'); assert.equal(reopened.options.permission, 'full', 'restart retains the explicitly approved mode');
 });
