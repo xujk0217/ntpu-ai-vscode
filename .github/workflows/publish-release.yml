@@ -78,6 +78,7 @@ jobs:
           assets.mkdir()
           verified = set()
           for package in packages:
+              line_ending_differences = 0
               with zipfile.ZipFile(package) as archive:
                   assert archive.testzip() is None
                   manifest = ET.fromstring(archive.read('extension.vsixmanifest'))
@@ -89,7 +90,12 @@ jobs:
                   metadata = json.loads(archive.read('extension/package.json'))
                   assert metadata['version'] == version and metadata['publisher'] == 'ntpu-local'
                   for source in sources:
-                      assert archive.read('extension/' + source) == Path(source).read_bytes(), source
+                      packed, original = archive.read('extension/' + source), Path(source).read_bytes()
+                      if packed != original:
+                          # Windows checkout may apply core.autocrlf. Accept only
+                          # that exact transformation, retaining all content checks.
+                          assert target == 'win32-x64' and packed.replace(b'\r\n', b'\n') == original.replace(b'\r\n', b'\n'), source
+                          line_ending_differences += 1
                   for name in archive.namelist():
                       assert not any(p in name for p in ['/browser-profiles/', '/agent-memory/', '/.local/'])
                   if target == 'linux-x64':
@@ -98,7 +104,7 @@ jobs:
                       assert data[:4] == b'\x7fELF' and int.from_bytes(data[18:20], 'little') == 62
               verified.add(target)
               shutil.copy2(package, assets / package.name)
-              print('Verified:', target)
+              print('Verified:', target, '; CRLF/LF-only source differences:', line_ending_differences)
           assert verified == expected
           lines = [hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name for p in sorted(assets.glob('*.vsix'))]
           (assets / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n')
