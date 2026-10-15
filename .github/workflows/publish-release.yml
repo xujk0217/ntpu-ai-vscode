@@ -1,0 +1,143 @@
+name: Publish validated release
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main-branch CI run containing all four native VSIX packages
+        required: true
+        type: string
+      tag:
+        description: Existing draft release tag, matching the tested package version
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate successful trusted CI and draft release
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID" > "$RUNNER_TEMP/ci.json"
+          gh release view "$RELEASE_TAG" --json isDraft,targetCommitish,tagName > "$RUNNER_TEMP/draft.json"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          run = json.loads((Path(os.environ['RUNNER_TEMP']) / 'ci.json').read_text())
+          draft = json.loads((Path(os.environ['RUNNER_TEMP']) / 'draft.json').read_text())
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['event'] == 'push' and run['head_branch'] == 'main'
+          assert run['repository']['full_name'] == os.environ['GH_REPO']
+          assert run['path'] == '.github/workflows/ci.yml'
+          sha = run['head_sha']
+          assert re.fullmatch('[0-9a-f]{40}', sha)
+          assert draft['isDraft'] and draft['tagName'] == os.environ['RELEASE_TAG']
+          assert draft['targetCommitish'] == sha, 'Draft must point to the exact tested commit'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('sha=' + sha + '\n')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.ci_run_id }}
+          pattern: ntpu-ai-agent-*
+          path: artifacts
+      - name: Verify native packages and prepare checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, shutil, subprocess, xml.etree.ElementTree as ET, zipfile
+          version = os.environ['RELEASE_TAG'].removeprefix('v')
+          assert json.loads(Path('package.json').read_text())['version'] == version
+          expected = {'linux-x64', 'win32-x64', 'darwin-x64', 'darwin-arm64'}
+          packages = list(Path('artifacts').rglob('*.vsix'))
+          assert len(packages) == 4, 'Expected four native packages'
+          sources = subprocess.check_output(['git', 'ls-files', 'src'], text=True).splitlines()
+          assets = Path(os.environ['RUNNER_TEMP']) / 'release-assets'
+          assets.mkdir()
+          verified = set()
+          for package in packages:
+              with zipfile.ZipFile(package) as archive:
+                  assert archive.testzip() is None
+                  manifest = ET.fromstring(archive.read('extension.vsixmanifest'))
+                  identity = next(e for e in manifest.iter() if e.tag.endswith('Identity'))
+                  target = identity.attrib['TargetPlatform']
+                  assert target in expected and target not in verified
+                  assert identity.attrib['Version'] == version
+                  assert package.name == f'ntpu-ai-coder-{target}-{version}.vsix'
+                  metadata = json.loads(archive.read('extension/package.json'))
+                  assert metadata['version'] == version and metadata['publisher'] == 'ntpu-local'
+                  for source in sources:
+                      assert archive.read('extension/' + source) == Path(source).read_bytes(), source
+                  for name in archive.namelist():
+                      assert not any(p in name for p in ['/browser-profiles/', '/agent-memory/', '/.local/'])
+                  if target == 'linux-x64':
+                      binary = next(n for n in archive.namelist() if '/@img/sharp-linux-x64/lib/' in n and n.endswith('.node'))
+                      data = archive.read(binary)
+                      assert data[:4] == b'\x7fELF' and int.from_bytes(data[18:20], 'little') == 62
+              verified.add(target)
+              shutil.copy2(package, assets / package.name)
+              print('Verified:', target)
+          assert verified == expected
+          lines = [hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name for p in sorted(assets.glob('*.vsix'))]
+          (assets / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n')
+          PY
+      - name: Upload with GitHub CLI and publish the verified draft
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          notes = Path(os.environ['RUNNER_TEMP']) / 'release-notes.md'
+          body = notes.read_text()
+          url = f"https://github.com/{os.environ['GH_REPO']}/actions/runs/{os.environ['CI_RUN_ID']}"
+          if url not in body:
+              notes.write_text(body + '\n\n四平台 × Node 20／22 共八組 CI 全部通過；四種 VSIX 均於對應平台原生打包。CI：' + url + '\n')
+          PY
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/release-assets/"*.vsix "$RUNNER_TEMP/release-assets/SHA256SUMS.txt" --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/published.json"
+          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > "$RUNNER_TEMP/tag.json"
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          release = json.loads((root / 'published.json').read_text())
+          tag = json.loads((root / 'tag.json').read_text())
+          assert not release['draft'] and not release['prerelease']
+          assert tag['object']['type'] == 'commit' and tag['object']['sha'] == os.environ['SOURCE_SHA']
+          local = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (root / 'release-assets').iterdir()}
+          assets = release['assets']
+          assert {a['name'] for a in assets} == set(local)
+          for asset in assets:
+              assert asset['state'] == 'uploaded'
+              if asset.get('digest'):
+                  assert asset['digest'] == 'sha256:' + local[asset['name']]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('Published ' + release['html_url'] + '\n\nFour native VSIX packages and SHA256SUMS.txt verified.\n')
+          PY
