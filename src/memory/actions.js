@@ -51,6 +51,7 @@ class MemoryActions {
         if (!app.store.sessions.some(item => item.id === app.session.id)) {
           const next = app.store.sessions.find(item => item.workspace === app.session.workspace && !item.archived);
           app.session = next ? await app.store.openSession(next.id) : app.store.create(app.session.workspace);
+          app.restoreQueue?.();
           app.contextFiles = []; app.attachment = null; app.streamId = null; await app.refreshSkills();
         }
         await app.save(); app.render();

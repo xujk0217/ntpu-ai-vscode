@@ -155,3 +155,110 @@ test('failed segment save stops worker and preserves the provider conversation f
   assert.match(result.tasks[0].result, /保留校方對話/); assert.equal(closes[0].cleanup, false);
   await workers.close(); scheduler.close();
 });
+
+test('short Chinese implementation and analysis requests trigger assessment without length thresholds', () => {
+  const options = { modelBudget: new ModelBudget(30) };
+  for (const request of ['修改記憶與脈絡處理', '改善核准設定', '排查串流中斷問題', '新增附件功能', '分析測試覆蓋', 'Debug crash', 'Review src/auth.js', '積極使用 subagent 分工', '修復登入並順便修正錯字', '比較資料庫選項']) {
+    assert.equal(delegationState({ ...options, request }).required, true, request);
+  }
+  for (const request of ['你好', '只修正一個常數', '不要使用 subagent，請修復登入問題', 'Fix login without subagents']) {
+    assert.equal(delegationState({ ...options, request }).required, false, request);
+  }
+});
+
+const evidence = path => ({ type: 'tool', name: 'read_file', args: { path }, result: { ok: true, content: 'existing source evidence' } });
+
+test('an unsupported single-agent rationale launches a real scoped evidence worker within read-only limits', async () => {
+  let actual;
+  const { workers, scheduler } = fixture(async options => {
+    actual = options;
+    options.onCheckpoint([evidence('test/auth.test.js')]);
+    options.onFinal('actual existing test coverage'); return { completed: true };
+  });
+  try {
+    const result = workers.assessDelegation({ rationale: '這個任務使用單一 Agent 比較有效率，因此先自己完成所有工作與驗證即可。' }, { request: complexRequest });
+    assert.equal(result.assessment.mode, 'delegated'); assert.equal(result.assessment.fallback, true);
+    assert.equal(result.tasks.length, 1); assert.equal(workers.jobs.size, 1);
+    assert.equal((await workers.collect()).tasks[0].status, 'done');
+    assert.match(actual.request, /既有測試/); assert.match(actual.request, /不執行測試/); assert.match(actual.request, /請調查並修復登入流程/);
+    assert.deepEqual(actual.tools.catalog().map(tool => tool.name), ['read_file']);
+    assert.equal(workers.delegationState({ request: complexRequest }).required, false);
+  } finally { await workers.close(); scheduler.close(); }
+});
+
+test('single-agent dependencies require actual evidence, then new independent sources allow one reassessment', async () => {
+  const { workers, scheduler } = fixture();
+  const rationale = '已讀取 src/auth.js，只有同一個條件式需要調整，其餘驗證必須先依賴此修改完成。';
+  const options = { request: complexRequest, records: [evidence('src/auth.js')] };
+  try {
+    assert.equal(workers.assessDelegation({ rationale }, options).assessment.mode, 'single');
+    assert.equal(workers.jobs.size, 0);
+    assert.equal(workers.delegationState(options).required, false);
+    assert.equal(workers.delegationState({ ...options, records: [...options.records, evidence('src/auth.js')] }).required, false);
+    const expanded = { ...options, records: [...options.records, evidence('src/settings.js')] };
+    assert.equal(workers.delegationState(expanded).reassessment, true);
+    assert.equal(workers.assessDelegation({ rationale }, expanded).assessment.mode, 'single');
+    assert.equal(workers.delegationState({ ...expanded, records: [...expanded.records, evidence('test/auth.test.js')] }).required, false);
+    assert.equal(workers.jobs.size, 0);
+  } finally { await workers.close(); scheduler.close(); }
+});
+
+test('denied exploration cannot support a single-agent claim and evidence workers cannot report invented verification', async () => {
+  const { workers, scheduler } = fixture(async options => { options.onFinal('應該有測試。'); return { completed: true }; });
+  try {
+    const denied = { ...evidence('src/auth.js'), result: { ok: false, denied: true } };
+    workers.assessDelegation({ rationale: '只有 src/auth.js 的同一個函式需要處理，所以全部驗證都依賴主 Agent。' }, { request: complexRequest, records: [denied] });
+    const result = await workers.collect();
+    assert.equal(workers.jobs.size, 1); assert.equal(result.ok, false); assert.equal(result.tasks[0].status, 'error');
+    assert.match(result.tasks[0].result, /沒有成功的唯讀工具查證/);
+  } finally { await workers.close(); scheduler.close(); }
+});
+
+test('host fallback respects real capability, budget, cancellation and service-limit availability', async () => {
+  for (const configure of [workers => { workers.base = { catalog: () => [{ name: 'write_file' }], execute() { throw new Error('must not run'); } }; },
+    workers => { workers.modelBudget = new ModelBudget(4); }, workers => { workers.signal = AbortSignal.abort(); },
+    workers => { workers.scheduler.adaptive = { blocked: true }; }]) {
+    const { workers, scheduler } = fixture(); configure(workers);
+    try { assert.equal(workers.fallbackDelegation({ request: complexRequest }), null); assert.equal(workers.jobs.size, 0); }
+    finally { await workers.close(); scheduler.close(); }
+  }
+});
+
+test('research-only capability creates an actual source-check worker without unavailable local-file work', async () => {
+  let actual;
+  const { workers, scheduler } = fixture(async options => {
+    actual = options; options.onCheckpoint([{ type: 'tool', name: 'web_fetch', result: { ok: true, text: 'official source' } }]);
+    options.onFinal('official source evidence'); return { completed: true };
+  });
+  workers.base = { catalog: () => [{ name: 'web_fetch' }], execute: async () => ({ ok: true }) };
+  workers.createTools = () => workers.base;
+  try {
+    const result = workers.fallbackDelegation({ request: '研究並比較這個系統的架構設計', profile: { agent: 'research' } });
+    assert.equal(result.tasks[0].role, 'research'); assert.equal((await workers.collect()).ok, true);
+    assert.match(actual.request, /官方來源/); assert.doesNotMatch(actual.request, /找出與此任務直接相關的既有程式入口/);
+    assert.deepEqual(actual.tools.catalog().map(tool => tool.name), ['web_fetch']);
+  } finally { await workers.close(); scheduler.close(); }
+});
+
+test('workers preserve structured context priorities instead of slicing away recent conversation', async () => {
+  const context = { text: 'old project memory\n' + 'X'.repeat(7000) + '\nrecent explicit user constraint',
+    sections: [{ name: 'recent', text: 'recent explicit user constraint', priority: 100 }], diagnostics: { compacted: false } };
+  let received;
+  const { workers, scheduler } = fixture(async options => { received = options.context; options.onFinal('real context received'); return { completed: true }; });
+  workers.context = context;
+  try {
+    workers.delegate({ tasks: [task()] }); assert.equal((await workers.collect()).ok, true);
+    assert.deepEqual(received, context); assert.match(received.text, /recent explicit user constraint$/);
+  } finally { await workers.close(); scheduler.close(); }
+});
+
+test('reading an unrelated file or merely listing names cannot prove the asserted single-file dependency', async () => {
+  for (const records of [[evidence('src/unrelated.js')], [{ type: 'tool', name: 'list_files', args: { path: 'src' }, result: { ok: true, files: ['auth.js'] } }]]) {
+    const { workers, scheduler } = fixture(async options => { options.onCheckpoint([evidence('test/auth.test.js')]); options.onFinal('actual coverage evidence'); return { completed: true }; });
+    try {
+      const result = workers.assessDelegation({ rationale: '已讀取 src/auth.js，只有同一個條件式需要修改，所有工作都依賴這一項。' }, { request: complexRequest, records });
+      assert.equal(result.assessment.mode, 'delegated'); assert.equal(result.assessment.fallback, true);
+      assert.equal((await workers.collect()).ok, true);
+    } finally { await workers.close(); scheduler.close(); }
+  }
+});

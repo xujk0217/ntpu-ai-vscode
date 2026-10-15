@@ -24,6 +24,7 @@ const { SandboxExecutor } = require('./security/sandbox');
 const { ChangeReview } = require('./change-review');
 const { AgentWorkers } = require('./agent-workers');
 const { RequestScheduler, ModelBudget } = require('./parallel');
+const { taskStepLimit } = require('./task-budget');
 const { RequestRateGate } = require('./request-rate');
 const { AdaptiveConcurrency } = require('./adaptive-concurrency');
 const { isServiceLimit } = require('./parallel-policy');
@@ -40,14 +41,14 @@ class AgentApp {
     this.store = new SessionStore(context.workspaceState.get('ntpuAI.sessions.v2', []));
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
     this.session = this.store.get(context.workspaceState.get('ntpuAI.activeSession')) || this.store.sessions[0] || this.store.create(workspace);
-    this.queue = []; this.contextFiles = []; this.attachment = null; this.policies = new Map();
+    this.queue = []; this.queuePaused = false; this.contextFiles = []; this.attachment = null; this.policies = new Map();
     this.approvalPreferences = new ApprovalPreferences(context.globalState, mode => {
       for (const session of this.store.loaded?.values() || []) session.options.permission = mode;
       this.session.options.permission = mode;
       this.policies.clear(); this.state();
     });
     this.connection = { ready: false, message: '尚未連線' }; this.progress = '就緒'; this.model = '';
-    this.budget = { used: 0, total: 48000 }; this.streamId = null;
+    this.budget = { used: 0, total: vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) }; this.streamId = null;
     this.gate = new ApprovalGate(approval => {
       this.post({ kind: 'approval', approval });
       this.state();
@@ -94,6 +95,7 @@ class AgentApp {
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
     const metadata = this.store.sessions.find(item => item.id === id) || this.store.sessions.find(item => item.workspace === workspace && !item.archived);
     this.session = metadata ? await this.store.openSession(metadata.id) : this.store.create(workspace);
+    this.restoreQueue();
     this.contextManager = new ContextManager(); this.memoryActions = new MemoryActions(this, vscode);
     await this.save();
     if (!this.store.errors.length) await this.context.workspaceState.update('ntpuAI.sessions.v2', undefined);
@@ -139,7 +141,9 @@ class AgentApp {
       model: this.model, options: this.session.options, agentSettingsBusy: !!this.agentSettingsBusy, submitMode: config.get('chat.submitMode', 'enter'), submitModifier: process.platform === 'darwin' ? '⌘' : 'Ctrl', workspace: this.workspace()?.name || '未開啟專案',
       budget: this.budget, persistenceError: this.persistenceError, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
       attachment: this.attachment ? { name: this.attachment.name, mimeType: this.attachment.mimeType, preview: this.attachment.preview } : null,
-      queue: this.queue.map(item => ({ id: item.id, request: item.request })), sessionId: this.session.id, sessionTitle: this.session.title });
+      queuePaused: !!this.queuePaused, queueResumeAvailable: !!this.queue.length && !this.busy(),
+      queue: this.queue.map(item => ({ id: item.id, messageId: item.messageId, request: item.request, steeringPending: !!item.steeringPending,
+        canSteer: this.canSteer(item), steeringReason: this.steeringReason(item) })), sessionId: this.session.id, sessionTitle: this.session.title });
   }
   render() {
     for (const message of this.session.messages) if (message.thumbnailData) message.imageUri = message.thumbnailData;
@@ -164,6 +168,9 @@ class AgentApp {
     this.saveTimer.unref();
   }
   async save() {
+    this.session.queue = this.queue.map(item => ({ id: item.id, request: item.request, includeEditor: item.includeEditor, sessionId: item.sessionId,
+      createdAt: item.createdAt, messageId: item.messageId, files: item.files || [], steeringPending: !!item.steeringPending, targetTaskId: item.targetTaskId,
+      attachmentName: item.attachment?.name || item.attachmentName, attachmentUnavailable: !!(item.attachment || item.attachmentUnavailable) }));
     await this.store.save(this.session);
     await this.context.workspaceState.update('ntpuAI.activeSession', this.session.id);
   }
@@ -315,7 +322,7 @@ class AgentApp {
     try { return await this.concurrencyOperation; }
     finally {
       this.concurrencyOperation = null; this.diagnosticController = null; this.progress = '就緒'; this.state(); this.capabilities();
-      if (this.queue.length && !this.busy()) void this.run(this.queue.shift());
+      if (this.queue.length && !this.busy() && !this.queuePaused) void this.runQueued();
     }
   }
   capabilities() {
@@ -347,14 +354,16 @@ class AgentApp {
       case 'ask': if (typeof message.text === 'string') await this.ask(message.text, message.includeEditor !== false); break;
       case 'stop': this.stop(); break;
       case 'cancelWorker': if (this.workers && typeof message.id === 'string') await this.workers.execute('cancel_task', { id: message.id }); break;
-      case 'cancelQueue': { const task = this.session.tasks?.find(item => item.id === message.id); if (task) { task.status = 'stopped'; task.result = '已取消佇列'; task.endedAt = Date.now(); } const queued = this.queue.find(item => item.id === message.id); if (queued) this.patch(queued.messageId, { queued: false, canceled: true }); this.queue = this.queue.filter(item => item.id !== message.id); this.state(); break; }
+      case 'steerQueue': await this.steerQueue(message.id); break;
+      case 'runQueue': if (this.adaptive.blocked) throw new Error('服務限制尚未恢復，請先在工具設定手動恢復發送。'); this.queuePaused = false; await this.runQueued(); break;
+      case 'cancelQueue': await this.cancelQueued(message.id); break;
       case 'new': await this.newSession(); break;
       case 'dismissWarning': {
         const warning = this.session.messages.find(item => item.id === message.id && item.role === 'error');
         if (warning && !warning.dismissed) { this.patch(warning.id, { dismissed: true }); clearTimeout(this.saveTimer); await this.save(); }
         break;
       }
-      case 'switch': if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
+      case 'switch': if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.restoreQueue(); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'rename': await this.memoryActions.handle({ kind: 'renameSession', id: this.session.id }); break;
       case 'option': await this.setOption(message.key, message.value); break;
       case 'openAgentSettings': await this.agentSettings.openProject(); break;
@@ -416,7 +425,7 @@ class AgentApp {
       if (this.busy() || this.gate.pending || this.agentSettingsBusy || this.changeReview.applying || this.memoryActions.managingSessions) return;
       const next = empty || this.store.create(workspace);
       if (next.id !== this.session.id) {
-        this.session = next; this.contextFiles = []; this.attachment = null; this.streamId = null;
+        this.session = next; this.restoreQueue(); this.contextFiles = []; this.attachment = null; this.streamId = null;
         await this.refreshSkills();
       }
       await this.save(); this.render();
@@ -463,7 +472,7 @@ class AgentApp {
     const chosen = await vscode.window.showQuickPick(folders.map(folder => ({ label: folder.name, folder })), { title: '工作階段的專案' });
     if (chosen && chosen.folder.uri.toString() !== this.session.workspace) await this.newSession(chosen.folder.uri.toString());
   }
-  async editorContext(root, includeEditor, files = this.contextFiles) {
+  async editorContext(root, includeEditor, files = this.contextFiles, { strict = false } = {}) {
     const pieces = [];
     const editor = vscode.window.activeTextEditor;
     if (includeEditor && editor?.document.uri.scheme === 'file') {
@@ -474,7 +483,7 @@ class AgentApp {
         const selected = !editor.selection.isEmpty;
         pieces.push(`File ${relative}${selected ? ` (selected lines ${editor.selection.start.line + 1}–${editor.selection.end.line + 1})` : ''}:\n` +
           (selected ? editor.document.getText(editor.selection) : editor.document.getText()).slice(0, 9000));
-      } catch {}
+      } catch (error) { if (strict) throw error; }
     }
     for (const file of files.slice(0, 3)) {
       const absolute = await safePath(root.uri.fsPath, file.relative);
@@ -500,8 +509,9 @@ class AgentApp {
     const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name } : null });
     item.messageId = user.id;
     if (this.session.tasks.length === 1 && this.session.titleSource !== 'manual') { item.nameSession = true; this.session.title = shortTitle(request); }
-    if (this.busy()) { this.queue.push(item); this.state(); return; }
-    await this.run(item);
+    if (this.busy() || this.queue.length || this.queueTransactions?.size) { this.queue.push(item); this.patch(item.messageId, { queued: true }); await this.save(); this.state();
+      if (!this.busy() && !this.queuePaused) await this.runQueued(); return; }
+    this.queuePaused = false; await this.run(item);
   }
 
   async run(item) {
@@ -515,6 +525,7 @@ class AgentApp {
     if (root.uri.scheme !== 'file') throw new Error('目前 Extension Host 只能操作本機 file 工作區；遠端資料夾可離線瀏覽歷史，但不會用本機路徑執行遠端任務。');
     this.controller = new AbortController(); const signal = this.controller.signal;
     const task = this.session.tasks.find(task => task.id === item.id);
+    this.activeTask = task; this.activeItem = item;
     task.startedAt = Date.now(); task.status = 'running'; task.agent = this.session.options.agent;
     this.patch(item.messageId, { queued: false }); this.state();
     let workers, scheduler, naming;
@@ -530,7 +541,7 @@ class AgentApp {
       const workspaceContext = await this.editorContext(root, item.includeEditor, item.files);
       const project = vscode.workspace.getConfiguration('ntpuAI').get('memory.enableProject', true) ? await this.store.project(this.session.workspace) : null;
       const context = this.contextManager.compose({ request: item.request, session: this.session, project,
-        tasks: this.store.projectTasks(this.session.workspace).filter(task => task.id !== item.id), workspaceContext, budget: Math.min(18000, Math.floor(vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) * 0.3)) }).text;
+        tasks: this.store.projectTasks(this.session.workspace).filter(task => task.id !== item.id), workspaceContext, budget: Math.floor(vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) * 0.5) });
       let policy = this.policies.get(this.session.id);
       if (!policy || policy.mode !== this.session.options.permission || policy.agent !== this.session.options.agent) {
         policy = new PermissionPolicy({ mode: this.session.options.permission, agent: this.session.options.agent }); this.policies.set(this.session.id, policy);
@@ -547,7 +558,7 @@ class AgentApp {
           this.notice(redact(error.message), 'error'); this.stop();
         }
       }, { adaptive: this.adaptive, onState: () => this.state(), rateGate: this.requestRate, onWait: milliseconds => { this.progress = `等待本機請求節奏（約 ${Math.ceil(milliseconds / 1000)} 秒）`; this.state(); } });
-      const modelBudget = new ModelBudget(Math.min(config.get('maxSteps', 50), { quick: 12, standard: 50, deep: 100 }[this.session.options.depth] || 50));
+      const modelBudget = new ModelBudget(taskStepLimit(config.get('maxSteps', 100), this.session.options.depth));
       const baseTools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); this.capabilities(); },
         (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox,
           selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, servers: this.servers, builtins: BUILTINS,
@@ -561,7 +572,7 @@ class AgentApp {
             this.capabilities();
           },
           onCatalogChange: () => this.capabilities(),
-          bridge: scheduler.bridge(bridge), parallel: this.parallelState().enabled,
+          bridge: scheduler.bridge(bridge), parallel: this.parallelState().enabled, history: () => this.session.messages.filter(message => !message.queued && !message.steeringPending),
           reviewPaths: config.get('privacy.reviewPaths', []),
           onPlan: steps => { this.session.plan = steps; this.post({ kind: 'plan', steps }); this.persist(); },
           onSkill: name => { if (!this.session.options.skills.includes(name)) this.post({ kind: 'skillLoaded', name }); },
@@ -589,11 +600,14 @@ class AgentApp {
       const initialRecords = resume ? sanitize(this.session.checkpoint.records).map(record => ({ ...record, historical: true })) : [];
       task.outputParts = initialRecords.filter(record => record.type === 'output_part' && !record.partial);
       if (resume) initialRecords.push({ type: 'resume_validation', instruction: 'Checkpoint evidence is historical. Re-read affected files and verify workspace state before editing or claiming completed verification. File snapshots have been reset.' });
+      const priorSteering = new Set(initialRecords.filter(record => record.type === 'user_steering').map(record => record.id));
+      const currentRequest = records => taskRequest + records.filter(record => record.type === 'user_steering' && !priorSteering.has(record.id))
+        .map(record => '\n\nUSER STEERING (authoritative, later guidance refines this task):\n' + record.request).join('');
       task.taskRequest = taskRequest; task.records = initialRecords;
       this.session.checkpoint = { taskId: task.id, request: taskRequest, records: initialRecords };
       await this.save();
       this.toolsSinceBrief = 0;
-      this.add('commentary', resume ? '我會接續原任務，先確認目前檔案與先前結果，再完成剩餘工作。' :
+      this.add('commentary', item.fromQueue ? '開始下一則排隊留言：' + item.request.slice(0, 160) : resume ? '我會接續原任務，先確認目前檔案與先前結果，再完成剩餘工作。' :
         this.session.options.agent === 'build' ? '我會先查看專案脈絡，再完成實作並確認執行結果。' : '我會先查看相關證據，再整理這次需求的結果。');
       if (item.nameSession) {
         const namingId = randomUUID(); this.namingActive = true;
@@ -604,6 +618,7 @@ class AgentApp {
       }
       let answer = '';
       const result = await runAgent({ bridge: scheduler.bridge(bridge), tools, modelBudget, request: taskRequest, initialRecords, context, workspace: root.name, signal,
+        getSteering: () => this.pendingSteering(task, root), onSteeringCommitted: ids => this.commitSteering(ids, task),
         attachment: item.attachment, profile: this.session.options, maxSteps: modelBudget.limit,
         budget: config.get('contextCharacters', 64000), timeoutMs: config.get('responseTimeoutSeconds', 240) * 1000,
         onActivity: text => { this.progress = text; this.state(); this.capabilities(); }, onBudget: budget => { this.budget = budget; this.state(); },
@@ -633,10 +648,10 @@ class AgentApp {
           if (this.streamId) { this.patch(this.streamId, { role: 'assistant', text, incomplete }); this.streamId = null; } else this.add('assistant', text, { incomplete });
         },
         onCheckpoint: async records => {
-          task.records = sanitize(records);
+          task.records = sanitize(records); task.taskRequest = currentRequest(records);
           task.files = [...new Set(records.filter(record => !record.historical && record.result?.ok && (record.result?.saved || record.name === 'create_visual')).map(record => record.result.path).filter(Boolean))];
           task.pending = (this.session.plan || []).filter(step => step.status !== 'completed');
-          this.session.checkpoint = sanitize({ taskId: task.id, request: taskRequest, records });
+          this.session.checkpoint = sanitize({ taskId: task.id, request: task.taskRequest, records });
           const savedParts = records.filter(record => record.type === 'output_part' && !record.partial);
           const latest = records.at(-1);
           const draft = !latest?.provisional && ['output_draft', 'response_draft'].includes(latest?.type) ? latest : null;
@@ -648,7 +663,7 @@ class AgentApp {
           await this.save();
         }, onTool: event => this.toolEvent(event) });
       if (result.completed) this.session.checkpoint = null;
-      this.session.turns = [...(this.session.turns || []), { request: item.request, answer }];
+      this.session.turns = [...(this.session.turns || []), { request: task.taskRequest || item.request, answer }];
       task.status = result.completed ? 'completed' : 'blocked'; task.result = answer;
       if (result.completed && task.resumeOf) {
         const seen = new Set(); let previousId = task.resumeOf;
@@ -683,12 +698,17 @@ class AgentApp {
         if (cleanup?.deleted) this.add('tool', '', { name: 'cleanup_conversations', args: {}, status: 'done', result: JSON.stringify({ deleted: cleanup.deleted, message: '本機紀錄保留，校方任務對話已刪除。' }) });
         if (cleanup?.failed) this.notice('任務已存本機，但部分校方對話清理失敗，請到網站確認。');
       } catch (error) { this.persistenceError = redact(error.message); }
-      this.controller = null; this.activePolicy = null;
+      if (signal.aborted || this.adaptive.blocked) this.queuePaused = true;
+      for (const queued of this.queue) if (queued.steeringPending && queued.targetTaskId === task.id) {
+        queued.steeringPending = false; delete queued.targetTaskId; delete queued.steeringCommitting;
+        this.patch(queued.messageId, { queued: true, steeringPending: false });
+      }
+      this.controller = null; this.activePolicy = null; this.activeTask = null; this.activeItem = null;
       if (this.browserConfigurationChanged) { this.browserConfigurationChanged = false; await this.reconnectBrowser(false); }
       this.state(); this.persist();
       this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed' && !task.resolvedBy).length })) });
     }
-    const next = this.queue.shift(); if (next) await this.run(next);
+    if (!this.queuePaused) await this.runQueued();
   }
   toolEvent(event) {
     if (event.status === 'running') {
@@ -714,7 +734,119 @@ class AgentApp {
     this.patch(this.streamId, message?.text ? { role: 'assistant', incomplete: true } : { role: 'notice', text: '回覆未完成，正在接續任務。' });
     this.streamId = null;
   }
-  stop() { this.agentSettings.cancel(); for (const item of this.queue) { this.patch(item.messageId, { queued: false, canceled: true }); const task = this.session.tasks?.find(task => task.id === item.id); if (task) { task.status = 'stopped'; task.result = '已取消佇列'; task.endedAt = Date.now(); } } this.queue = []; this.controller?.abort(); this.diagnosticController?.abort(); this.state(); }
+  restoreQueue() {
+    const committed = new Map((this.session.tasks || []).flatMap(task => (task.records || []).filter(record => record.type === 'user_steering').map(record => [record.id, task.id])));
+    this.queue = [];
+    for (const saved of this.session.queue || []) {
+      if (!saved || typeof saved.id !== 'string' || typeof saved.request !== 'string') continue;
+      const message = this.session.messages.find(message => message.id === saved.messageId);
+      const ownedTask = this.session.tasks?.find(task => task.id === saved.id);
+      if (saved.sessionId !== this.session.id && !(message?.role === 'user' && message.text === saved.request && ownedTask?.request === saved.request)) continue;
+      if (committed.has(saved.id)) {
+        const owner = committed.get(saved.id), queuedTask = this.session.tasks?.find(task => task.id === saved.id);
+        if (message) Object.assign(message, { queued: false, steeringPending: false, steered: true, steeredInto: owner });
+        if (queuedTask) Object.assign(queuedTask, { status: 'steered', resolvedBy: owner, endedAt: Date.now(), result: '已保存並併入目前任務引導。' });
+        continue;
+      }
+      this.queue.push({ ...saved, sessionId: this.session.id, steeringPending: false, targetTaskId: undefined, attachment: null });
+      if (message) Object.assign(message, { queued: true, steeringPending: false, canceled: false });
+    }
+    this.queuePaused = this.queue.length > 0;
+  }
+  steeringReason(item) {
+    if (item.attachment || item.attachmentUnavailable) return '含附件的提問會保留佇列，等目前任務結束後執行；重新載入後請重新附加附件。';
+    if (!this.activeTask || this.activeTask.status !== 'running' || !this.controller || this.controller.signal.aborted || this.adaptive.blocked) return '目前沒有可引導的執行中任務。';
+    if (item.steeringPending) return '等待目前模型或工具結束後，在安全點接收引導。';
+    return '';
+  }
+  canSteer(item) { return item.sessionId === this.session.id && !this.steeringReason(item); }
+  async steerQueue(id) {
+    const item = this.queue.find(item => item.id === id);
+    if (!item) return;
+    if (item.steeringPending) return;
+    if (!this.canSteer(item)) throw new Error(this.steeringReason(item) || '此提問目前無法引導。');
+    item.steeringPending = true; item.targetTaskId = this.activeTask.id;
+    this.patch(item.messageId, { queued: true, steeringPending: true });
+    try { await this.save(); }
+    catch (error) { item.steeringPending = false; delete item.targetTaskId; this.patch(item.messageId, { steeringPending: false }); throw error; }
+    this.state();
+  }
+  async pendingSteering(task, root) {
+    const accepted = [];
+    for (const item of this.queue.filter(item => item.steeringPending && item.targetTaskId === task.id)) {
+      if (this.controller?.signal.aborted || this.adaptive.blocked) break;
+      try {
+        const context = await this.editorContext(root, item.includeEditor, item.files, { strict: true });
+        if (this.controller?.signal.aborted) break;
+        if (!this.queue.includes(item) || !item.steeringPending || item.targetTaskId !== task.id) continue;
+        const maximum = Math.max(4000, vscode.workspace.getConfiguration('ntpuAI').get('contextCharacters', 64000) - 20000);
+        if ((task.taskRequest || task.request).length + accepted.reduce((size, entry) => size + entry.request.length, 0) + item.request.length > maximum) {
+          item.steeringPending = false; delete item.targetTaskId; this.patch(item.messageId, { steeringPending: false, queued: true });
+          this.notice('引導內容會超過目前任務的脈絡預算，已保留為下一個佇列任務。'); await this.save(); continue;
+        }
+        item.steeringCommitting = true;
+        accepted.push({ id: item.id, request: item.request, context });
+      } catch (error) {
+        item.steeringPending = false; delete item.targetTaskId;
+        this.patch(item.messageId, { queued: true, steeringPending: false });
+        this.notice('引導的檔案脈絡未獲確認，已保留佇列：' + redact(error.message));
+        await this.save();
+      }
+    }
+    return accepted;
+  }
+  async commitSteering(ids, task) {
+    const selected = this.queue.filter(item => ids.includes(item.id));
+    for (const item of selected) {
+      this.patch(item.messageId, { queued: false, steeringPending: false, steered: true, steeredInto: task.id });
+      const queuedTask = this.session.tasks.find(queued => queued.id === item.id);
+      if (queuedTask) Object.assign(queuedTask, { status: 'steered', resolvedBy: task.id, endedAt: Date.now(), result: '已保存並併入目前任務引導。' });
+    }
+    this.queue = this.queue.filter(item => !ids.includes(item.id));
+    await this.save(); this.state();
+  }
+  async cancelQueued(id) {
+    const index = this.queue.findIndex(item => item.id === id), item = this.queue[index]; if (!item) return;
+    if (item.steeringCommitting) throw new Error('引導正在保存至目前任務，請等待安全點完成。');
+    let release;
+    const transaction = new Promise(resolve => { release = resolve; });
+    (this.queueTransactions ||= new Set()).add(transaction);
+    try {
+      const task = this.session.tasks?.find(task => task.id === id);
+      const previousTask = task && { status: task.status, result: task.result, endedAt: task.endedAt };
+      const message = this.session.messages.find(message => message.id === item.messageId);
+      const previousMessage = message && { queued: message.queued, steeringPending: message.steeringPending, canceled: message.canceled };
+      if (task) Object.assign(task, { status: 'stopped', result: '已取消佇列', endedAt: Date.now() });
+      if (message) Object.assign(message, { queued: false, steeringPending: false, canceled: true });
+      this.queue.splice(index, 1);
+      try { await this.save(); }
+      catch (error) {
+        if (task) Object.assign(task, previousTask);
+        if (message) Object.assign(message, previousMessage);
+        if (!this.queue.some(queued => queued.id === id)) this.queue.splice(Math.min(index, this.queue.length), 0, item);
+        this.persist(); this.state();
+        throw new Error('取消佇列未能保存，原留言仍保留：' + redact(error.message));
+      }
+      if (message) this.post({ kind: 'patch', message });
+      this.state();
+    } finally { this.queueTransactions.delete(transaction); release(); }
+  }
+  async runQueued() {
+    if (this.busy() || this.queuePaused || this.adaptive.blocked) return;
+    if (this.queueTransactions?.size) { await Promise.all([...this.queueTransactions]); return this.runQueued(); }
+    if (!this.queue.length) return;
+    const root = this.workspace();
+    if (!root || !vscode.workspace.isTrusted || root.uri.scheme !== 'file') {
+      this.queuePaused = true; this.notice('佇列已保留。請開啟並信任這個聊天的本機工作區，再繼續佇列。'); this.state(); return;
+    }
+    const next = this.queue[0];
+    if (next.attachmentUnavailable) {
+      this.queuePaused = true; this.notice('已保存的佇列含有未保存的附件。請取消該項後重新附加並送出，其他提問仍保留。'); this.state(); return;
+    }
+    this.queue.shift(); next.fromQueue = true; await this.run(next);
+  }
+  stop() { this.agentSettings.cancel(); this.queuePaused = true; this.controller?.abort(); this.diagnosticController?.abort(); this.state(); }
+
 
   async addContext() {
     const root = this.workspace(); if (!root) throw new Error('請先開啟專案。');

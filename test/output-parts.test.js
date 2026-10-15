@@ -198,7 +198,8 @@ test('truncated final JSON is saved as a draft and does not masquerade as comple
   const f = fixture([raw, part(1, '重新產生完整內容。', true, { id: 'response', completed: true })]);
   const result = await f.run();
   assert.equal(result.completed, true);
-  assert.ok(f.saved.some(value => value.partial === true && value.message.includes('尚未寫完')));
+  assert.ok(f.checkpoints.some(records => records.some(value => value.type === 'response_draft' && value.internal && value.message.includes('尚未寫完'))));
+  assert.equal(f.saved.some(value => value.message.includes('尚未寫完')), false, 'unaccepted final drafts are retained internally, not published as document parts');
   assert.deepEqual(f.finals, ['重新產生完整內容。']);
   assert.equal(f.executed.length, 0);
 });

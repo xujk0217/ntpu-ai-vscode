@@ -14,6 +14,7 @@ const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedL
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
 const { scanner } = require('./security/attachments');
 const { SandboxExecutor } = require('./security/sandbox');
+const { searchHistory, readHistory } = require('./memory/history');
 
 class PreviewProvider {
   constructor() { this.documents = new Map(); }
@@ -45,7 +46,8 @@ class WorkspaceTools {
   }
 
   catalog() {
-    return DEFINITIONS.filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file'].includes(tool.name))
+    return DEFINITIONS.filter(tool => typeof this.options.history === 'function' || !['search_history', 'read_history'].includes(tool.name))
+      .filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file'].includes(tool.name))
       .concat((this.options.mcp?.catalog() || []).filter(tool => this.options.web !== false || tool.server !== 'exa')).slice(0, 40);
   }
 
@@ -86,6 +88,7 @@ class WorkspaceTools {
     if (!vscode.workspace.isTrusted) throw new Error('請先信任目前的 VS Code 工作區。');
     const methods = {
       list_files: () => this.list(args), read_file: () => this.read(args), search_text: () => this.search(args),
+      search_history: () => this.history('search', args), read_history: () => this.history('read', args),
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
       open_browser: () => this.openBrowser(args),
       update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
@@ -103,6 +106,13 @@ class WorkspaceTools {
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
     catch (error) { if (this.signal.aborted) throw error; return sanitize({ ok: false, error: error.message }); }
+  }
+
+  history(operation, args) {
+    if (typeof this.options.history !== 'function') throw new Error('目前工具沒有可讀取的聊天歷史。');
+    this.onActivity(operation === 'search' ? '搜尋目前聊天的完整本機歷史' : '分段讀取目前聊天的本機訊息');
+    const messages = this.options.history();
+    return operation === 'search' ? searchHistory(messages, args) : readHistory(messages, args);
   }
 
   async files(glob = '**/*', limit = 250) {

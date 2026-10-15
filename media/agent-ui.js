@@ -2,6 +2,7 @@
 'use strict';
 const { loginPresentation } = require('./login-state');
 const { shouldSubmitEnter } = require('./composer-keys');
+const { contextBudgetPresentation } = require('./context-budget');
 const MarkdownIt = require('markdown-it');
 const highlight = require('highlight.js/lib/core');
 const languages = { javascript: require('highlight.js/lib/languages/javascript'), typescript: require('highlight.js/lib/languages/typescript'),
@@ -15,8 +16,10 @@ const send = (kind, extra = {}) => vscode.postMessage({ kind, ...extra });
 let state = { busy: false, submitMode: 'enter', submitModifier: '⌘', options: { agent: 'build', depth: 'standard', permission: 'ask', web: true, skills: [] } };
 let session = { messages: [], changes: [] }, sessions = [], capabilities = { skills: [], servers: [], tools: [] }, approval = null, tab = 'sessions';
 let includeEditor = true;
+let queuePresentation = '';
 let memory = { project: { entries: [] }, tasks: [] }, sessionQuery = '', includeArchived = false, historyEditing = false;
 const selectedSessions = new Set();
+const steeringRequests = new Set();
 const nodes = new Map();
 let modelActivity;
 const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', open_browser: '開啟網頁', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
@@ -33,6 +36,44 @@ function element(tag, className, text) { const item = document.createElement(tag
 function icon(name) { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', '#i-' + name); svg.append(use); svg.setAttribute('aria-hidden', 'true'); return svg; }
 function button(text, className, handler, iconName) { const item = element('button', className); item.type = 'button'; if (text) item.title = text; if (iconName) item.append(icon(iconName)); if (text) item.append(element('span', '', text)); item.addEventListener('click', handler); return item; }
 function iconButton(name, title, handler) { const item = button('', 'icon-button', handler, name); item.title = title; item.setAttribute('aria-label', title); return item; }
+function queuedForMessage(message) { return (state.queue || []).find(item => item.messageId === message.id); }
+function steeringPending(item) { return !!item?.steeringPending || steeringRequests.has(item?.id); }
+function queuedMessagePresentation(message) {
+  const queued = queuedForMessage(message);
+  return JSON.stringify([message.queued, message.steeringPending, message.steered, message.canceled,
+    queued?.id, queued?.canSteer, queued?.steeringReason, steeringPending(queued)]);
+}
+function steeringButton(item) {
+  const control = button(steeringPending(item) ? '等待引導' : '引導', 'text-button queue-steer', () => {
+    if (!item.canSteer || steeringPending(item)) return;
+    steeringRequests.add(item.id); renderQueuedItems();
+    const message = session.messages.find(message => message.id === item.messageId);
+    if (message && nodes.has(message.id)) addMessage(message, true);
+    send('steerQueue', { id: item.id });
+  });
+  control.dataset.queueId = item.id;
+  control.disabled = !item.canSteer || steeringPending(item);
+  control.title = steeringPending(item) ? '等待目前模型與工具完成後，在安全邊界帶入目前任務。' : item.canSteer ?
+    '將這則排隊留言帶入目前任務；不會中斷正在執行的模型或工具。' : item.steeringReason || '目前無法引導；此留言仍會於目前任務結束後依序執行。';
+  return control;
+}
+function renderQueuedItems() {
+  const presentation = JSON.stringify([state.queue, state.queuePaused, state.queueResumeAvailable, [...steeringRequests]]);
+  if (presentation === queuePresentation) return;
+  queuePresentation = presentation;
+  $('queue').hidden = !state.queue?.length; $('queue').replaceChildren();
+  if (state.queuePaused && state.queueResumeAvailable) {
+    const resume = button('繼續佇列', 'text-button queue-resume', () => send('runQueue'));
+    resume.title = '依原順序繼續尚未執行的排隊留言。'; $('queue').append(resume);
+  }
+  for (const queued of state.queue || []) {
+    const row = element('div', 'queue-row'); row.dataset.queueId = queued.id;
+    const label = element('span', '', (steeringPending(queued) ? '等待引導 · ' : state.queuePaused ? '已暫停 · ' : '排隊 · ') + queued.request.slice(0, 55)); label.title = queued.request;
+    const remove = iconButton('close', '移除佇列提問', () => send('cancelQueue', { id: queued.id }));
+    remove.disabled = steeringPending(queued);
+    row.append(icon('clock'), label, steeringButton(queued), remove); $('queue').append(row);
+  }
+}
 function markdown(text) {
   const body = element('div', 'markdown'); body.innerHTML = md.render(String(text || ''));
   for (const pre of body.querySelectorAll('pre')) {
@@ -104,6 +145,7 @@ function executionGroup() {
 
 function renderMessage(message) {
   const wrapper = element('article', 'message ' + message.role); wrapper.dataset.id = message.id; wrapper.dataset.status = message.status || '';
+  if (message.role === 'user') wrapper.dataset.queuePresentation = queuedMessagePresentation(message);
   wrapper.setAttribute('aria-label', message.role === 'user' ? '你的提問' : message.role === 'tool' ? '工具執行' : 'Agent 訊息');
   if (message.role === 'tool') {
     const details = element('details', 'tool-card ' + message.status);
@@ -155,7 +197,12 @@ function renderMessage(message) {
     wrapper.append(element('div', 'notice-text', message.text)); return wrapper;
   }
   const top = element('div', 'message-heading');
-  if (message.role === 'user') top.append(element('span', '', message.canceled ? '你 · 已取消' : message.queued ? '你 · 已排入佇列' : '你'));
+  if (message.role === 'user') {
+    const queued = queuedForMessage(message);
+    top.append(element('span', '', message.canceled ? '你 · 已取消' : message.steered ? '你 · 已引導目前任務' :
+      message.steeringPending || steeringPending(queued) ? '你 · 等待引導' : message.queued ? '你 · 已排入佇列' : '你'));
+    if (message.queued && queued) top.append(steeringButton(queued));
+  }
   else { const mark = element('span', 'assistant-mark', 'N'); top.append(mark, element('span', '', 'NTPU AI')); }
   if (message.incomplete) top.append(element('span', 'elapsed', '未完成原文 · 可接續'));
   if (message.savedParts) top.append(element('span', 'elapsed', `已保存 ${message.savedParts} 段`));
@@ -303,7 +350,9 @@ function updateComposer() {
 
 function renderState(value) {
   const busyChanged = !!state.busy !== !!value.busy;
+  const queuedMessages = new Set([...(state.queue || []), ...(value.queue || [])].map(item => item.messageId));
   state = value;
+  steeringRequests.clear();
   if (state.sessionTitle) $('rename').textContent = state.sessionTitle;
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
   if ($('submitMode')) { $('submitMode').value = state.submitMode || 'enter'; $('submitMode').title = $('submitMode').selectedOptions[0]?.textContent || '送出快捷鍵'; }
@@ -327,7 +376,10 @@ function renderState(value) {
   $('parallelStatus').title = 'Agent 包含主 Agent 和運作中的唯讀子任務；模型請求排隊共用動態名額與每分鐘節奏。';
   $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
   renderModelActivity();
-  $('budgetLabel').textContent = state.budget?.total ? `脈絡 ${Math.min(100, Math.round(state.budget.used / state.budget.total * 100))}%` : '';
+  const budget = contextBudgetPresentation(state.budget), budgetLabel = $('budgetLabel');
+  budgetLabel.textContent = budget.text; budgetLabel.title = budget.title;
+  budgetLabel.setAttribute('aria-label', budget.title); budgetLabel.setAttribute('role', 'status');
+  budgetLabel.setAttribute('aria-live', 'polite');
   $('stop').hidden = !state.busy; updateComposer();
   if (busyChanged && state.busy) resetHistoryEditing();
   if (busyChanged) renderChanges(session.changes || []);
@@ -349,8 +401,9 @@ function renderState(value) {
     if (state.attachment.preview) { const image = element('img'); image.src = state.attachment.preview; image.alt = state.attachment.name; $('attachment').append(image); }
     $('attachment').append(element('span', '', state.attachment.name), iconButton('close', '移除附件', () => send('removeAttachment')));
   }
-  $('queue').hidden = !state.queue?.length; $('queue').replaceChildren();
-  for (const queued of state.queue || []) { const row = element('div', 'queue-row'); row.append(icon('clock'), element('span', '', queued.request.slice(0, 55)), iconButton('close', '移除佇列提問', () => send('cancelQueue', { id: queued.id }))); $('queue').append(row); }
+  renderQueuedItems();
+  for (const message of session.messages) if (message.role === 'user' && nodes.has(message.id) && (message.queued || queuedMessages.has(message.id)) &&
+    nodes.get(message.id).dataset.queuePresentation !== queuedMessagePresentation(message)) addMessage(message, true);
 }
 
 function renderApproval(value) {

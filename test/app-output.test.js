@@ -180,6 +180,40 @@ test('real AgentApp durably stores, resumes and exports full segmented output wi
     } finally { WorkspaceTools.prototype.execute = execute; }
   });
 
+  await t.test('same-chat recall and exact history read survive restart and another real AgentApp task', async () => {
+    const f = await make('memory-continuity');
+    const full = '早期完整內容。'.repeat(800) + '\nquartz release directory = artifacts/quartz-final\n' + '後續內容。'.repeat(800);
+    const original = f.app.add('user', full);
+    for (let index = 0; index < 70; index++) f.app.add(index % 2 ? 'assistant' : 'user', `unrelated-topic-${index}`);
+    await f.app.save();
+    const memoryBefore = await f.app.store.project(f.app.session.workspace);
+    await f.app.dispose(); apps.delete(f.app);
+    const reopened = new AgentApp(f.context); apps.add(reopened); await reopened.ready;
+    reopened.session.options.agent = 'ask';
+    const offset = full.indexOf('quartz');
+    const { calls } = attach(reopened, [
+      async prompt => {
+        assert.match(prompt, /artifacts\/quartz-final/);
+        assert.match(prompt, /search_history:/);
+        assert.match(prompt, /read_history:/);
+        return { text: JSON.stringify({ kind: 'tool', name: 'read_history', args: { messageId: original.id, offset, limit: 100 } }) };
+      },
+      async prompt => {
+        assert.match(prompt, new RegExp(original.id));
+        assert.match(prompt, /artifacts\/quartz-final/);
+        assert.match(prompt, /"ok":true/);
+        return { text: JSON.stringify({ kind: 'final', message: '確認先前目錄為 artifacts/quartz-final。' }) };
+      },
+    ]);
+    await reopened.ask('剛才 quartz release directory 是哪一個？請查原文確認。', false);
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every(call => call.options.newConversation));
+    assert.equal(reopened.session.tasks.at(-1).status, 'completed');
+    assert.equal(reopened.session.messages.find(message => message.id === original.id).text, full);
+    assert.deepEqual(await reopened.store.project(reopened.session.workspace), memoryBefore);
+    assert.equal(reopened.budget.used, calls.at(-1).prompt.length);
+  });
+
   await t.test('message and session Markdown exports use full assistant and worker text beyond preview limits', async () => {
     const f = await make('exports');
     const full = '主 Agent 完整文件。\n'.repeat(2400), worker = '子 Agent 完整研究證據。\n'.repeat(2200);

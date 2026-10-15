@@ -4,7 +4,7 @@ const { performance } = require('node:perf_hooks');
 const { concurrencyLimit, isServiceLimit } = require('./parallel-policy');
 const { sanitize, redact } = require('./security/guard');
 
-const READ_BATCH_TOOLS = new Set(['list_files', 'read_file', 'search_text', 'web_search', 'web_fetch', 'ntpu_lookup']);
+const READ_BATCH_TOOLS = new Set(['list_files', 'read_file', 'search_text', 'search_history', 'read_history', 'web_search', 'web_fetch', 'ntpu_lookup']);
 function batchNames(catalog = []) { return new Set(catalog.filter(tool => READ_BATCH_TOOLS.has(tool.name) || tool.readOnly && ['exa', 'ntpu_ai4x'].includes(tool.server)).map(tool => tool.name)); }
 
 async function runReadBatch(calls, { tools, onTool, signal, message = '' }) {
@@ -97,7 +97,7 @@ class RequestScheduler {
 }
 
 class ModelBudget {
-  constructor(limit) { this.limit = Math.max(1, Math.min(100, Number(limit) || 1)); this.used = 0; }
+  constructor(limit) { this.limit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 1))); this.used = 0; }
   consume() { if (this.used >= this.limit) return null; return ++this.used; }
 }
 module.exports = { READ_BATCH_TOOLS, batchNames, runReadBatch, RequestScheduler, ModelBudget };

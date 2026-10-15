@@ -14,7 +14,7 @@ class SessionStore {
     for (const session of this.sessions) {
       session.options = { ...DEFAULT_OPTIONS, ...session.options, permission: 'ask' };
       session.messages = session.messages.map(item => item?.role === 'stream' ? { ...item, role: 'assistant', interrupted: true, incomplete: true } : item);
-      for (const message of session.messages) if (message.role === 'user' && message.queued) { message.queued = false; message.canceled = true; }
+      for (const message of session.messages) if (message.role === 'user' && message.steeringPending) message.steeringPending = false;
       for (const message of session.messages) if (message.role === 'tool' && ['running', 'approval'].includes(message.status)) {
         message.status = 'interrupted'; message.result = '擴充功能重新載入，操作已中斷。';
       }

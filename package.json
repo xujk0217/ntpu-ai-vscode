@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.13",
+  "version": "0.6.14",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -120,10 +120,10 @@
         },
         "ntpuAI.maxSteps": {
           "type": "integer",
-          "default": 50,
+          "default": 100,
           "minimum": 1,
-          "maximum": 100,
-          "description": "每次任務最多工具輪數，預設 50，上限 100；快速／標準／深入最多 12／50／100 輪。"
+          "maximum": 200,
+          "description": "主 Agent、子 Agent 與取名共用的模型請求輪數，預設 100，可設為 1–200；標準與深入模式均使用此設定，快速模式最多 12 輪。停止、登入失效及服務限制仍立即停止。"
         },
         "ntpuAI.responseTimeoutSeconds": {
           "type": "integer",

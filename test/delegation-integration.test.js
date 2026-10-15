@@ -58,20 +58,21 @@ test('complex request starts a real child, parent works independently, and final
     assert.equal(assigned.result.tasks.length, 1);
     const collected = last.find(record => record.type === 'coordination');
     assert.equal(collected.result.tasks[0].status, 'done'); assert.match(collected.result.tasks[0].result, /actual child evidence/);
-    assert.equal(env.savedParts.find(part => part.provisional).message, '暫定結論，等待整合子任務。');
+    assert.equal(env.savedParts.some(part => part.provisional), false, 'a candidate final awaiting child evidence must never become an assistant conclusion');
     assert(env.trace.indexOf('read:parent.js') < env.trace.indexOf('read:child.js'));
   } finally { finishChild.resolve(); await env.close(); }
 });
 
-test('invalid assessment envelopes and unknown formats also have a bounded single-agent fallback', async () => {
+test('invalid assessments fall back to one actual evidence worker without executing invalid tool proposals', async () => {
   for (const invalid of [{ kind: 'delegation', tasks: [{ title: 'invalid', role: 'build' }] }, { kind: 'unknown' }]) {
-    let step = 0;
+    let step = 0, childStep = 0;
     const env = environment({ parent: async () => reply(++step <= 2 ? invalid : { kind: 'final', message: '主 Agent 接手完成。' }),
-      child: async () => { throw new Error('unexpected child'); } });
+      child: async () => reply(++childStep === 1 ? { kind: 'tool', name: 'read_file', args: { path: 'child.js' } } : { kind: 'final', message: 'actual child evidence' }) });
     try {
-      assert.equal((await env.run()).completed, true); assert.equal(step, 3); assert.equal(env.channels(), 0);
+      assert.equal((await env.run()).completed, true); assert.equal(step, 4); assert.equal(env.channels(), 1);
       const fallback = env.snapshots.at(-1).find(record => record.type === 'delegation_assessment');
-      assert.equal(fallback.result.delegated, false); assert.match(fallback.result.rationale, /模型未回傳有效分工格式/);
+      assert.equal(fallback.result.assessment.fallback, true); assert.equal(fallback.result.tasks.length, 1);
+      assert.equal(env.events.at(-1).status, 'done'); assert.deepEqual(env.trace.filter(item => item.startsWith('read:')), ['read:child.js']);
     } finally { await env.close(); }
   }
 });
@@ -103,16 +104,16 @@ test('disabled delegation leaves normal parent tools and completion working for 
   finally { await env.close(); }
 });
 
-test('two unsupported ordinary replies produce an explicit single-agent fallback without running the blocked tools', async () => {
-  let step = 0;
+test('two unsupported ordinary replies start a bounded worker and never execute the blocked tools', async () => {
+  let step = 0, childStep = 0;
   const env = environment({ parent: async () => reply(++step <= 2 ? { kind: 'tool', name: 'read_file', args: { path: 'should-not-run.js' } } :
     step === 3 ? { kind: 'tool', name: 'read_file', args: { path: 'parent.js' } } : { kind: 'final', message: '主 Agent 已完成。' }),
-  child: async () => { throw new Error('unexpected child'); } });
+  child: async () => reply(++childStep === 1 ? { kind: 'tool', name: 'read_file', args: { path: 'child.js' } } : { kind: 'final', message: 'actual independent coverage' }) });
   try {
-    assert.equal((await env.run()).completed, true); assert.equal(step, 4); assert.equal(env.channels(), 0);
-    assert.deepEqual(env.trace, ['read:parent.js']);
+    assert.equal((await env.run()).completed, true); assert.equal(step, 5); assert.equal(env.channels(), 1);
+    assert.deepEqual(env.trace.filter(item => item.startsWith('read:')).sort(), ['read:child.js', 'read:parent.js']);
     const fallback = env.snapshots.at(-1).find(record => record.type === 'delegation_assessment');
-    assert.equal(fallback.result.delegated, false); assert.match(fallback.result.rationale, /模型未回傳有效分工格式/);
+    assert.equal(fallback.result.assessment.fallback, true); assert.equal(fallback.result.tasks.length, 1);
   } finally { await env.close(); }
 });
 
@@ -142,4 +143,51 @@ test('a child 429 blocks the shared queue rather than opening replacement child 
     assert.throws(() => env.workers.delegate({ tasks: [{ ...assessment.tasks[0], request: 'different independent work' }] }), /服務限制/);
     assert.equal(env.channels(), 1);
   } finally { await env.close(); }
+});
+
+test('generic no-worker rationale becomes a real independent child while the parent continues its own work', async () => {
+  let parentStep = 0, childStep = 0;
+  const env = environment({ parent: async prompt => {
+    if (++parentStep === 1) return reply({ kind: 'delegation', rationale: '這個任務使用單一 Agent 比較有效率，全部工作由我自行處理會比較方便。' });
+    if (parentStep === 2) return reply({ kind: 'tool', name: 'read_file', args: { path: 'parent.js' } });
+    if (parentStep === 3) return reply({ kind: 'final', message: '等待整合真實證據。' });
+    assert.match(prompt, /actual child findings/); assert.match(prompt, /fixture evidence parent.js/);
+    return reply({ kind: 'final', message: '已整合獨立測試證據。' });
+  }, child: async () => reply(++childStep === 1 ? { kind: 'tool', name: 'read_file', args: { path: 'child.js' } } : { kind: 'final', message: 'actual child findings' }) });
+  try {
+    assert.equal((await env.run()).completed, true); assert.equal(env.channels(), 1); assert.equal(env.closed(), 1);
+    assert.equal(env.events.at(-1).status, 'done'); assert.equal(env.modelBudget.used, 6);
+    assert(env.trace.includes('read:parent.js')); assert(env.trace.includes('read:child.js'));
+    assert.equal(env.snapshots.at(-1).find(record => record.type === 'delegation_assessment').result.assessment.fallback, true);
+  } finally { await env.close(); }
+});
+
+test('new successful exploration after evidence-backed single-agent scope triggers one useful reassessment', async () => {
+  let step = 0, childStep = 0;
+  const single = { kind: 'delegation', rationale: '已讀取 src/auth.js，只有同一個條件式需要調整，其餘驗證必須先依賴此修改完成。' };
+  const env = environment({ parent: async prompt => {
+    if (++step === 1) return reply(single);
+    if (step === 2) return reply({ kind: 'tool', name: 'read_file', args: { path: 'other-module.js' } });
+    if (step === 3) { assert.match(prompt, /探索發現新的獨立範圍/); return reply(assessment); }
+    return reply({ kind: 'final', message: '已整合新增範圍的真實證據。' });
+  }, child: async () => reply(++childStep === 1 ? { kind: 'tool', name: 'read_file', args: { path: 'child.js' } } : { kind: 'final', message: 'actual child findings' }) });
+  try {
+    const result = await env.run({ initialRecords: [{ type: 'tool', name: 'read_file', args: { path: 'src/auth.js' }, result: { ok: true, content: 'one condition' } }] });
+    assert.equal(result.completed, true); assert.equal(env.channels(), 1);
+    const assessments = env.snapshots.at(-1).filter(record => record.type === 'delegation_assessment');
+    assert.equal(assessments.length, 2); assert.equal(assessments[0].result.assessment.mode, 'single');
+    assert.equal(assessments[1].result.assessment.mode, 'delegated'); assert.equal(env.events.at(-1).status, 'done');
+  } finally { await env.close(); }
+});
+
+test('resuming a collected delegation checkpoint keeps actual prior evidence without automatically duplicating workers', async () => {
+  const records = [{ type: 'delegation_assessment', result: { assessment: { mode: 'delegated' }, tasks: [{ id: 'old-worker' }] } },
+    { type: 'coordination', name: 'get_task_results', result: { ok: true, tasks: [{ id: 'old-worker', status: 'done', result: 'previous actual independent evidence' }] } }];
+  const env = environment({ parent: async prompt => {
+    assert.doesNotMatch(prompt, /HOST DELEGATION ASSESSMENT REQUIRED/);
+    assert.match(prompt, /previous actual independent evidence/);
+    return reply({ kind: 'final', message: '根據已保存的真實子任務結果繼續完成。' });
+  }, child: async () => { throw new Error('must not duplicate prior worker'); } });
+  try { assert.equal((await env.run({ initialRecords: records })).completed, true); assert.equal(env.channels(), 0); assert.equal(env.prompts.length, 1); }
+  finally { await env.close(); }
 });

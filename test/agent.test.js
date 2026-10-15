@@ -28,7 +28,7 @@ test('agent sends actual denied results back and never invents completed edits',
   assert.deepEqual(finals, ['修改未被批准，沒有建立檔案。']);
 });
 
-test('agent reuses one NTPU conversation for all rounds of a VS Code task', async () => {
+test('agent starts bounded fresh NTPU conversations with explicit prior evidence each round', async () => {
   const conversations = [];
   const replies = [JSON.stringify({ kind: 'tool', name: 'read_file', args: { path: 'README.md' } }),
     JSON.stringify({ kind: 'final', message: '已檢查。' })];
@@ -36,7 +36,7 @@ test('agent reuses one NTPU conversation for all rounds of a VS Code task', asyn
     conversations.push(options.newConversation); return { text: replies.shift() };
   } }, tools: { execute: async () => ({ ok: true, content: 'test' }) }, request: '檢查 README',
   signal: new AbortController().signal });
-  assert.deepEqual(conversations, [true, false]);
+  assert.deepEqual(conversations, [true, true]);
 });
 
 test('unstructured prose never executes tools and canceled requests never start a model call', async () => {
@@ -113,7 +113,7 @@ test('transport failures requeue with shared budget and retain failure evidence 
   const scheduler = new RequestScheduler(1), budget = new ModelBudget(6); let calls = 0; const prompts = [], conversations = [], events = [];
   const result = await runAgent({ request: '檢查', tools: {}, profile: { agent: 'ask' }, signal: new AbortController().signal, modelBudget: budget, maxSteps: 6,
     bridge: scheduler.bridge({ chat: async (prompt, options) => { calls++; prompts.push(prompt); conversations.push(options.newConversation); if (calls < 3) throw new Error('等待回答逾時'); return { text: '{"kind":"final","message":"已完成"}' }; } }), onActivity: text => events.push(text) });
-  assert.equal(result.completed, true); assert.equal(budget.used, 3); assert.equal(scheduler.requests, 3); assert.deepEqual(conversations, [true, false, false]);
+  assert.equal(result.completed, true); assert.equal(budget.used, 3); assert.equal(scheduler.requests, 3); assert.deepEqual(conversations, [true, true, true]);
   assert.match(prompts[2], /request_error/); assert.ok(events.some(text => text.includes('共用佇列'))); scheduler.close();
 });
 test('three consecutive transport failures stop as unavailable, service limits and cancellations never retry', async () => {
@@ -134,7 +134,7 @@ test('empty responses resume saved tool evidence through the shared queue withou
       return { text: '{"kind":"final","message":"完成"}' };
     } }) });
   assert.equal(result.completed, true); assert.equal(reads, 1); assert.equal(scheduler.requests, 3);
-  assert.equal(budget.used, 3); assert.deepEqual(fresh, [true, false, false]);
+  assert.equal(budget.used, 3); assert.deepEqual(fresh, [true, true, true]);
   assert.match(prompts[2], /verified source/); assert.match(prompts[2], /EMPTY_MODEL_RESPONSE/); assert.match(prompts[2], /smaller next step/);
   scheduler.close();
 });

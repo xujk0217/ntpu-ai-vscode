@@ -133,7 +133,8 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
   reopened.notice('Fixture service limit', 'error'); const blockedWarning = reopened.session.messages.at(-1);
   await reopened.handle({ kind: 'dismissWarning', id: blockedWarning.id });
   assert.equal(blockedWarning.dismissed, true); assert.equal(reopened.adaptive.blocked, true, 'dismiss does not resume blocked requests');
-  assert.equal(reopened.queue.length, 0); assert.equal(reopened.session.tasks.at(-1).status, 'stopped');
+  assert.equal(reopened.queue.length, 1); assert.equal(reopened.queuePaused, true);
+  assert.equal(reopened.session.tasks.at(-1).status, 'queued');
   assert.equal(reopened.session.tasks.at(-2).status, 'blocked'); assert.equal(reopened.session.checkpoint.records.filter(record => record.type === 'request_error').length, 3);
   await reopened.dispose();
 });

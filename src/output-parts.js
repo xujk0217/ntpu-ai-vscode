@@ -23,7 +23,7 @@ function partialOutput(text, { allowComplete = false } = {}) {
   if (!errors.length && !allowComplete) return null;
   const message = field('message');
   // Never preserve a dangling surrogate introduced by a cut Unicode escape.
-  return message ? { message: redact(message.replace(/[\uD800-\uDBFF]$/, '')), id: field('id'), index: field('index') } : null;
+  return message ? { kind: field('kind'), message: redact(message.replace(/[\uD800-\uDBFF]$/, '')), id: field('id'), index: field('index') } : null;
 }
 
 class OutputParts {
@@ -57,7 +57,7 @@ class OutputParts {
   }
   preserveDraft(text) {
     const partial = partialOutput(text, { allowComplete: true });
-    if (!partial?.message || this.done) return null;
+    if (!partial?.message || partial.kind !== 'output' || this.done) return null;
     const id = this.parts[0]?.id || this.draft?.id || (typeof partial.id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(partial.id) ? partial.id : 'response');
     if (partial.index !== undefined && partial.index !== this.nextIndex || partial.id !== undefined && partial.id !== id) return null;
     if (this.bytes + Buffer.byteLength(partial.message) > MAX_OUTPUT_BYTES) return null;

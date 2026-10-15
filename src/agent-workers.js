@@ -5,8 +5,8 @@ const { isServiceLimit } = require('./parallel-policy');
 const { MAX_SUBAGENTS } = require('./adaptive-concurrency');
 const { batchNames } = require('./parallel');
 const { sanitize, redact } = require('./security/guard');
-const { PARENT_RESERVE, MIN_CHILD_ROUNDS, remainingRounds, requestKey, delegationState, validateAssessment } = require('./delegation');
-const SAFE = new Set(['list_files', 'read_file', 'search_text', 'load_skill', 'web_search', 'web_fetch', 'ntpu_lookup']);
+const { PARENT_RESERVE, MIN_CHILD_ROUNDS, remainingRounds, requestKey, requestShape, explorationEvidence, concreteSingleRationale, delegationState, validateAssessment } = require('./delegation');
+const SAFE = new Set(['list_files', 'read_file', 'search_text', 'search_history', 'read_history', 'load_skill', 'web_search', 'web_fetch', 'ntpu_lookup']);
 const DEFINITIONS = [
   { name: 'delegate_tasks', description: '背景分派獨立唯讀子任務；role 是 explore/research/review。子任務不能修改檔案或執行 shell；主 agent 負責整合、實作與驗證。模型輪數共用父任務預算。', example: '{"tasks":[{"title":"找出入口","role":"explore","request":"檢查專案入口並附檔案行號"}]}' },
   { name: 'get_task_results', description: '等待子任務結束並收集真實結果；ids 可省略。錯誤或取消不能當成完成。', example: '{"ids":["task-id"]}' },
@@ -24,7 +24,7 @@ class AgentWorkers {
   constructor({ base, bridge, scheduler, modelBudget, createTools, signal, context = '', workspace = '', profile = {}, timeoutMs, maxWorkers, occupiedSlots = () => 0, onEvent = () => {}, onBeforeCleanup = async () => {}, runner = runAgent }) {
     Object.assign(this, { base, bridge, scheduler, modelBudget, createTools, signal, context, workspace, profile, timeoutMs, occupiedSlots, onEvent, onBeforeCleanup, runner });
     this.maxWorkers = Math.min(MAX_SUBAGENTS, Math.max(1, Math.floor(Number(maxWorkers) || MAX_SUBAGENTS))); this.maxTasks = Math.max(4, this.maxWorkers * 2);
-    this.jobs = new Map(); this.closed = false; this.assessment = null;
+    this.jobs = new Map(); this.closed = false; this.assessment = null; this.reassessmentUsed = false;
   }
   catalog() { return this.base.catalog().concat(DEFINITIONS.map(tool => tool.name === 'delegate_tasks' ? { ...tool, description: `背景分派 1–${this.maxWorkers} 個獨立唯讀子任務，role 是 explore/research/review；同時最多 ${this.maxWorkers} 個未結束子任務，父任務最多 ${this.maxTasks} 個。提供 expectedOutput 與 independent:true，主 Agent 繼續獨立工作。不能寫檔或執行 shell，最多六輪／子任務且共用父任務模型預算與請求排程，保留主 Agent ${PARENT_RESERVE} 輪整合。一般失敗不影響其他獨立工作；同一失敗內容不能改標題重派，重要的一般失敗只可透過 retry_task 排回 Queue 一次，附具體理由。429／登入／服務限制不得重試。` } : tool)); }
   get skills() { return this.base.skills; }
@@ -33,24 +33,60 @@ class AgentWorkers {
   hasPending() { return [...this.jobs.values()].some(job => !job.collected); }
   waitPending() { return this.collect(); }
   delegationState(options = {}) {
-    return delegationState({ ...options, modelBudget: this.modelBudget, maxWorkers: this.maxWorkers,
+    const evidence = explorationEvidence(options.records);
+    const reassessment = !!(this.assessment?.mode === 'single' && !this.reassessmentUsed &&
+      evidence.length >= 2 && evidence.some(item => !this.assessment.evidence.includes(item)));
+    const state = delegationState({ ...options, modelBudget: this.modelBudget, maxWorkers: this.maxWorkers,
       occupiedSlots: this.occupiedSlots() + [...this.jobs.values()].filter(job => !job.endedAt).length,
       closed: this.closed, aborted: this.signal.aborted, blocked: this.scheduler.adaptive?.blocked || [...this.jobs.values()].some(job => job.serviceLimited || job.storageFailed),
-      assessed: !!this.assessment, pending: this.jobs.size > 0, tasksRemaining: this.maxTasks - this.jobs.size });
+      assessed: !!this.assessment && !reassessment, pending: this.jobs.size > 0, tasksRemaining: this.maxTasks - this.jobs.size });
+    if (state.required && !readonly(this.base).catalog().some(tool => tool.name !== 'load_skill')) return { ...state, required: false, reason: '沒有可供子 Agent 查證的唯讀工具' };
+    if (state.required && reassessment) return { ...state, reassessment: true,
+      reason: '探索發現新的獨立範圍，重新評估一次分工', instruction: state.instruction + ' 已新增不同探索來源；依實際證據再評估一次，不可沿用先前泛用理由。' };
+    return state;
   }
-  assessDelegation(value) {
-    if (this.assessment) throw new Error('本次分工已評估；新增獨立工作請使用 delegate_tasks。');
-    const state = this.delegationState();
+  recordAssessment(assessment, options) {
+    if (this.assessment) this.reassessmentUsed = true;
+    this.assessment = { ...assessment, evidence: explorationEvidence(options.records), at: Date.now() };
+    return this.assessment;
+  }
+  assessDelegation(value, options = {}) {
+    const state = this.delegationState(options);
+    if (this.assessment && !state.reassessment) throw new Error('本次分工已評估；新增獨立工作請使用 delegate_tasks。');
     if (this.closed || this.signal.aborted || this.scheduler.adaptive?.blocked) throw new Error('任務已停止或服務已暫停，不能新增分派。');
     const assessment = validateAssessment(value, state.maxTasks);
     if (assessment.tasks.length) {
       const result = this.delegate(assessment);
-      this.assessment = { mode: 'delegated', taskIds: result.tasks.map(task => task.id), at: Date.now() };
-      return { ...result, assessment: this.assessment };
+      return { ...result, assessment: this.recordAssessment({ mode: 'delegated', taskIds: result.tasks.map(task => task.id) }, options) };
     }
-    this.assessment = { mode: 'single', rationale: redact(assessment.rationale), at: Date.now() };
-    return { ok: true, assessment: this.assessment, instruction: '已記錄無獨立分工的理由，繼續主 Agent 工作。' };
+    if (state.required && !concreteSingleRationale(assessment.rationale, options.records)) {
+      const fallback = this.fallbackDelegation({ ...options, reason: '分工評估只有未經證據支持的單 Agent 理由' });
+      if (fallback) return fallback;
+    }
+    return { ok: true, assessment: this.recordAssessment({ mode: 'single', rationale: redact(assessment.rationale) }, options),
+      instruction: '已記錄無獨立分工的理由，繼續主 Agent 工作；若探索發現新的獨立範圍，再評估一次。' };
   }
+  fallbackDelegation(options = {}) {
+    const state = this.delegationState(options);
+    if (!state.required) return null;
+    const catalog = readonly(this.base).catalog();
+    const local = catalog.some(tool => ['read_file', 'search_text', 'list_files'].includes(tool.name));
+    const web = catalog.some(tool => ['web_search', 'web_fetch', 'ntpu_lookup'].includes(tool.name) || tool.readOnly && ['exa', 'ntpu_ai4x'].includes(tool.server));
+    const shape = requestShape(options.request);
+    if (!local && !(web && shape.research)) return null;
+    const original = redact(String(options.request || ''));
+    const scope = original.length <= 4800 ? original : original.slice(0, 3600) + '\n[提問節錄；中段省略，保留結尾限制]\n' + original.slice(-1200);
+    const task = local ? { title: '獨立盤點既有測試與風險', role: 'review',
+      request: `使用者任務：\n${scope}\n\n你的獨立範圍只有：使用目前可用的唯讀工具，找出與此任務直接相關的既有程式入口、既有測試案例與可能遺漏的回歸邊界。以少量搜尋和重點讀取提供真實檔案位置與證據；若沒有測試，明確回報搜尋範圍與缺口。這是既有證據盤點，不等待主 Agent 修改、不執行測試、不寫檔、不執行 shell，不重做主 Agent 的實作。如果正在讀取的檔案有變動，註明需要主 Agent 重新確認。`,
+      expectedOutput: '相關入口與既有測試的檔案行號、實際涵蓋情境、尚缺回歸邊界，以及查證限制；不得宣稱已執行測試。' } : {
+      title: '獨立查證官方來源', role: 'research',
+      request: `使用者研究任務：\n${scope}\n\n使用目前可用的唯讀研究工具，獨立查證任務中一項重要假設或限制。優先官方來源，提供直接連結、已證實與未能證實的部分。不要重複撰寫主 Agent 的整份答案、不要寫檔或執行 shell。`,
+      expectedOutput: '一項重要假設或限制的官方來源連結、具體證據、適用條件與尚待查證處。' };
+    const result = this.delegate({ tasks: [{ ...task, independent: true }] }, { evidenceRequired: true });
+    return { ...result, assessment: this.recordAssessment({ mode: 'delegated', fallback: true,
+      rationale: redact(options.reason || '已辨識可獨立查證的範圍，使用有界唯讀分工'), taskIds: result.tasks.map(item => item.id) }, options) };
+  }
+
   async execute(name, args) {
     if (name === 'delegate_tasks') return this.delegate(args);
     if (name === 'retry_task') return this.retryTask(args);
@@ -61,13 +97,13 @@ class AgentWorkers {
     }
     return this.base.execute(name, args);
   }
-  delegate({ tasks }) {
+  delegate({ tasks }, hostOptions = {}) {
     if (this.closed || this.signal.aborted) throw new Error('已停止');
     if (this.scheduler.adaptive?.blocked || [...this.jobs.values()].some(job => job.serviceLimited || job.storageFailed)) throw new Error('服務限制或本機保存失敗，禁止新增分派。');
     if (Array.isArray(tasks) && tasks.some(task => [...this.jobs.values()].some(job => ['error', 'interrupted'].includes(job.status) && requestKey(task?.request) === requestKey(job.request)))) {
       throw new Error('同一失敗或取消的子任務禁止新增分派；重要一般失敗請以原始 id 使用 retry_task 一次。');
     }
-    return this.schedule(tasks);
+    return this.schedule(tasks, { ...(hostOptions.evidenceRequired ? { evidenceRequired: true } : {}) });
   }
   retryTask({ id, reason }) {
     if (this.closed || this.signal.aborted) throw new Error('已停止');
@@ -78,7 +114,7 @@ class AgentWorkers {
     if (typeof reason !== 'string' || !reason.trim() || reason.length > 500) throw new Error('請提供具體重要性理由（1–500 字）。');
     if (remainingRounds(this.modelBudget) - PARENT_RESERVE < MIN_CHILD_ROUNDS) throw new Error('共用模型預算不足，保留主 Agent 整合回合，不能重試。');
     job.retryAttempted = true;
-    try { return this.schedule([{ title: job.title.slice(0, 100) + ' · 重要重試 1/1', role: job.role, request: job.request, expectedOutput: job.expectedOutput, independent: job.independent }], { retryOf: job.id, retryReason: redact(reason.trim()) }); }
+    try { return this.schedule([{ title: job.title.slice(0, 100) + ' · 重要重試 1/1', role: job.role, request: job.request, expectedOutput: job.expectedOutput, independent: job.independent }], { retryOf: job.id, retryReason: redact(reason.trim()), ...(job.evidenceRequired ? { evidenceRequired: true } : {}) }); }
     catch (error) { job.retryAttempted = false; throw error; }
   }
   schedule(tasks, retry = {}) {
@@ -111,7 +147,7 @@ class AgentWorkers {
       const result = await this.runner({ bridge: this.scheduler.bridge(channel), tools: readonly(base), signal: job.controller.signal,
         modelBudget: { limit: this.modelBudget.limit, consume: () => remainingRounds(this.modelBudget) <= PARENT_RESERVE ? null : this.modelBudget.consume() }, maxSteps: job.maxSteps, budget: 32000, timeoutMs: this.timeoutMs,
         request: job.request + (job.expectedOutput ? '\n\nEXPECTED OUTPUT:\n' + job.expectedOutput : ''),
-        context: this.context.slice(0, 6000), workspace: this.workspace,
+        context: this.context, workspace: this.workspace,
         profile: { ...this.profile, agent: job.role === 'explore' ? 'ask' : job.role },
         onActivity: text => { job.activity = text; this.emit(job); },
         onStream: text => { job.partialResult = redact(text); this.emit(job); },
@@ -128,8 +164,10 @@ class AgentWorkers {
         onFinal: text => { job.result = redact(text); job.partialResult = undefined; },
       });
       const evidence = job.records.filter(record => record.type === 'tool');
+      const missingEvidence = job.evidenceRequired && !evidence.some(record => record.name !== 'load_skill' && record.result?.ok === true && !record.result.denied);
       const onlyFailedTools = evidence.some(record => record.result?.ok === false || record.result?.denied) && !evidence.some(record => record.result?.ok === true);
-      job.status = job.controller.signal.aborted ? 'interrupted' : result.completed && !onlyFailedTools ? 'done' : 'error';
+      job.status = job.controller.signal.aborted ? 'interrupted' : result.completed && !onlyFailedTools && !missingEvidence ? 'done' : 'error';
+      if (missingEvidence) job.result = (job.result || '') + '\n沒有成功的唯讀工具查證，證據盤點尚未完成。';
       if (onlyFailedTools) job.result = (job.result || '') + '\n工具證據只有失敗結果，子任務未完成。';
     } catch (error) {
       job.serviceLimited = isServiceLimit(error);
