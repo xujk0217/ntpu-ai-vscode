@@ -35,8 +35,16 @@ test('real AgentApp uses one durable approval choice across old, new, restored a
     return open();
   }
   async function pending(app) {
-    for (let i = 0; i < 100 && !app.gate.pending; i++) await tick();
-    assert.ok(app.gate.pending); return app.gate.pending;
+    if (app.gate.pending) return app.gate.pending;
+    return new Promise((resolve, reject) => {
+      const original = app.gate.onChange;
+      const finish = (error, approval) => {
+        clearTimeout(timer); app.gate.onChange = original;
+        if (error) reject(error); else resolve(approval);
+      };
+      const timer = setTimeout(() => finish(new Error('Expected an actual approval event within 5 seconds')), 5000);
+      app.gate.onChange = value => { original(value); if (value) finish(null, app.gate.pending); };
+    });
   }
   let app = await open();
   const id = app.session.id;
@@ -105,7 +113,9 @@ test('real AgentApp uses one durable approval choice across old, new, restored a
   });
   await t.test('config import shares only approval and rolls back when global storage fails', async () => {
     const file = path.join(directory, 'agent.ntpu-ai.json');
-    mock.window.showOpenDialog = async () => [uri(file)];
+    // Real chooser/file I/O can take longer than any fixed number of event-loop
+    // turns; exercise an actual delay before waiting for the gate's event.
+    mock.window.showOpenDialog = async () => { await new Promise(resolve => setTimeout(resolve, 50)); return [uri(file)]; };
     await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, permission: 'assisted', depth: 'deep' }));
     const operation = app.agentSettings.importFile(), approval = await pending(app);
     assert.match(approval.detail.detail, /所有聊天/);
