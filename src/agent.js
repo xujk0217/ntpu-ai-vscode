@@ -23,6 +23,11 @@ function verifiedEnvironmentBlocker(failed, records) {
   return records.slice(index + 1).some(record => record.type === 'tool' && record.result?.ok === true &&
     ['get_capabilities', 'read_file', 'search_text', 'web_search', 'web_fetch'].includes(record.name));
 }
+function malformedControl(text) {
+  const raw = String(text || '').trim().replace(/^```(?:json|xml)?\s*/i, '');
+  return /^\{\s*(?:["'}]|$)|^\[\s*(?:["{[\]\d-]|true\b|false\b|null\b|$)/.test(raw) || /^<(?:[a-z_]+:)?(?:invoke|function(?:_calls?)?|tool(?:_calls?)?)\b/i.test(raw);
+}
+
 function unresolvedToolFailure(records) {
   // Keep failed execution visible while the model reads documentation or updates its plan.
   const index = records.findLastIndex(record => record.type === 'tool' && !CONTROL_TOOLS.has(record.name) && record.result?.ok === false && !record.result.denied);
@@ -45,7 +50,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
   const output = new OutputParts(records);
   const repeated = [];
   let consecutiveFailures = 0, recoveryChecks = 0, stagnantRecoveryChecks = 0, lastRecoveryEvidence = '';
-  let repairs = 0, completionRetries = 0, stagnantCompletionChecks = 0, lastCompletionEvidence = '', previousMessage = '', budgetExhausted = false, usedSteps = 0, blockedRepeat = null, assessmentAttempts = 0;
+  let repairs = 0, controlRepairs = 0, completionRetries = 0, stagnantCompletionChecks = 0, lastCompletionEvidence = '', previousMessage = '', budgetExhausted = false, usedSteps = 0, blockedRepeat = null, assessmentAttempts = 0;
   let assessmentBypassed = records.some(record => record.type === 'delegation_assessment');
   const checkpoint = async () => onCheckpoint(sanitize(records));
   let reservedRound = null;
@@ -79,7 +84,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       assessmentAttempts = 0;
     } else records.push({ type: 'coordination_check', message, instruction: 'Assess independent work now with kind:delegation before ordinary tools or a final. Use valid bounded independent tasks or a concrete rationale.' });
   };
-  const saveDraft = async raw => {
+  const saveDraft = async (raw, { internal = false } = {}) => {
     const partial = partialOutput(raw, { allowComplete: true });
     const finalDraft = partial?.kind === 'final';
     let draft = finalDraft ? { type: 'response_draft', id: 'interrupted-final', index: 1, message: partial.message, partial: true, provisional: true, internal: true, done: false } : output.preserveDraft(raw);
@@ -88,6 +93,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       draft = { type: 'response_draft', id: 'interrupted-response', index: 1, message: redact(String(raw)), partial: true, done: false };
     }
     if (!draft) return false;
+    if (internal || malformedControl(raw) && !partial) Object.assign(draft, { internal: true, provisional: true });
     if (Buffer.byteLength(draft.message) > MAX_OUTPUT_BYTES) throw Object.assign(new Error('未完成回覆超過 8 MiB 本機保存上限。已完成段落仍保留。'), { code: 'OUTPUT_TOO_LARGE' });
     for (let i = records.length - 1; i >= 0; i--) if (records[i].type === draft.type && (draft.type !== 'response_draft' || records[i].id === draft.id)) records.splice(i, 1);
     records.push(draft);
@@ -95,6 +101,20 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     await checkpoint();
     if (!draft.internal) onStream(output.preview(draft.message));
     return true;
+  };
+  const repairControl = async (raw, message) => {
+    await saveDraft(raw, { internal: true });
+    if (controlRepairs++ >= 2) return false;
+    records.push({ type: 'format_error', message: redact(message || '模型回傳無效的操作封裝。'),
+      instruction: output.active && !output.done ?
+        'Invalid control envelope: no tool executed. Continue ONLY the saved document using the required kind:output id/index. Do not emit XML or wrap tools inside parallel JSON.' :
+        'Invalid control envelope: no tool executed. Return ONE valid JSON object using only the actual tool catalog. For a single read use {"kind":"tool","name":"read_file","args":{"path":"relative/file"}}. XML invoke/function calls are unsupported. Do not repeat the malformed envelope or claim its action ran.' });
+    onActivity('正在修復模型操作格式，尚未執行工具');
+    await checkpoint(); return true;
+  };
+  const controlFailure = step => {
+    onFinal((output.active ? output.preview(output.draft?.message) + '\n\n' : '') + '模型連續回傳無效的操作格式，沒有執行這些操作。已保留查證紀錄，任務尚未完成。');
+    return { completed: false, unstructured: true, protocolError: true, steps: step + 1 };
   };
   const finalText = text => output.parts.length ? output.text + (text && text !== output.text ? '\n\n' + text : '') : text;
   for (let step = 0; step < maxSteps; step++) {
@@ -155,7 +175,12 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     let reply;
     try { reply = sanitize(parseReply(response.text, catalog ? new Set(catalog.map(tool => tool.name)) : undefined, tools.parallelNames?.() || new Set())); }
     catch (error) {
-      await saveDraft(response.text);
+      const invalidControl = malformedControl(response.text) && !partialOutput(response.text, { allowComplete: true });
+      if (invalidControl && !delegationState?.required) {
+        if (await repairControl(response.text, error.message)) continue;
+        return controlFailure(step);
+      }
+      await saveDraft(response.text, { internal: invalidControl });
       records.push({ type: 'format_error', message: error.message, instruction: 'Return a valid single JSON response. No tool was run.' });
       if (delegationState?.required) await assessmentFailure(redact(error.message));
       await checkpoint();
@@ -239,6 +264,10 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     }
     if (reply.kind === 'unstructured') {
       if (await consumeSteering(true)) { await checkpoint(); continue; }
+      if (malformedControl(response.text) && !partialOutput(response.text, { allowComplete: true })) {
+        if (await repairControl(response.text)) continue;
+        return controlFailure(step);
+      }
       // Keep malformed envelopes for diagnosis/recovery without treating them as tools.
       // Only a user-facing output draft enters the document continuation state.
       await saveDraft(response.text);

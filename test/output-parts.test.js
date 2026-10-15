@@ -69,7 +69,8 @@ test('unknown JSON tools remain non-executable drafts without forcing document c
     const result = await f.run();
     assert.equal(result.completed, true); assert.equal(f.calls.length, 2);
     assert.equal(f.executed.length, 0);
-    assert.ok(f.saved.some(value => value.type === 'response_draft' && value.partial && value.message === raw));
+    assert.ok(f.checkpoints.some(records => records.some(value => value.type === 'response_draft' && value.internal && value.message === raw)));
+    assert.equal(f.saved.length, 0, 'malformed controls remain internal and are never document drafts');
     assert.equal(f.saved.some(value => value.type === 'output_part' || value.type === 'output_draft'), false);
     assert.deepEqual(f.finals, ['格式已修復，沒有執行未知操作。']);
     assert.ok(f.checkpoints.some(records => records.some(record => record.type === 'format_error')));
@@ -189,7 +190,8 @@ test('truncated tool JSON is never executed and is retained as an incomplete dra
   const f = fixture([raw, { kind: 'final', completed: false, message: '回傳格式不完整，沒有修改檔案。' }], { profile: { agent: 'build' } });
   await f.run();
   assert.equal(f.executed.length, 0);
-  assert.ok(f.saved.some(value => value.partial === true && typeof value.message === 'string' && value.message.includes('unfinished')));
+  assert.ok(f.checkpoints.some(records => records.some(value => value.type === 'response_draft' && value.internal && value.message.includes('unfinished'))));
+  assert.equal(f.saved.length, 0);
   assert.ok(f.checkpoints.some(records => records.some(record => record.type === 'format_error')));
 });
 
