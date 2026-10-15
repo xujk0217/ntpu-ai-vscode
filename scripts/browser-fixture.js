@@ -8,6 +8,9 @@ const assert = require('node:assert/strict');
 const { BrowserBridge } = require('../src/browser');
 const { probeConcurrency } = require('../src/browser/concurrency-probe');
 const { assets, testUI } = require('./ui-fixture');
+const { runAgent } = require('../src/agent');
+const outputFirst = '第一段完整原文，保留段落與程式碼。\n'.repeat(800);
+const outputSecond = '第二段接續內容，所有細節原樣回傳。\n'.repeat(800);
 
 const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
 <div id="auth-overlay" class="hidden" style="display:none"></div><span id="user-email">Fixture</span>
@@ -48,6 +51,14 @@ async function main() {
       activeStreams++; peakStreams = Math.max(peakStreams, activeStreams);
       response.writeHead(200, { 'content-type': 'text/event-stream' }); response.flushHeaders();
       response.write('data: {"type":"judge","model":"fixture"}\n\n');
+      if (body.includes('fixture-output-document')) {
+        const next = body.includes('"nextIndex":2') ? 2 : 1;
+        const text = JSON.stringify({ kind: 'output', id: 'fixture-document', index: next, message: next === 1 ? outputFirst : outputSecond, done: next === 2, completed: true });
+        const middle = Math.floor(text.length / 2);
+        response.write('data: ' + JSON.stringify({ type: 'token', content: text.slice(0, middle) }) + '\n\n');
+        setTimeout(() => { if (!response.destroyed) response.end('data: ' + JSON.stringify({ type: 'token', content: text.slice(middle) }) + '\n\ndata: {"type":"done"}\n\n'); }, 40);
+        response.on('close', () => { activeStreams--; }); return;
+      }
       const marker = body.match(/NTPU_PARALLEL_[a-f0-9]+_[0-4]/)?.[0];
       const prefix = marker ? marker + '-' : body.startsWith('parallel-') ? body + '-' : 'mock-';
       response.write('data: ' + JSON.stringify({ type: 'token', content: prefix }) + '\n\n');
@@ -157,8 +168,15 @@ async function main() {
     assert.equal((await bridge.finishLogin()).ready, false);
     assert.equal(bridge.mode, 'background');
     requiresLogin = false; await bridge.page.goto(origin);
+    const parts = [], finals = [];
+    const outputResult = await runAgent({ bridge, tools: {}, request: 'fixture-output-document', profile: { agent: 'ask' }, signal: new AbortController().signal,
+      onOutputPart: async part => { parts.push(part); await fs.writeFile(path.join(directory, 'output-parts.json'), JSON.stringify(parts)); },
+      onFinal: text => finals.push(text) });
+    assert.equal(outputResult.completed, true);
+    assert.deepEqual(finals, [outputFirst + outputSecond]);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(directory, 'output-parts.json'), 'utf8')).map(part => part.index), [1, 2]);
     await testUI(bridge.page, origin);
-    console.log('Local mock website passed: ' + selected + '; login window, session-cookie background handoff, manual close/cancel, streaming, task reuse, upload, persistent profile, memory/settings UI. No NTPU AI requests.');
+    console.log('Local mock website passed: ' + selected + '; login window, session-cookie background handoff, manual close/cancel, streaming, segmented full document, task reuse, upload, persistent profile, memory/settings UI. No NTPU AI requests.');
   } finally {
     await bridge.close(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve));
     await fs.rm(directory, { recursive: true, force: true });

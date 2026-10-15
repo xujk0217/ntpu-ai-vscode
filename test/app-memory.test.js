@@ -82,6 +82,9 @@ test('real AgentApp migrates history, persists checkpoints and keeps memory acro
     status: async () => ({ ready: true, message: 'Mock Account ' + account }), close: async () => {},
     chat: async prompt => { prompts.push({ account, prompt }); return { text: JSON.stringify({ kind: 'final', message: 'mock result', completed }) }; } };
   app.getBridge = () => bridge;
+  // This test isolates account/memory continuity; real delegation is covered by
+  // delegation-integration.test.js instead of this single-response model stub.
+  config.set('parallel.enabled', false);
   await app.ask('檢查登入系統', false); await app.logout(); account = 'B'; await app.login(); await app.ask('繼續', false);
   assert.equal(app.session.tasks.length, 2); assert.equal(app.session.tasks[0].status, 'blocked');
   assert.equal(prompts[1].account, 'B'); assert.match(prompts[1].prompt, /使用 TypeScript/);

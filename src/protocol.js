@@ -1,4 +1,5 @@
 'use strict';
+const { validateOutputPart } = require('./output-parts');
 
 const DEFINITIONS = [
   ['list_files', '列出工作區檔案', '{"glob":"**/*"}'],
@@ -30,6 +31,8 @@ Respond in Traditional Chinese unless the user asks otherwise.
 Your response must be exactly ONE JSON object, without markdown fences or any surrounding prose:
 {"kind":"tool","name":"read_file","args":{"path":"src/main.js"}}
 OR {"kind":"final","completed":true,"message":"Your useful answer for the user, with Markdown if helpful."}
+OR for a long document {"kind":"output","id":"document","index":1,"message":"Exact first part, including formatting and trailing whitespace.","done":false}
+LONG OUTPUT: Preserve the full requested detail. When an answer/document would exceed about 2000 characters, emit a complete output object for each bounded part, starting at index 1 with one stable id. The host durably saves and displays each part before requesting the next. Continue index 2, 3, etc.; done:true and completed:true only on the last part. These are exact concatenated document fragments, not summaries. Include necessary newlines in message. Prefer paragraph/code-block boundaries. Never replace omitted sections with placeholders. Do not split a tool JSON request across responses; use smaller complete edits for large files. Output parts cannot execute tools. Host continuation state is authoritative after interruption. Do not reveal private chain-of-thought; deliver useful progress, evidence and requested content.
 The host executes a tool and then sends its actual result back. Never claim that a file was changed or a command succeeded before a successful tool result. Do not invent tool outputs.
 Available tool examples (use the actual catalog and parallel settings below):
 - list_files: {"glob":"**/*"}, optional glob, returns at most 250 paths.
@@ -53,6 +56,8 @@ function parseReply(text, allowedTools = TOOLS, parallelTools = new Set()) {
   catch { return { kind: 'unstructured', message: text }; }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('模型回傳的操作格式不正確。');
   if (value.kind === 'final' && typeof value.message === 'string') return value;
+  if (value.kind === 'output') return validateOutputPart(value);
+  if (value.kind === 'delegation' && (Array.isArray(value.tasks) || typeof value.rationale === 'string')) return value;
   if (value.kind === 'parallel' && Array.isArray(value.tools) && value.tools.length >= 2 && value.tools.length <= 6 && value.tools.every(call =>
     call && allowedTools.has(call.name) && parallelTools.has(call.name) && call.args && typeof call.args === 'object' && !Array.isArray(call.args))) return value;
   if (value.kind === 'tool' && allowedTools.has(value.name) && value.args &&
@@ -61,7 +66,7 @@ function parseReply(text, allowedTools = TOOLS, parallelTools = new Set()) {
 }
 
 function buildPrompt({ request, context = '', workspace = '', records = [], budget = 48000,
-  catalog = DEFINITIONS, skills = [], loadedSkills = [], profile = {}, parallelTools = [] }) {
+  catalog = DEFINITIONS, skills = [], loadedSkills = [], profile = {}, parallelTools = [], outputState, delegationState }) {
   const agents = { build: 'Complete the requested implementation using tools and verify it where appropriate.',
     plan: 'Read-only planning. Inspect evidence and produce an actionable plan. File changes and non-read-only commands are disabled.',
     review: 'Read-only code review. Find actionable bugs with file locations and concrete triggers. Do not modify files.',
@@ -88,11 +93,17 @@ ${loadedSkills.map(skill => `${skill.name}:\n${skill.body}`).join('\n\n') || '(n
 WORKSPACE: ${workspace}
 USER REQUEST (authoritative):
 ${request}
+${delegationState?.required ? '\nHOST DELEGATION ASSESSMENT REQUIRED:\n' + JSON.stringify(delegationState) + '\nRespond first with {"kind":"delegation","tasks":[{"title":"bounded question","role":"explore","request":"specific independent task","independent":true,"expectedOutput":"file locations and concrete findings"}]} or {"kind":"delegation","tasks":[],"rationale":"concrete reason the work cannot use independent subagents"}. Do not execute ordinary tools or finish before this assessment.\n' : ''}
+${outputState ? '\nHOST SAVED OUTPUT STATE:\n' + JSON.stringify(outputState) + '\n' : ''}
 `;
   if (head.length > budget - 1000) throw new Error('提問與工具規則超過脈絡預算，請縮短提問或預載 skills。');
   const selected = []; let size = head.length + 500;
   for (let index = records.length - 1; index >= 0; index--) {
-    let item = JSON.stringify(records[index]);
+    const record = records[index];
+    // Full parts stay in the local checkpoint. Prompt excerpts are explicitly marked;
+    // the authoritative continuation state above is never evicted with older history.
+    let item = JSON.stringify(['output_part', 'output_draft', 'response_draft'].includes(record.type) ?
+      { ...record, message: record.message.slice(-1200), excerpt: record.message.length > 1200, locallySavedCharacters: record.message.length } : record);
     if (size + item.length > budget) {
       if (!selected.length && budget - size > 800) item = JSON.stringify({ name: records[index].name, result: { ok: records[index].result?.ok,
         excerpt: item.slice(0, Math.max(0, Math.floor((budget - size - 350) / 2))), truncated: true }, instruction: 'Re-read necessary current evidence; excerpt is incomplete.' });

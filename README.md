@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.10 · 實驗性專案 · MIT License**
+**版本：0.6.12 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -31,10 +31,10 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.11.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.11.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.11.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.11.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.12.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.12.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.12.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.12.vsix` |
 
 更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 
@@ -49,6 +49,16 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 - **完整存取**：允許範圍內的工具自動執行；敏感檔案政策、OS 執行隔離與唯讀 Agent 限制仍有效。
 
 Agent 會依任務選用工具、載入 skills，並分派最多四個探索、研究或審查唯讀子任務。主 Agent 負責整合、修改與 Shell；所有模型請求共用 Adaptive Concurrency 排程器、每分鐘節奏和任務輪數預算。單純提問可直接處理。
+
+複雜工作會先評估可獨立分派的範圍，為子任務指定問題和預期結果；確實無法拆分時記錄理由，主 Agent 接續處理。一般子任務失敗不會封鎖其他獨立工作；仍保留共用預算、一次重要重試及服務限制。詳見[分工策略](docs/DELEGATION.md)。
+
+在 **設定 → 工具 → Agent 設定檔** 可編輯專案 `.ntpu-ai.json`、匯出目前選項，或預覽後套用設定檔至目前聊天。分析深度與核准模式都能寫入檔案，詳細欄位與範例見[設定檔說明](docs/AGENT_SETTINGS.md)。
+
+<img src="docs/images/agent-settings.png" alt="Agent 設定檔編輯、套用與匯出（本機測試畫面）" width="340">
+
+長文件會分段保存在本機後接續，介面顯示已保存段數，完整原文可以另存 Markdown／文字。子任務原文也可完整檢視與匯出；中斷的部分會標記未完成並保留檢查點。詳見[長內容保存與限制](docs/LONG_OUTPUT.md)。
+
+各項本機、四平台 CI 與尚待真人確認的範圍，見[0.6.12 驗收說明](docs/AGENT_FEATURES_VALIDATION.md)。
 
 Agent 由本機 VS Code 擴充功能提供工作區工具。它可依實際工具目錄讀取選定專案、查詢公開網頁、下載公開 HTTPS 檔案到工作區、載入或安裝有效的 `SKILL.md`，以及連接已設定的 MCP。Agent 也能提出不含憑證的公開 HTTPS MCP；主機檢查網路目標並要求你核准後才會新增和連線。需要 API 金鑰或本機 stdio 的 MCP 請在 **設定 → 工具 → 新增 MCP** 設定，憑證會存入 SecretStorage。下載檔案最多 10 MB，不會覆寫、解壓或執行；安裝 Skill、下載檔案與連接 MCP 依權限及核准流程處理。Agent 不能因此存取整台電腦，也不能替自己增加未列出的工具權限。
 

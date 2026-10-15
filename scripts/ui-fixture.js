@@ -127,6 +127,17 @@ async function testUI(page, origin) {
   await page.waitForFunction(() => document.querySelector('[data-id="worker-fixture"]')?.textContent.includes('真實結果'));
   assert.equal(await page.locator('[data-id="worker-fixture"] details').evaluate(node => node.open), true);
   assert.equal(await page.getByRole('button', { name: '停止此子任務', exact: true }).count(), 0);
+  const fullWorker = '完整子任務的每一段原文\n'.repeat(1600) + '子任務最後一行';
+  await send({ kind: 'patch', message: { ...worker, status: 'done', result: '摘要', workerResult: fullWorker } });
+  await page.locator('.worker-full-result > summary').click();
+  assert.match(await page.locator('.worker-full-result').textContent(), /子任務最後一行/);
+  await page.getByRole('button', { name: '另存完整子任務原文', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'exportMessage', id: 'worker-fixture' });
+  await send({ kind: 'message', message: { id: 'saved-document', role: 'assistant', incomplete: true, savedParts: 2, text: '完整主回覆原文\n'.repeat(1600) + '主回覆最後一行' } });
+  assert.match(await page.locator('[data-id="saved-document"]').textContent(), /已保存 2 段/);
+  assert.match(await page.locator('[data-id="saved-document"]').textContent(), /未完成原文.*主回覆最後一行/s);
+  await page.locator('[data-id="saved-document"]').getByRole('button', { name: '另存完整內容', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'exportMessage', id: 'saved-document' });
   await page.screenshot({ path: path.join(__dirname, '..', '.local', 'agent-overview-ui.png') });
   assert.match(await page.locator('#web').getAttribute('title'), /Exa/);
   await page.locator('#settings').click();
@@ -139,6 +150,23 @@ async function testUI(page, origin) {
   const input = page.getByRole('textbox', { name: 'Custom Browser Path', exact: true }); await input.fill('/fixture/draft');
   await send(state); assert.equal(await input.inputValue(), '/fixture/draft');
   await page.locator('[data-tab="tools"]').click();
+  for (const [label, kind] of [['編輯專案設定檔', 'openAgentSettings'], ['套用設定檔', 'importAgentSettings'], ['匯出目前設定', 'exportAgentSettings']]) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), kind);
+  }
+  await page.locator('body').click({ position: { x: 2, y: 2 } });
+  await send({ ...state, agentSettingsBusy: true });
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].find(button => button.textContent.includes('套用設定檔'))?.disabled);
+  assert.equal(await page.getByRole('button', { name: '匯出目前設定', exact: true }).isDisabled(), true);
+  await send(state);
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'agent-settings-ui.png') });
+  await send({ kind: 'approval', approval: { id: 'settings-preview', title: '套用 Agent 設定至目前聊天？', detail: '分析深度：深入\n核准模式：協助核准', accept: '套用設定' } });
+  await page.locator('#approval').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#drawer').isHidden(), true);
+  await page.locator('#approve').click();
+  assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), 'approval');
+  await send({ kind: 'approval', approval: null });
+  await page.locator('#settings').click(); await page.locator('[data-tab="tools"]').click();
   const submitMode = page.getByRole('combobox', { name: '送出快捷鍵', exact: true });
   assert.equal(await submitMode.inputValue(), 'enter');
   await submitMode.selectOption('modifierEnter');

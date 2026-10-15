@@ -16,6 +16,13 @@ function activate(context) {
   });
   command('ntpuAI.logout', () => app.logout());
   command('ntpuAI.status', () => app.checkConnection());
+  command('ntpuAI.openAgentSettings', () => app.agentSettings.openProject());
+  command('ntpuAI.exportAgentSettings', () => app.agentSettings.exportFile());
+  command('ntpuAI.importAgentSettings', async () => {
+    await vscode.commands.executeCommand('workbench.view.extension.ntpuAI');
+    await vscode.commands.executeCommand('ntpuAI.chat.focus');
+    await app.agentSettings.importFile();
+  });
   command('ntpuAI.testConcurrency', () => app.testConcurrency());
   command('ntpuAI.stop', () => app.stop());
   command('ntpuAI.askSelection', async () => {

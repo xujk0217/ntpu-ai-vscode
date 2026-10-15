@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NTPU AI Agent 設定",
+  "description": "在 NTPU AI 的工具頁套用至目前聊天。只套用檔案指定的選項；不會自動提權或變更瀏覽器登入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "minProperties": 2,
+  "properties": {
+    "schemaVersion": { "const": 1, "description": "設定檔格式版本，固定為 1。" },
+    "agent": { "type": "string", "enum": ["build", "plan", "review", "research", "ask"], "description": "Build 可實作；其他模式為唯讀。" },
+    "depth": { "type": "string", "enum": ["quick", "standard", "deep"], "description": "快速／標準／深入，調整本地規劃與驗證策略，不是校方模型原生 thinking 參數。" },
+    "permission": { "type": "string", "enum": ["ask", "assisted", "full"], "description": "要求核准／協助核准／完整存取。套用前確認，不會覆蓋主機安全限制。" },
+    "web": { "type": "boolean", "description": "允許公開網路搜尋與網頁讀取。" },
+    "skills": { "type": "array", "maxItems": 4, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" }, "description": "預載的已安裝 Skill 名稱；空陣列代表不預載。" }
+  }
+}

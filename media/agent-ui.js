@@ -121,6 +121,11 @@ function renderMessage(message) {
     summary.append(meta, element('span', 'tool-status ' + message.status, { running: '進行中', done: '完成', denied: '未允許', error: '未完成', interrupted: '已中斷' }[message.status] || message.status), element('span', 'tool-chevron', '›'));
     const content = element('div', 'tool-detail');
     if (message.name === 'agent_task' && message.status === 'running') content.append(button('停止此子任務', 'text-button', () => send('cancelWorker', { id: message.id }), 'stop'));
+    if (message.name === 'agent_task' && (message.workerResult || message.partialResult)) {
+      const full = element('details', 'worker-full-result');
+      full.append(element('summary', '', message.status === 'running' ? '查看已收到的原文' : '查看完整子任務原文'), markdown(message.workerResult || message.partialResult)); content.append(full);
+      content.append(button('另存完整子任務原文', 'text-button', () => send('exportMessage', { id: message.id }), 'export'));
+    }
     if (args.path) content.append(button('開啟 ' + args.path, 'text-button', () => send('openFile', { path: args.path }), 'file'));
     if (args.command) content.append(element('pre', 'command', args.command));
     let result; try { result = JSON.parse(message.result || 'null'); } catch {}
@@ -152,7 +157,10 @@ function renderMessage(message) {
   const top = element('div', 'message-heading');
   if (message.role === 'user') top.append(element('span', '', message.canceled ? '你 · 已取消' : message.queued ? '你 · 已排入佇列' : '你'));
   else { const mark = element('span', 'assistant-mark', 'N'); top.append(mark, element('span', '', 'NTPU AI')); }
+  if (message.incomplete) top.append(element('span', 'elapsed', '未完成原文 · 可接續'));
+  if (message.savedParts) top.append(element('span', 'elapsed', `已保存 ${message.savedParts} 段`));
   top.append(iconButton('copy', '複製訊息', () => send('copy', { text: message.text || '' })));
+  if (message.role !== 'user') top.append(iconButton('export', '另存完整內容', () => send('exportMessage', { id: message.id })));
   const body = message.role === 'user' ? element('div', 'user-body', message.text) : markdown(message.text);
   wrapper.append(top, body);
   if (message.role === 'user' && (message.text?.length > 500 || message.text?.split('\n').length > 8)) {
@@ -486,6 +494,12 @@ function renderDrawer() {
     const reconnect = button('重新連線', 'secondary-button full-width', () => send('reconnectBrowser')); reconnect.disabled = state.busy; content.append(reconnect);
     content.append(element('p', 'panel-description', (browser.info?.message || '尚未啟動可控制的瀏覽器') + '\nExtension Host：' + (browser.host || '') + (browser.remoteName ? ' · 工作區連線：' + browser.remoteName : '') + (browser.info?.profile ? '\n專用 Profile：' + browser.info.profile : '')));
   } else {
+    content.append(element('h3', '', 'Agent 設定檔'));
+    content.append(element('p', 'panel-description', '保存 Agent 模式、分析深度、核准模式、網路與預載 Skills。可編輯專案內的 .ntpu-ai.json，儲存後套用至目前聊天。'));
+    for (const [label, kind] of [['編輯專案設定檔', 'openAgentSettings'], ['套用設定檔', 'importAgentSettings'], ['匯出目前設定', 'exportAgentSettings']]) {
+      const control = button(label, 'secondary-button full-width', () => send(kind), 'file');
+      control.disabled = state.busy || !!state.agentSettingsBusy || !!approval; content.append(control);
+    }
     content.append(element('h3', '', '外部能力'));
     content.append(element('p', 'panel-description', '搜尋、網頁讀取與擴充工具由本地 agent 執行。NTPU AI 負責理解需求和決定下一步。'));
     for (const server of capabilities.servers) {

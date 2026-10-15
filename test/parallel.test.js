@@ -125,7 +125,7 @@ test('production worker pool rejects five subagents even when a stale setting as
  workers.maxWorkers=MAX_SUBAGENTS;assert.throws(()=>workers.delegate({tasks:Array.from({length:5},(_,i)=>({title:String(i),request:'read',role:'explore'}))}),/1–4/);await workers.close();
 });
 
-test('a failed subagent cannot be retried through a new conversation while existing workers finish', async () => {
+test('a failed subagent cannot be renamed and retried through a new conversation while existing workers finish', async () => {
   let release;const {workers,closed}=fixture(async options=>{
     if(options.request==='fail')throw new Error('response timeout');
     await new Promise(resolve=>{release=resolve;});options.onFinal('completed evidence');return {completed:true};

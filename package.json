@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -35,6 +35,18 @@
       {
         "command": "ntpuAI.logout",
         "title": "NTPU AI: 登出並清除本機登入資料"
+      },
+      {
+        "command": "ntpuAI.openAgentSettings",
+        "title": "NTPU AI: 編輯專案 Agent 設定檔"
+      },
+      {
+        "command": "ntpuAI.importAgentSettings",
+        "title": "NTPU AI: 套用 Agent 設定檔"
+      },
+      {
+        "command": "ntpuAI.exportAgentSettings",
+        "title": "NTPU AI: 匯出目前 Agent 設定"
       },
       {
         "command": "ntpuAI.status",
@@ -285,7 +297,16 @@
           "description": "本機模型請求節奏，預設每分鐘最多 8 次（可調低或最高 10）；超出本機額度先等待，不重送失敗請求。校方及其他視窗的用量限制仍優先，429 仍立即停止。"
         }
       }
-    }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "**/.ntpu-ai.json",
+          "**/*.ntpu-ai.json"
+        ],
+        "url": "./schemas/agent-settings.schema.json"
+      }
+    ]
   },
   "scripts": {
     "test": "node scripts/test.js",
