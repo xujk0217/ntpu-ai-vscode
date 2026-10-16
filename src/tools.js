@@ -12,6 +12,7 @@ const { parseSkill } = require('./skills');
 const { imageMime, renderSvg } = require('./visuals');
 const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
+const { isServiceLimit } = require('./parallel-policy');
 const { ToolDiscovery } = require('./tool-discovery');
 const { scanner } = require('./security/attachments');
 const { SandboxExecutor } = require('./security/sandbox');
@@ -142,7 +143,7 @@ class WorkspaceTools {
       if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
-    catch (error) { if (this.signal.aborted) throw error; return sanitize({ ok: false, error: error.message }); }
+    catch (error) { if (this.signal.aborted || name === 'search_tools' && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
   }
 
   history(operation, args) {

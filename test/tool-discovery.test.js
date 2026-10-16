@@ -183,3 +183,13 @@ test('MCP cancellation during listing and alias collisions preserve the previous
   assert.equal(manager.catalog()[0].originalName, 'old'); assert.deepEqual(connection.tools, [old]);
   await manager.sandbox.close();
 });
+
+test('catalog HTTP 429 stops the model loop immediately without another tool or model request', async () => {
+  const manager = fakeManager(new Map()); let calls = 0, modelCalls = 0;
+  manager.connections.set('fixture', { config: { name: 'fixture' } });
+  manager.refresh = async () => { calls++; throw new Error('MCP HTTP 429 rate limit'); };
+  const tools = nativeTools({ mcp: manager });
+  await assert.rejects(runAgent({ tools, request: '檢查可用工具', signal: new AbortController().signal,
+    bridge: { chat: async () => { modelCalls++; return { text: JSON.stringify({ kind: 'tool', name: 'search_tools', args: { server: 'fixture', refresh: true } }) }; } } }), /429/);
+  assert.equal(calls, 1); assert.equal(modelCalls, 1);
+});
