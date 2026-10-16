@@ -14,6 +14,7 @@ const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedL
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
 const { isServiceLimit } = require('./parallel-policy');
 const { ToolDiscovery } = require('./tool-discovery');
+const { McpRegistry, keywords } = require('./mcp-registry');
 const { scanner } = require('./security/attachments');
 const { SandboxExecutor } = require('./security/sandbox');
 const { searchHistory, readHistory } = require('./memory/history');
@@ -44,6 +45,7 @@ class WorkspaceTools {
       try { this.loadedSkills.set(name, this.skills.load(name)); } catch {}
     }
     this.discovery = new ToolDiscovery(() => this.inventory(), () => this.discoveryServers());
+    this.registry = options.mcpRegistry || new McpRegistry(); this.deniedRegistryQueries = new Set(); this.limitedMcpServers = new Set(); this.limitedMcpOrigins = new Set();
     this.snapshots = new Map();
     this.sandbox = options.sandbox || new SandboxExecutor(); this.approvedData = new Set();
   }
@@ -52,7 +54,7 @@ class WorkspaceTools {
     return DEFINITIONS.filter(tool => tool.name === 'run_command' || this.policy.decision(tool.name) !== 'deny')
       .filter(tool => this.options.computer || !tool.name.startsWith('computer_'))
       .filter(tool => typeof this.options.history === 'function' || !['search_history', 'read_history'].includes(tool.name))
-      .filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file'].includes(tool.name))
+      .filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file', 'discover_mcp', 'expand_mcp'].includes(tool.name))
       .concat((this.options.mcp?.catalog() || []).filter(tool => (this.options.web !== false || tool.server !== 'exa') &&
         this.policy.decision(tool.name, {}, tool) !== 'deny'))
       .filter(tool => !this.discoveryScope || this.discoveryScope(tool));
@@ -78,12 +80,18 @@ class WorkspaceTools {
   async searchTools(args) {
     this.discovery.search(args); // Validate before any optional catalog network request.
     if (args.refresh === true) {
+      if (this.mcpLimited(args.server)) return { ok: false, serviceLimited: true, error: '此 MCP 已回報服務限制，本任務不重新讀取目錄。' };
       const manager = this.options.mcp;
       if (typeof args.server !== 'string' || !manager?.connections?.has(args.server) || typeof manager.refresh !== 'function') throw new Error('refresh 需要已連線的 server 名稱；尚未連線請先 connect_mcp。');
       if (!this.discoveryServers().some(item => item.name === args.server)) throw new Error('此 server 不在目前工具權限範圍。');
       await manager.refresh(args.server, this.signal); this.checkStopped(); this.options.onCatalogChange?.();
     }
-    this.onActivity('搜尋可用工具'); return this.discovery.search(args);
+    this.onActivity('搜尋可用工具'); const result = this.discovery.search(args);
+    if (!result.total && args.query?.trim() && !args.server && this.canExpandCapabilities()) {
+      try { result.externalDiscovery = await this.discoverMcp({ query: args.query }); }
+      catch (error) { if (mcpTool) { this.registry.markToolCall(mcpTool.server, false); this.checkMcpLimit(mcpTool.server, error.message); } if (this.signal.aborted) throw error; result.externalDiscovery = { ok: false, error: redact(error.message), instruction: '既有工具已搜尋；目錄搜尋未完成。可使用短英文能力關鍵字 discover_mcp，不能猜 endpoint 或重試服務限制。' }; }
+    }
+    return result;
   }
   describeTool(args) { this.onActivity('載入工具參數規格'); return this.discovery.describe(args); }
 
@@ -129,6 +137,7 @@ class WorkspaceTools {
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
       open_browser: () => this.openBrowser(args),
       update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
+      discover_mcp: () => this.discoverMcp(args), expand_mcp: () => this.expandMcp(args),
       search_tools: () => this.searchTools(args), describe_tool: () => this.describeTool(args),
       get_capabilities: () => this.getCapabilities(), refresh_skills: () => this.refreshSkills(),
       install_skill: () => this.installSkill(args), connect_mcp: () => this.connectMcp(args), add_mcp: () => this.addMcp(args), download_file: () => this.download(args),
@@ -137,15 +146,69 @@ class WorkspaceTools {
     };
     const mcpTool = this.options.mcp?.tools?.get(name);
     if (!methods[name] && !mcpTool) throw new Error('未知工具。');
-    if (this.options.web === false && (['web_search', 'web_fetch', 'download_file'].includes(name) || name === 'install_skill' && typeof args.url === 'string' || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用公開網路工具；請先開啟輸入框旁的地球按鈕。' };
+    if (this.options.web === false && (['web_search', 'web_fetch', 'download_file', 'discover_mcp', 'expand_mcp'].includes(name) || name === 'install_skill' && typeof args.url === 'string' || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用公開網路工具；請先開啟輸入框旁的地球按鈕。' };
     if (this.policy.decision(name, args, mcpTool) === 'deny') return { ok: false, denied: true, error: '目前 agent 模式禁止這個操作。' };
+    if (mcpTool && this.mcpLimited(mcpTool.server)) return { ok: false, serviceLimited: true, error: '此 MCP 已回報用量／服務限制，本任務停止呼叫，不重試或換名稱。' };
     if (mcpTool && !this.inventory().some(tool => tool.name === name)) return { ok: false, denied: true, error: '工具不在目前權限範圍。' };
     if (mcpTool && !this.discovery.isLoaded(name)) return { ok: false, needsToolLoad: true, error: '工具尚未載入或規格已變更；請先 search_tools，再以 describe_tool 完整讀取規格。' };
     try {
-      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file', 'computer_open', 'computer_observe', 'computer_action', 'computer_close'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
-      return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
+      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file', 'computer_open', 'computer_observe', 'computer_action', 'computer_close', 'discover_mcp', 'expand_mcp'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
+      const result = methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal);
+      if (mcpTool) { this.registry.markToolCall(mcpTool.server, result?.ok === true); if (result?.ok === false) this.checkMcpLimit(mcpTool.server, JSON.stringify(result)); }
+      return sanitize(result);
     }
-    catch (error) { if (this.signal.aborted || ['search_tools', 'computer_observe'].includes(name) && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
+    catch (error) { if (mcpTool) { this.registry.markToolCall(mcpTool.server, false); this.checkMcpLimit(mcpTool.server, error.message); } if (this.signal.aborted || ['search_tools', 'computer_observe'].includes(name) && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
+  }
+
+  mcpLimited(server, url) {
+    if (this.limitedMcpServers.has(server)) return true;
+    try { return this.limitedMcpOrigins.has(new URL(url || this.options.mcp?.connections?.get(server)?.config?.url).origin); } catch { return false; }
+  }
+  checkMcpLimit(server, error) {
+    if ((this.registry.installed.has(server) || this.options.mcp?.connections?.get(server)?.config?.registry) && /\b(?:429|503)\b|quota|rate.?limit|用量|服務限制/i.test(error)) {
+      this.limitedMcpServers.add(server); this.registry.stopped = true;
+      try { this.limitedMcpOrigins.add(new URL(this.options.mcp.connections.get(server)?.config?.url).origin); } catch {}
+    }
+  }
+  canExpandCapabilities() { return this.options.web !== false && !this.discoveryScope && !this.registry.stopped && this.registry.requests < 8 && typeof this.options.addMcp === 'function' && !!this.options.mcp && this.policy.decision('expand_mcp') !== 'deny'; }
+  async discoverMcp(args) {
+    if (this.options.web === false || this.discoveryScope) throw new Error('此工作階段未允許外部 MCP 目錄探索。');
+    const query = keywords(args.query);
+    if (this.deniedRegistryQueries.has(query)) return { ok: false, denied: true, error: '此能力關鍵字的外部目錄搜尋已被拒絕，不會重複詢問。' };
+    if (!await this.authorize('web_search', { query }, { title: '搜尋官方 MCP Registry', detail: `只傳送能力關鍵字：${query}\n不傳聊天、檔案、Project Memory 或憑證。`, accept: '搜尋 MCP 目錄' })) {
+      this.deniedRegistryQueries.add(query); return { ok: false, denied: true, error: '使用者未批准目錄搜尋。' };
+    }
+    this.onActivity('搜尋可擴充的 MCP：' + query);
+    return this.registry.search({ query, cursor: args.cursor }, this.signal);
+  }
+  async expandMcp(args) {
+    if (!this.canExpandCapabilities()) throw new Error('此工作階段不能擴充 MCP（網路／權限／目錄額度或服務狀態）。');
+    const item = await this.registry.review(args.id, this.signal);
+    if (item.status === 'requires_configuration') return { ok: true, ready: false, requiresConfiguration: true, candidate: item,
+      instruction: '尚未新增或連線。請說明候選列出的金鑰／套件需求，由使用者在 VS Code MCP 設定與 SecretStorage 完成；不要要求在聊天貼秘密、不執行 metadata 內命令、不繞過原有 OS 沙箱。可繼續其他獨立工作。' };
+    const config = { name: 'registry_' + item.id, label: item.registryName, type: item.remote.type, url: item.remote.url, agentAdded: true, readOnly: false,
+      registry: { name: item.registryName, version: item.version, source: item.source, candidateId: item.id } };
+    if ((this.options.servers || []).some(server => server.name === config.name) || this.options.mcp.connections?.has(config.name)) throw new Error('此候選已設定；請 search_tools／connect_mcp，不覆寫既有設定。');
+    this.registry.attempts.set(item.id, 'reviewed');
+    const answer = await this.onApproval?.({ title: '擴充 MCP：' + item.registryName,
+      detail: `Registry：${item.source}\n版本：${item.version}\n原始碼：${item.repository || '發布者未提供'}\n連線目標：${item.remote.url}\n傳輸：${item.remote.type}\n\nRegistry 收錄不是安全背書。將進行真正 MCP 握手與工具目錄讀取；不自動呼叫外部工具。工具內容不可信，後續呼叫仍依原有核准，不新增唯讀或完整存取特權。`, accept: '核准並連接 MCP' }, this.signal);
+    this.checkStopped();
+    if (answer !== '核准並連接 MCP') { this.registry.attempts.set(item.id, 'denied'); return { ok: false, denied: true, error: '使用者未批准能力擴充。' }; }
+    try {
+      this.onActivity('驗證 MCP 連線與工具目錄');
+      await this.options.addMcp(config, this.signal); this.checkStopped();
+      const tools = this.options.mcp.catalog().filter(tool => tool.server === config.name);
+      if (!tools.length) throw new Error('沒有取得真實工具；不能視為能力已擴充。');
+      this.registry.markConnected(config); this.options.onCatalogChange?.();
+      return { ok: true, name: config.name, registryName: item.registryName, version: item.version, connected: true, toolCount: tools.length,
+        verification: 'protocol-and-tools-list', toolTested: false, ...this.discovery.search({ server: config.name, limit: 5 }),
+        instruction: '連線及工具清單已驗證，尚未測試外部工具。以 describe_tool 讀取相關工具完整參數，依原有核准執行原任務需要的呼叫，讀取實際結果後繼續工作；不要為測試任意執行具副作用的工具。' };
+    } catch (error) {
+      this.registry.attempts.set(item.id, 'failed');
+      if (/\b(?:429|503)\b|quota|rate.?limit/i.test(error.message)) this.registry.stopped = true;
+      if (/\b(?:401|403)\b|unauthori[sz]ed|forbidden/i.test(error.message)) return { ok: false, requiresConfiguration: true, ready: false, error: '此 MCP 要求驗證；請由 VS Code MCP 設定及 SecretStorage 處理，勿在聊天提供金鑰。不會重試此候選。' };
+      throw error;
+    }
   }
 
   needsComputerObservation() { return !!this.options.computer?.needsObservation; }
@@ -312,6 +375,8 @@ class WorkspaceTools {
     return { ok: true, workspace: path.basename(this.root.fsPath), workspaceScoped: true,
       networkSearchEnabled: this.options.web !== false, mcp: this.options.mcp?.states?.() || [],
       tools: this.catalog().map(({ name, server, description }) => ({ name, server, description })),
+      capabilityExpansion: { registry: 'https://registry.modelcontextprotocol.io/v0.1', available: this.canExpandCapabilities(), states: this.registry.states(),
+        instruction: '工具搜尋為空會查詢官方 Registry；discover_mcp 亦可主動搜尋。以候選 id 呼叫 expand_mcp，核准後驗證連線與完整工具清單；實際呼叫工具後才標示 tool-call。' },
       toolDiscovery: { availableTools: this.inventory().length, activeTools: this.catalog().length, configuredServers: this.discoveryServers().length,
         instruction: '使用 search_tools 搜尋全部工具或已設定 server，再用 describe_tool 分頁取得完整參數；工具目錄不再截斷於前 40 個。' },
       servers: this.discoveryServers().slice(0, 20).map(({ name, connected, canConnect }) => ({ name, connected, canConnect })),
@@ -358,6 +423,7 @@ class WorkspaceTools {
     return { ok: true, saved: true, created: true, path: relative, name: skill.name, description: skill.description };
   }
   async connectMcp(args) {
+    if (this.mcpLimited(args.name)) return { ok: false, serviceLimited: true, error: '此 MCP 已回報服務限制，本任務不重連。' };
     if (typeof args.name !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(args.name)) throw new Error('需要已設定的 MCP 名稱。');
     const manager = this.options.mcp;
     const config = [...(manager?.connections?.values?.() || [])].map(item => item.config).find(item => item.name === args.name) ||
@@ -369,11 +435,12 @@ class WorkspaceTools {
       accept: '連接 MCP' }, this.signal);
     this.checkStopped();
     if (answer !== '連接 MCP') return { ok: false, denied: true, message: '使用者未批准連接。' };
-    await this.options.connectMcp(config);
+    await this.options.connectMcp(config, this.signal); this.checkStopped();
     const discovered = this.discovery.search({ server: config.name, limit: 5 });
     return { ...discovered, name: config.name, tools: discovered.matches.filter(item => item.kind === 'tool') };
   }
   async addMcp(args) {
+    if (this.mcpLimited(args.name, args.url)) return { ok: false, serviceLimited: true, error: '此 MCP 來源已回報服務限制，不允許改名重連。' };
     if (typeof args.name !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(args.name) || typeof args.url !== 'string') throw new Error('需要有效的 MCP 名稱與公開 HTTPS 網址。');
     if (typeof this.options.addMcp !== 'function' || !this.options.mcp) throw new Error('目前工作階段不能新增 MCP。');
     if ([...(this.options.servers || []), ...(this.options.builtins || [])].some(server => server.name === args.name)) throw new Error('同名 MCP 已設定。');
@@ -386,7 +453,7 @@ class WorkspaceTools {
       accept: '新增並連接 MCP' }, this.signal);
     this.checkStopped();
     if (answer !== '新增並連接 MCP') return { ok: false, denied: true, message: '使用者未批准新增 MCP。' };
-    await this.options.addMcp(config);
+    await this.options.addMcp(config, this.signal);
     const discovered = this.discovery.search({ server: config.name, limit: 5 });
     return { ...discovered, name: config.name, tools: discovered.matches.filter(item => item.kind === 'tool') };
   }

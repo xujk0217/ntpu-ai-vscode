@@ -6,6 +6,7 @@ const path = require('node:path');
 const { randomUUID, randomBytes } = require('node:crypto');
 const { BrowserBridge } = require('./browser');
 const { ComputerController } = require('./computer/controller');
+const { registerMcp } = require('./mcp-registration');
 const { PreviewProvider, WorkspaceTools } = require('./tools');
 const { safePath, hash, diskText, isBlocked } = require('./workspace');
 const { runAgent } = require('./agent');
@@ -596,15 +597,8 @@ class AgentApp {
       const baseTools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); this.capabilities(); },
         (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox, computer,
           selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, servers: this.servers, builtins: BUILTINS,
-          connectMcp: async server => { await this.mcp.connect(server); this.capabilities(); },
-          addMcp: async server => {
-            if (this.servers.some(item => item.name === server.name) || BUILTINS.some(item => item.name === server.name)) throw new Error('MCP 名稱已存在。');
-            await publicTarget(server.url); validateServer(server);
-            this.servers.push(server); await this.context.globalState.update('ntpuAI.mcpServers', this.servers);
-            try { await this.mcp.connect(server); }
-            catch (error) { this.servers = this.servers.filter(item => item.name !== server.name); await this.context.globalState.update('ntpuAI.mcpServers', this.servers); throw error; }
-            this.capabilities();
-          },
+          connectMcp: async (server, requestSignal) => { await this.mcp.connect(server, requestSignal); this.capabilities(); },
+          addMcp: (server, requestSignal) => registerMcp(this, server, requestSignal),
           onCatalogChange: () => this.capabilities(),
           bridge: scheduler.bridge(bridge), parallel: this.parallelState().enabled, history: () => this.session.messages.filter(message => !message.queued && !message.steeringPending),
           reviewPaths: config.get('privacy.reviewPaths', []),

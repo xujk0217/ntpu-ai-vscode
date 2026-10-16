@@ -28,6 +28,7 @@ class AgentWorkers {
     this.jobs = new Map(); this.closed = false; this.assessment = null; this.reassessmentUsed = false;
   }
   catalog(options) { return this.base.catalog(options).concat(DEFINITIONS.map(tool => tool.name === 'delegate_tasks' ? { ...tool, description: `背景分派 1–${this.maxWorkers} 個獨立唯讀子任務，role 是 explore/research/review；同時最多 ${this.maxWorkers} 個未結束子任務，父任務最多 ${this.maxTasks} 個。提供 expectedOutput 與 independent:true，主 Agent 繼續獨立工作。不能寫檔或執行 shell，最多六輪／子任務且共用父任務模型預算與請求排程，保留主 Agent ${PARENT_RESERVE} 輪整合。一般失敗不影響其他獨立工作；同一失敗內容不能改標題重派，重要的一般失敗只可透過 retry_task 排回 Queue 一次，附具體理由。429／登入／服務限制不得重試。` } : tool)); }
+  canExpandCapabilities() { return this.base.canExpandCapabilities?.(); }
   needsComputerObservation() { return this.base.needsComputerObservation?.(); }
   prepareTools(request) { return this.base.prepareTools?.(request); }
   get skills() { return this.base.skills; }

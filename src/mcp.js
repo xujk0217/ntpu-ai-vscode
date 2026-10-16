@@ -60,19 +60,22 @@ class McpManager {
     this.connections = new Map(); this.connecting = new Map(); this.tools = new Map(); this.failures = new Map();
     this.ownsSandbox = !sandbox; this.sandbox = sandbox || new SandboxExecutor(); this.workspace = workspace;
   }
-  async connect(config) {
-    validateServer(config);
+  async connect(config, signal) {
+    signal?.throwIfAborted(); validateServer(config);
     if (this.connections.has(config.name)) return this.connections.get(config.name);
     if (this.connecting.has(config.name)) return this.connecting.get(config.name);
-    const work = this._connect(config);
+    const work = this._connect(config, signal);
     this.connecting.set(config.name, work);
     this.onState();
     try { return await work; } finally { this.connecting.delete(config.name); this.onState(); }
   }
-  async _connect(config) {
+  async _connect(config, signal) {
     const client = new Client({ name: 'ntpu-ai-coder', version: require('../package.json').version }, { capabilities: {} });
     let transport, isolated;
+    const abort = () => { void client.close().catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
+      signal?.throwIfAborted();
       const headers = {};
       const secret = config.secretKey && await this.secrets?.get(config.secretKey);
       if (secret) headers[config.authHeader || 'Authorization'] = config.authHeader === 'x-api-key' || /^Bearer\s/i.test(secret) ? secret : `Bearer ${secret}`;
@@ -92,8 +95,10 @@ class McpManager {
         const Transport = config.type === 'sse' ? SSEClientTransport : StreamableHTTPClientTransport;
         transport = new Transport(new URL(config.url), { requestInit: { headers }, ...(config.agentAdded ? { fetch: pinnedPublicFetch() } : {}) });
       }
-      await client.connect(transport, { timeout: 20000 });
-      const tools = await listToolPages(client);
+      signal?.throwIfAborted();
+      await client.connect(transport, { timeout: 20000, signal });
+      const tools = await listToolPages(client, signal);
+      signal?.throwIfAborted();
       const connection = { client, transport, config, isolated, tools };
       this.replaceTools(connection);
       this.connections.set(config.name, connection); this.failures.delete(config.name);
@@ -102,7 +107,7 @@ class McpManager {
       await client.close().catch(() => {});
       await isolated?.cleanup().catch(() => {});
       this.failures.set(config.name, redact(error.message)); this.onState(); throw new Error(redact(error.message));
-    }
+    } finally { signal?.removeEventListener('abort', abort); }
   }
   replaceTools(connection, tools = connection.tools) {
     const { config } = connection;

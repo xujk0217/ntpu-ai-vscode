@@ -8,7 +8,7 @@ const { OutputParts, partialOutput, MAX_OUTPUT_BYTES } = require('./output-parts
 const { previouslyDenied } = require('./denied-actions');
 
 const COORDINATION_TOOLS = new Set(['delegate_tasks', 'get_task_results', 'retry_task', 'cancel_task']);
-const CONTROL_TOOLS = new Set(['update_plan', 'get_capabilities', 'search_tools', 'describe_tool', 'load_skill', 'refresh_skills', 'ask_user', ...COORDINATION_TOOLS]);
+const CONTROL_TOOLS = new Set(['update_plan', 'get_capabilities', 'search_tools', 'describe_tool', 'load_skill', 'refresh_skills', 'discover_mcp', 'ask_user', ...COORDINATION_TOOLS]);
 function semanticEvidence(value) {
   if (Array.isArray(value)) return value.map(semanticEvidence);
   if (!value || typeof value !== 'object') return value;
@@ -35,7 +35,7 @@ function unresolvedToolFailure(records) {
   const failed = records[index];
   const desktopFailure = failed.name === 'run_command' && /kLSServerCommunicationErr|Launch.?Services|cannot open display|no method available for opening/i.test(failed.result.output || '');
   const resolved = records.slice(index + 1).some(record => record.result?.ok === true &&
-    (desktopFailure ? record.name === 'open_browser' && record.result.opened === true : record.name === failed.name));
+    (desktopFailure ? record.name === 'open_browser' && record.result.opened === true : record.name === failed.name && (failed.name !== 'expand_mcp' || record.result.connected === true)));
   return resolved ? null : failed;
 }
 
@@ -53,7 +53,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
   let repairs = 0, controlRepairs = 0, completionRetries = 0, stagnantCompletionChecks = 0, lastCompletionEvidence = '', previousMessage = '', budgetExhausted = false, usedSteps = 0, blockedRepeat = null, assessmentAttempts = 0;
   let assessmentBypassed = records.some(record => record.type === 'delegation_assessment');
   const checkpoint = async () => onCheckpoint(sanitize(records));
-  let reservedRound = null, computerChecks = 0;
+  let reservedRound = null, computerChecks = 0, capabilityChecks = 0;
   const originalRequest = request, existingSteering = new Set(records.filter(record => record.type === 'user_steering').map(record => record.id));
   const consumeSteering = async (beforeFinal = false) => {
     if (output.active && !output.done) return false;
@@ -222,6 +222,14 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     }
     if (reply.kind === 'final') {
       if (await consumeSteering(true)) { await checkpoint(); continue; }
+      const missingCapability = /(?:缺少|沒有|無法|不支援|不可用|missing|unavailable|cannot|no available).{0,45}(?:工具|MCP|能力|tools?|capabilit)|(?:工具|MCP|能力).{0,25}(?:缺少|不足|不可用|未設定|不存在)/i.test(reply.message);
+      if (missingCapability && (profile.agent || 'build') === 'build' && tools.canExpandCapabilities?.() &&
+        !records.some(record => record.result?.denied || record.type === 'tool' && (['discover_mcp','expand_mcp'].includes(record.name) || record.name === 'search_tools' && record.result?.externalDiscovery)) &&
+        !/(?:不要|不需|無需).{0,12}(?:上網|搜尋|連線|新增|擴充)|without network/i.test(request)) {
+        if (++capabilityChecks > 2) { onFinal('尚未完成實際工具探索，不能確認所需能力不存在；任務未完成，已保留紀錄。'); return { completed: false, steps: step + 1, capabilityUnverified: true }; }
+        records.push({ type: 'capability_check', instruction: 'Before claiming missing tool capabilities, use search_tools; if local tools were already searched and are insufficient, use discover_mcp with short non-sensitive English capability keywords. Review actual registered tools and registry candidates. Expansion still needs approval; if configuration, network policy or service limits block it, report that actual evidence and continue independent work. Never invent endpoints, installation or successful verification.' });
+        onActivity('正在確認可用工具與能力擴充選項'); await checkpoint(); continue;
+      }
       if (reply.completed !== false && tools.needsComputerObservation?.()) {
         if (++computerChecks > 2) { onFinal('畫面操作尚未經重新觀察驗證，任務未完成。已保留實際操作紀錄。'); return { completed: false, steps: step + 1, computerUnverified: true }; }
         records.push({ type: 'verification_check', instruction: 'Computer actions require a fresh computer_observe before claiming success. Use actual observations; if the target closed or login/verification prevents observation, report completed:false with that limitation.' });
@@ -252,10 +260,10 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       const plan = [...records].reverse().find(record => record.name === 'update_plan' && record.result?.ok);
       const unfinished = (profile.agent || 'build') === 'build' && (plan?.result.steps || []).some(item => item.status !== 'completed');
       const implementation = (profile.agent || 'build') === 'build' && /建立|新增|實作|修正|修改|產生|implement|create|build|fix|(?:幫我|替我|直接|請).*(?:執行|啟動|開啟|打開|下載|安裝)/i.test(request) && !/^(?:請)?(?:只(?:說明|解釋|規劃)|(?:不要|不需|無需)(?:修改|實作|建立))/.test(request);
-      const noAction = implementation && !records.some(record => record.result?.ok && (['write_file', 'edit_file', 'create_visual', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name?.startsWith('mcp_')));
+      const noAction = implementation && !records.some(record => record.result?.ok && (['write_file', 'edit_file', 'create_visual', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name === 'expand_mcp' && record.result.connected === true || record.name?.startsWith('mcp_')));
       if (!failed && (unfinished || noAction) && !denied && reply.completed !== false) {
         const meaningful = JSON.stringify(semanticEvidence(records.filter(record => record.type === 'tool' && record.result?.ok === true &&
-          (['write_file', 'edit_file', 'create_visual', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name?.startsWith('mcp_')))
+          (['write_file', 'edit_file', 'create_visual', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name === 'expand_mcp' && record.result.connected === true || record.name?.startsWith('mcp_')))
           .map(record => ({ name: record.name, args: record.args, result: record.result }))));
         stagnantCompletionChecks = meaningful === lastCompletionEvidence ? stagnantCompletionChecks + 1 : 0;
         lastCompletionEvidence = meaningful;

@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.19 · 實驗性專案 · MIT License**
+**版本：0.6.20 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -37,10 +37,10 @@ build Agent 新增 `computer_open`、`computer_observe`、`computer_action`、`c
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.19.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.19.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.19.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.19.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.20.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.20.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.20.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.20.vsix` |
 
 ### 一鍵更新
 
@@ -74,7 +74,7 @@ Agent 會依任務選用工具、載入 skills，並分派最多四個探索、�
 
 <img src="docs/images/agent-settings.png" alt="Agent 設定檔編輯、套用與匯出（本機測試畫面）" width="340">
 
-Agent 會依任務自動選擇相關的已連線 MCP 工具，並可搜尋全部工具、分頁讀取完整參數規格、核准連接已設定的 MCP 及更新其工具清單，不再只看前 40 個工具。每輪只帶入需要的工具，原有核准、唯讀子任務與敏感資料防護保留。詳見[工具自動探索與按需載入](docs/TOOL_DISCOVERY.md)。
+Agent 會依任務自動選擇相關的已連線 MCP 工具，並可搜尋全部工具、分頁讀取完整參數規格、核准連接已設定的 MCP 及更新其工具清單，不再只看前 40 個工具。每輪只帶入需要的工具，原有核准、唯讀子任務與敏感資料防護保留。找不到工具時，build Agent 可用簡短能力關鍵字查詢官方 MCP Registry，檢查來源與需求，核准後連接公開 HTTPS MCP、載入規格，再用實際工具結果繼續原任務。需金鑰或本機套件者會明確列出設定需求，不自行執行安裝命令。詳見[工具自動探索與按需載入](docs/TOOL_DISCOVERY.md)。
 
 聊天回答支援標題、清單、引用、表格、刪除線、程式碼高亮與中文標點前後的粗體／斜體。數學公式支援 `$...$`、`$$...$$`、`\(...\)`、`\[...\]`，以離線 MathML 顯示；不完整或不支援的公式保留可讀原文，歷史與匯出的 Markdown 不會被改寫。
 

@@ -59,6 +59,7 @@ async function fetchPublic(value, signal, redirects = 0, options = {}) {
     request.once('timeout', () => request.destroy(new Error('網頁讀取逾時。')));
     request.end();
   });
+  if (result.redirect && options.noRedirect) throw new Error('此來源不允許重新導向。');
   if (result.redirect) return fetchPublic(result.redirect, signal, redirects + 1, options);
   return result;
 }

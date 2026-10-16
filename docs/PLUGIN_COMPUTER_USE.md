@@ -1,4 +1,4 @@
-# 本機 Plugin／MCP 與 Computer use（0.6.19）
+# 本機 Plugin／MCP 與 Computer use（0.6.20）
 
 這兩個功能用途不同：外部 Plugin 讓其他 Agent 請 NTPU AI 提供分析；Computer use 則由 VS Code 裡的 NTPU Agent 操作已核准的工作畫面。模型仍透過校方網站的專用 Chromium Profile，沒有改用官方模型 API，也不需要 OpenAI API 金鑰。
 
@@ -12,7 +12,7 @@
 
 不會自動更改其他 Agent 的設定。Plugin 格式參考 [OpenAI 的 Plugin 文件](https://developers.openai.com/plugins/build/plugins)；本專案沒有上架 OpenAI Plugin 公開目錄，也不表示每個 Agent 都支援相同的 Plugin 匯入方式。MCP 是較通用的接法。
 
-GitHub Release 另提供 `ntpu-ai-0.6.19.plugin.zip`，這是跨平台的 Node.js stdio 工具包，沒有登入資料或機器路徑；不是 VSIX，也不能獨立登入校方。優先使用 VS Code 匯出功能取得已連到本機橋接的設定；若手動使用 ZIP，將 `NTPU_BRIDGE_FILE` 指向**該次匯出設定**所指定的連線檔，或加入 `--connection <該連線檔路徑>`，不要讀取、複製或貼出連線檔內容。
+GitHub Release 另提供 `ntpu-ai-0.6.20.plugin.zip`，這是跨平台的 Node.js stdio 工具包，沒有登入資料或機器路徑；不是 VSIX，也不能獨立登入校方。優先使用 VS Code 匯出功能取得已連到本機橋接的設定；若手動使用 ZIP，將 `NTPU_BRIDGE_FILE` 指向**該次匯出設定**所指定的連線檔，或加入 `--connection <該連線檔路徑>`，不要讀取、複製或貼出連線檔內容。
 
 ### MCP 工具
 
