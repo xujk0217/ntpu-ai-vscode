@@ -4,6 +4,7 @@ const { chromium } = require('playwright-core');
 const { publicTarget } = require('../network');
 const { inspectOutboundPayload, redact } = require('../security/guard');
 const { randomUUID } = require('node:crypto');
+const blockedWindowClass = new RegExp(require('./window-policy.json').blockedClassPattern, 'i');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 function desktopCall(message, { python = '/usr/bin/python3', signal } = {}) {
@@ -38,7 +39,7 @@ class ComputerController {
     if (this.mode) throw new Error('請先 computer_close 關閉目前控制目標。');
     if (args.mode === 'desktop') {
       if ((this.options.platform || process.platform) !== 'linux') throw new Error('原生桌面目前支援 Linux X11／XWayland；此平台可使用獨立工作瀏覽器。');
-      const windows = (await this.desktop({ op: 'list' }, { signal })).windows.filter(window => !/chrome|chromium|firefox|microsoft-edge|brave|vivaldi|terminal|kitty|alacritty|wezterm|jetbrains|(?:^|\x00)(?:code|codium|emacs)(?:\x00|$)/i.test(window.class || '') && !/\b(?:sso|sign.?in|log.?in)\b|登入|驗證碼/i.test(window.title));
+      const windows = (await this.desktop({ op: 'list' }, { signal })).windows.filter(window => !blockedWindowClass.test(window.class || '') && !/\b(?:sso|sign.?in|log.?in)\b|登入|驗證碼/i.test(window.title));
       const selected = await this.options.selectWindow(windows, signal); if (!selected) return { ok: false, denied: true };
       if (!await this.approve({ title: '控制選定視窗', detail: `視窗：${redact(selected.title)}\n僅限這個 X11／XWayland 視窗。觀察會讀取畫面，影像分析需另外確認；每次動作仍需核准。`, accept: '控制此視窗' }, signal)) return { ok: false, denied: true };
       this.mode = 'desktop'; this.window = selected; return { ok: true, mode: this.mode, title: redact(selected.title), controlled: true };

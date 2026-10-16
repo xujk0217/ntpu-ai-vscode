@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ntpu-ai",
-  "version": "0.6.18",
+  "version": "0.6.19",
   "description": "Use the local VS Code NTPU AI session for explicitly approved advisory tasks, with durable paged results.",
   "author": {
     "name": "xujk0217"

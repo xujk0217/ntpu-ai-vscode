@@ -5,6 +5,8 @@ os.environ['GDK_BACKEND'] = 'x11'
 import gi
 gi.require_version('Gdk', '3.0'); gi.require_version('GdkX11', '3.0')
 from gi.repository import Gdk, GdkX11
+from pathlib import Path
+BLOCKED_CLASS = json.loads(Path(__file__).with_name('window-policy.json').read_text())['blockedClassPattern']
 Gdk.init([])
 def stopped(signum, frame): raise RuntimeError('已停止桌面操作')
 signal.signal(signal.SIGTERM, stopped)
@@ -34,7 +36,7 @@ def main(m):
     w = next((w for w in windows if str(w.get_xid()) == str(m.get('id'))), None)
     if not w or not w.is_viewable(): raise RuntimeError('選定視窗已關閉或不可見。')
     current = info(w)
-    if re.search(r'chrome|chromium|firefox|microsoft-edge|brave|vivaldi|terminal|kitty|alacritty|wezterm|jetbrains|(?:^|\x00)(?:code|codium|emacs)(?:\x00|$)',current['class'],re.I) or re.search(r'\b(?:sso|sign.?in|log.?in)\b|登入|驗證碼',current['title'],re.I): raise RuntimeError('登入、日常瀏覽器與終端機視窗不開放桌面控制；網頁請使用獨立工作瀏覽器。')
+    if re.search(BLOCKED_CLASS,current['class'],re.I) or re.search(r'\b(?:sso|sign.?in|log.?in)\b|登入|驗證碼',current['title'],re.I): raise RuntimeError('登入、日常瀏覽器與終端機視窗不開放桌面控制；網頁請使用獨立工作瀏覽器。')
     if current['width'] > 3072 or current['height'] > 2048: raise RuntimeError('視窗過大，請縮小到 3072×2048 以內。')
     if m['op'] == 'observe':
         pixbuf = Gdk.pixbuf_get_from_window(w, 0, 0, current['width'], current['height'])

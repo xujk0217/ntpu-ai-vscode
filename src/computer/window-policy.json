@@ -1,0 +1,3 @@
+{
+  "blockedClassPattern": "chrome|chromium|firefox|microsoft-edge|brave|vivaldi|opera|qutebrowser|epiphany|falkon|midori|seamonkey|waterfox|librewolf|floorp|zen-browser|mullvad|term|console|konsole|shell|rxvt|kitty|alacritty|wezterm|jetbrains|(?:^|\\x00)(?:st|foot|code(?:-insiders|-oss)?|vscodium|codium|emacs)(?:\\x00|$)"
+}

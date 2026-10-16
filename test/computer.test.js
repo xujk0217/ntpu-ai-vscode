@@ -66,3 +66,12 @@ test('public network switch also applies to the controlled browser', async () =>
   await assert.rejects(f.controller.open({ url: 'https://example.com' }, f.signal), /公開網路已停用/);
   assert.equal((await f.controller.checkedTarget('http://localhost:3000')).url.hostname, 'localhost'); await f.controller.dispose();
 });
+
+test('native selection excludes terminal and daily browser variants through the backend-shared policy', async () => {
+  const classes=['xterm\0XTerm\0','urxvt\0URxvt\0','konsole\0org.kde.konsole\0','st\0St\0','Opera\0opera\0','qutebrowser\0qutebrowser\0','code-insiders\0Code - Insiders\0'];
+  const blocked=new RegExp(require('../src/computer/window-policy.json').blockedClassPattern,'i');
+  assert.ok(classes.every(value=>blocked.test(value)));
+  const f=fixture();f.controller.desktop=async()=>({windows:classes.map((value,i)=>({id:String(i),title:'Synthetic app',class:value}))});
+  f.controller.options.selectWindow=async windows=>{assert.equal(windows.length,0);return undefined;};
+  assert.equal((await f.controller.open({mode:'desktop'},f.signal)).denied,true);assert.equal(f.counts().actions,0);await f.controller.dispose();
+});

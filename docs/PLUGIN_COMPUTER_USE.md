@@ -1,4 +1,4 @@
-# 本機 Plugin／MCP 與 Computer use（0.6.18）
+# 本機 Plugin／MCP 與 Computer use（0.6.19）
 
 這兩個功能用途不同：外部 Plugin 讓其他 Agent 請 NTPU AI 提供分析；Computer use 則由 VS Code 裡的 NTPU Agent 操作已核准的工作畫面。模型仍透過校方網站的專用 Chromium Profile，沒有改用官方模型 API，也不需要 OpenAI API 金鑰。
 
@@ -12,7 +12,7 @@
 
 不會自動更改其他 Agent 的設定。Plugin 格式參考 [OpenAI 的 Plugin 文件](https://developers.openai.com/plugins/build/plugins)；本專案沒有上架 OpenAI Plugin 公開目錄，也不表示每個 Agent 都支援相同的 Plugin 匯入方式。MCP 是較通用的接法。
 
-GitHub Release 另提供 `ntpu-ai-0.6.18.plugin.zip`，這是跨平台的 Node.js stdio 工具包，沒有登入資料或機器路徑；不是 VSIX，也不能獨立登入校方。優先使用 VS Code 匯出功能取得已連到本機橋接的設定；若手動使用 ZIP，將 `NTPU_BRIDGE_FILE` 指向**該次匯出設定**所指定的連線檔，或加入 `--connection <該連線檔路徑>`，不要讀取、複製或貼出連線檔內容。
+GitHub Release 另提供 `ntpu-ai-0.6.19.plugin.zip`，這是跨平台的 Node.js stdio 工具包，沒有登入資料或機器路徑；不是 VSIX，也不能獨立登入校方。優先使用 VS Code 匯出功能取得已連到本機橋接的設定；若手動使用 ZIP，將 `NTPU_BRIDGE_FILE` 指向**該次匯出設定**所指定的連線檔，或加入 `--connection <該連線檔路徑>`，不要讀取、複製或貼出連線檔內容。
 
 ### MCP 工具
 
@@ -56,6 +56,8 @@ GitHub Release 另提供 `ntpu-ai-0.6.18.plugin.zip`，這是跨平台的 Node.j
 ### 原生桌面範圍
 
 本版原生桌面僅支援 **Linux X11／XWayland 視窗**，需 `/usr/bin/python3`、PyGObject、GDK 3、libX11 與 libXtst。使用者從視窗清單明確選定單一視窗，最大 3072×2048；不做整個桌面擷取、不讀剪貼簿、不記錄鍵盤。日常瀏覽器、終端機、常見可嵌入終端機的 IDE 及可辨識的登入視窗不提供控制；網頁使用獨立工作瀏覽器。
+
+視窗類別排除只是一層防誤用措施，不是通用 OS 沙箱；無法識別任意更名程式，逐次核准不授予繞過既有檔案／Shell 權限的能力。
 
 動作限視窗內 click、少量捲動、基本單鍵及目前鍵盤映射可輸入的文字；不接受系統組合快捷鍵。操作前確認視窗幾何、焦點與滑鼠目標。原生 type 是鍵盤事件，會受目前輸入法影響；必須重新觀察文字結果，不能保證原始字串輸入成功。Unicode 表單輸入優先使用瀏覽器 fill。
 
