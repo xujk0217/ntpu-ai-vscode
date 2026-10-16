@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.17 · 實驗性專案 · MIT License**
+**版本：0.6.18 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -20,6 +20,12 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 <img src="docs/images/login.png" alt="未登入提示與主要登入按鈕（本機合成畫面）" width="340">
 
+## Plugin 與 Computer use
+
+可匯出本機 Plugin／MCP 設定，讓其他 Agent 透過啟用中的 VS Code 請 NTPU AI 提供分析；每次請求仍需確認，不繼承本機聊天、Project Memory 或工具權限。命令面板執行 **NTPU AI: 匯出本機 Plugin／MCP 設定** 即可取得設定與可攜 stdio 工具包。
+
+build Agent 新增 `computer_open`、`computer_observe`、`computer_action`、`computer_close`：核准後操作獨立、單一來源的工作瀏覽器；Linux 另可選定 X11／XWayland 原生視窗。每次動作需確認，操作後必須重新觀察。原生 Wayland、Windows／macOS 桌面後端尚未支援；跨平台工作瀏覽器不受此桌面範圍限制。詳見[接線、工具與平台限制](docs/PLUGIN_COMPUTER_USE.md)。
+
 ## 安裝與更新
 
 目前透過 GitHub Releases 提供 VSIX，尚未上架 VS Code Marketplace。
@@ -31,10 +37,10 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.17.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.17.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.17.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.17.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.18.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.18.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.18.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.18.vsix` |
 
 ### 一鍵更新
 

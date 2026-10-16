@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.17",
+  "version": "0.6.18",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -71,6 +71,18 @@
       {
         "command": "ntpuAI.installUpdate",
         "title": "NTPU AI: 下載並安裝更新"
+      },
+      {
+        "command": "ntpuAI.enablePlugin",
+        "title": "NTPU AI: 啟用外部 Agent 橋接"
+      },
+      {
+        "command": "ntpuAI.exportPlugin",
+        "title": "NTPU AI: 匯出本機 Plugin／MCP 設定"
+      },
+      {
+        "command": "ntpuAI.disablePlugin",
+        "title": "NTPU AI: 停用外部 Agent 橋接"
       }
     ],
     "menus": {
@@ -330,7 +342,10 @@
     "mcp:smoke": "node scripts/mcp-smoke.js",
     "browser:fixture": "node scripts/browser-fixture.js",
     "sandbox:fixture": "node scripts/sandbox-fixture.js",
-    "ocr:fixture": "node scripts/ocr-fixture.js"
+    "ocr:fixture": "node scripts/ocr-fixture.js",
+    "computer:fixture": "node scripts/computer-fixture.js",
+    "desktop:fixture": "node scripts/desktop-fixture.js",
+    "plugin:package": "npm run build && python3 scripts/package-plugin.py"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

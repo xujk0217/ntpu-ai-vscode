@@ -50,6 +50,7 @@ class WorkspaceTools {
 
   inventory() {
     return DEFINITIONS.filter(tool => tool.name === 'run_command' || this.policy.decision(tool.name) !== 'deny')
+      .filter(tool => this.options.computer || !tool.name.startsWith('computer_'))
       .filter(tool => typeof this.options.history === 'function' || !['search_history', 'read_history'].includes(tool.name))
       .filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file'].includes(tool.name))
       .concat((this.options.mcp?.catalog() || []).filter(tool => (this.options.web !== false || tool.server !== 'exa') &&
@@ -122,6 +123,7 @@ class WorkspaceTools {
     this.checkStopped();
     if (!vscode.workspace.isTrusted) throw new Error('請先信任目前的 VS Code 工作區。');
     const methods = {
+      computer_open: () => this.computer('open', args), computer_observe: () => this.computer('observe', args), computer_action: () => this.computer('action', args), computer_close: () => this.computer('close', args),
       list_files: () => this.list(args), read_file: () => this.read(args), search_text: () => this.search(args),
       search_history: () => this.history('search', args), read_history: () => this.history('read', args),
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
@@ -140,10 +142,16 @@ class WorkspaceTools {
     if (mcpTool && !this.inventory().some(tool => tool.name === name)) return { ok: false, denied: true, error: '工具不在目前權限範圍。' };
     if (mcpTool && !this.discovery.isLoaded(name)) return { ok: false, needsToolLoad: true, error: '工具尚未載入或規格已變更；請先 search_tools，再以 describe_tool 完整讀取規格。' };
     try {
-      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
+      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file', 'computer_open', 'computer_observe', 'computer_action', 'computer_close'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
     catch (error) { if (this.signal.aborted || name === 'search_tools' && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
+  }
+
+  needsComputerObservation() { return !!this.options.computer?.needsObservation; }
+  async computer(method, args) {
+    if (!this.options.computer) throw new Error('此工作階段沒有 Computer use 控制器。');
+    return this.options.computer[method](args, this.signal);
   }
 
   history(operation, args) {

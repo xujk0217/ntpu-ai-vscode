@@ -97,7 +97,7 @@ test('model loop discovers, loads and calls a tool beyond the former cap with th
 });
 test('loaded tools remain usable under the minimum prompt budget without flooding the catalog', () => {
   const all = new Map(Array.from({ length: 6 }, (_, i) => { const t = remote(i, { inputSchema: { type: 'object', description: 'schema '.repeat(300) } }); return [t.name, t]; }));
-  const tools = nativeTools({ mcp: fakeManager(all) });
+  const tools = nativeTools({ mcp: fakeManager(all), computer: {} });
   for (const tool of all.values()) { let page = tools.discovery.describe({ name: tool.name }); while (!page.complete) page = tools.discovery.describe({ name: tool.name, offset: page.nextOffset, version: page.version }); }
   const wrapped = new AgentWorkers({ base: tools, signal: new AbortController().signal });
   for (const budget of [16000, 32000, 64000]) {

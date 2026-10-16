@@ -5,6 +5,7 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const { randomUUID, randomBytes } = require('node:crypto');
 const { BrowserBridge } = require('./browser');
+const { ComputerController } = require('./computer/controller');
 const { PreviewProvider, WorkspaceTools } = require('./tools');
 const { safePath, hash, diskText, isBlocked } = require('./workspace');
 const { runAgent } = require('./agent');
@@ -121,7 +122,7 @@ class AgentApp {
     }
   }
   post(message) { void this.view?.webview.postMessage(sanitize(message)); }
-  busy() { return !!(this.controller || this.diagnosticController || this.updateInstalling); }
+  busy() { return !!(this.controller || this.diagnosticController || this.externalController || this.updateInstalling); }
   workspace(session = this.session) {
     return vscode.workspace.workspaceFolders?.find(folder => folder.uri.toString() === session.workspace) ||
       (!session.workspace ? vscode.workspace.workspaceFolders?.[0] : null);
@@ -570,8 +571,30 @@ class AgentApp {
         }
       }, { adaptive: this.adaptive, onState: () => this.state(), rateGate: this.requestRate, onWait: milliseconds => { this.progress = `等待本機請求節奏（約 ${Math.ceil(milliseconds / 1000)} 秒）`; this.state(); } });
       const modelBudget = new ModelBudget(taskStepLimit(config.get('maxSteps', 100), this.session.options.depth));
+      const computer = this.computer = new ComputerController({ directory: path.join(this.context.globalStorageUri.fsPath, 'computer-use'),
+        web: this.session.options.web, browser: config.get('browser', 'auto'), customPath: config.get('customBrowserPath', ''), remote: !!vscode.env?.remoteName || this.context.globalStorageUri.scheme !== 'file',
+        approve: async (detail, requestSignal) => await this.gate.request(detail, requestSignal) === detail.accept,
+        selectWindow: async (windows, requestSignal) => {
+          const cancellation = new vscode.CancellationTokenSource(); const abort = () => cancellation.cancel();
+          requestSignal.addEventListener('abort', abort, { once: true });
+          try {
+            const picked = await vscode.window.showQuickPick(windows.map(window => ({ label: redact(window.title || '未命名視窗'), description: window.width + '×' + window.height, window })), { title: '選擇允許 Computer use 控制的 X11／XWayland 視窗' }, cancellation.token);
+            return picked?.window;
+          } finally { requestSignal.removeEventListener('abort', abort); cancellation.dispose(); }
+        },
+        image: async (buffer, question, requestSignal) => {
+          const artifact = await this.artifact({ buffer, mimeType: 'image/png', title: 'Computer use · 選定視窗' });
+          if (!question) return { artifact: artifact.id, instruction: '截圖已保存在本機；需要視覺分析時以 question 重新觀察，先取得傳送核准。' };
+          if (typeof question !== 'string' || question.length > 2000) throw new Error('畫面分析問題最多 2000 字。');
+          const answer = await this.gate.request({ title: '將選定畫面交給 NTPU AI 分析', detail: '截圖可能包含私人資料。只傳送剛才顯示的選定視窗；請確認未包含登入、驗證或敏感資料。', accept: '傳送這張畫面' }, requestSignal);
+          if (answer !== '傳送這張畫面') return { artifact: artifact.id, analysisDenied: true };
+          await scanner.scan(buffer, 'image/png');
+          if (modelBudget.consume() === null) throw new Error('共用模型輪數已用完，沒有傳送畫面。');
+          const analysis = await scheduler.bridge(bridge).chat('描述這張實際截圖並回答：' + redact(question), { signal: requestSignal, newConversation: true, attachment: { name: 'selected-window.png', mimeType: 'image/png', buffer, approved: true } });
+          return { artifact: artifact.id, analysis: redact(analysis.text) };
+        } });
       const baseTools = new WorkspaceTools(root.uri, this.previews, signal, text => { this.progress = text; this.state(); this.capabilities(); },
-        (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox,
+        (detail, requestSignal) => this.gate.request(detail, requestSignal), { policy, skills: this.skills, sandbox: this.sandbox, computer,
           selectedSkills: this.session.options.skills, web: this.session.options.web, mcp: this.mcp, servers: this.servers, builtins: BUILTINS,
           connectMcp: async server => { await this.mcp.connect(server); this.capabilities(); },
           addMcp: async server => {
@@ -696,6 +719,7 @@ class AgentApp {
       this.progress = signal.aborted ? '已停止' : '需要處理';
     } finally {
       await naming; this.namingActive = false;
+      try { await this.computer?.dispose(); } catch (error) { this.notice('Computer use 清理失敗：' + redact(error.message), 'error'); } this.computer = null;
       await workers?.close({ cancel: signal.aborted || this.adaptive.blocked }); this.workers = null;
       if (scheduler) task.parallel = { adaptive: true, configuredConcurrency: scheduler.limit, modelRequests: scheduler.requests, peakStreams: scheduler.peakStreams, decisions: this.adaptive.decisions.filter(decision => decision.at >= task.startedAt), blocked: this.adaptive.blocked };
       scheduler?.close(); this.scheduler = null;
@@ -856,7 +880,7 @@ class AgentApp {
     }
     this.queue.shift(); next.fromQueue = true; await this.run(next);
   }
-  stop() { this.agentSettings.cancel(); this.queuePaused = true; this.controller?.abort(); this.diagnosticController?.abort(); this.state(); }
+  stop() { this.pluginBroker?.cancelAll(); this.agentSettings.cancel(); this.queuePaused = true; this.controller?.abort(); this.diagnosticController?.abort(); this.state(); }
 
 
   async addContext() {
@@ -1102,7 +1126,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { this.disposed = true; this.attachmentPreparation = null; clearInterval(this.poller); await this.updates?.dispose(); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { this.disposed = true; this.stop(); await this.pluginBroker?.close(); await this.computer?.dispose(); this.attachmentPreparation = null; clearInterval(this.poller); await this.updates?.dispose(); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

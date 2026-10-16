@@ -45,7 +45,7 @@ class ToolDiscovery {
       } else result.push({ ...tool, description, inputSchema: undefined,
         example: `schemaVersion=${details.version}; use describe_tool for parameters` });
     }
-    return result;
+    return budget < 24000 ? result.map(tool => ({ ...tool, description: tool.description.slice(0, 80) })) : result;
   }
   activate(tool, details) {
     this.loaded.delete(tool.name); this.loaded.set(tool.name, details.version);

@@ -53,7 +53,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
   let repairs = 0, controlRepairs = 0, completionRetries = 0, stagnantCompletionChecks = 0, lastCompletionEvidence = '', previousMessage = '', budgetExhausted = false, usedSteps = 0, blockedRepeat = null, assessmentAttempts = 0;
   let assessmentBypassed = records.some(record => record.type === 'delegation_assessment');
   const checkpoint = async () => onCheckpoint(sanitize(records));
-  let reservedRound = null;
+  let reservedRound = null, computerChecks = 0;
   const originalRequest = request, existingSteering = new Set(records.filter(record => record.type === 'user_steering').map(record => record.id));
   const consumeSteering = async (beforeFinal = false) => {
     if (output.active && !output.done) return false;
@@ -222,6 +222,11 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     }
     if (reply.kind === 'final') {
       if (await consumeSteering(true)) { await checkpoint(); continue; }
+      if (reply.completed !== false && tools.needsComputerObservation?.()) {
+        if (++computerChecks > 2) { onFinal('畫面操作尚未經重新觀察驗證，任務未完成。已保留實際操作紀錄。'); return { completed: false, steps: step + 1, computerUnverified: true }; }
+        records.push({ type: 'verification_check', instruction: 'Computer actions require a fresh computer_observe before claiming success. Use actual observations; if the target closed or login/verification prevents observation, report completed:false with that limitation.' });
+        await checkpoint(); continue;
+      }
       if (tools.hasPending?.()) {
         onActivity('正在等待子任務查證，完成後再整合結果');
         records.push({ type: 'coordination', name: 'get_task_results', result: await tools.waitPending(), instruction: 'Subtasks have now settled. Use their actual evidence to finish the parent task; do not claim a failed subtask succeeded.' });

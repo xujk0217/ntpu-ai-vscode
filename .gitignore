@@ -23,3 +23,8 @@ NTPU-AI-session*.md
 .ssh/
 .aws/
 .kube/
+
+plugins/ntpu-ai/server.bundle.cjs
+
+**/__pycache__/**
+*.plugin.zip

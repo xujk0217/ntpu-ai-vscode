@@ -54,6 +54,25 @@ jobs:
         run: npm run browser:fixture
         env:
           NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}
+      - name: Controlled work browser acceptance (synthetic localhost only)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run computer:fixture
+        env:
+          NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}
+      - name: Controlled work browser acceptance (synthetic localhost only)
+        if: runner.os != 'Linux'
+        run: npm run computer:fixture
+        env:
+          NTPU_FIXTURE_BROWSER: ${{ matrix.platform.browser }}
+      - name: Package portable local MCP plugin
+        if: runner.os == 'Linux' && matrix.node == '22'
+        run: python3 scripts/package-plugin.py
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux' && matrix.node == '22'
+        with:
+          name: ntpu-ai-plugin
+          path: '*.plugin.zip'
+          if-no-files-found: error
       # sandbox-runtime declares Node >=22.12; Node 20 still runs tests/build/fixtures,
       # while the distributable VSIX is packaged once per OS on the supported Node 22 lane.
       - run: npm run package -- --target ${{ matrix.platform.target }}

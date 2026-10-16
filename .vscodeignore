@@ -23,3 +23,6 @@ browser-profiles/**
 NTPU-memory-backup*.json
 NTPU-AI-session*.md
 docs/BROWSER_PLATFORM_REQUIREMENTS.md
+
+**/__pycache__/**
+*.plugin.zip

@@ -1,6 +1,7 @@
 'use strict';
 const vscode = require('vscode');
 const { AgentApp } = require('./app');
+const { enablePlugin, exportPlugin } = require('./plugin/vscode');
 const { createUpdater } = require('./updates-vscode');
 let app;
 function activate(context) {
@@ -10,6 +11,9 @@ function activate(context) {
   const command = (name, handler) => context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
     try { await handler(); } catch (error) { vscode.window.showErrorMessage('NTPU AI: ' + error.message); }
   }));
+  command('ntpuAI.enablePlugin', async () => { await enablePlugin(app, context, vscode); await vscode.window.showInformationMessage('本機 NTPU Agent 橋接已啟用。外部請求仍需在 VS Code 確認；可執行「匯出本機 Plugin」取得設定。'); });
+  command('ntpuAI.exportPlugin', () => exportPlugin(app, context, vscode));
+  command('ntpuAI.disablePlugin', async () => { await app.pluginEnableOperation; await app.pluginBroker?.close(); app.pluginBroker = null; await vscode.window.showInformationMessage('本機 Agent 橋接已停止。'); });
   command('ntpuAI.open', () => vscode.commands.executeCommand('workbench.view.extension.ntpuAI'));
   command('ntpuAI.login', async () => {
     await vscode.commands.executeCommand('workbench.view.extension.ntpuAI');

@@ -59,7 +59,7 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.ci_run_id }}
-          pattern: ntpu-ai-agent-*
+          pattern: ntpu-ai-*
           path: artifacts
       - name: Verify native packages and prepare checksums
         shell: bash
@@ -106,7 +106,21 @@ jobs:
               shutil.copy2(package, assets / package.name)
               print('Verified:', target, '; CRLF/LF-only source differences:', line_ending_differences)
           assert verified == expected
-          lines = [hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name for p in sorted(assets.glob('*.vsix'))]
+          plugins = list(Path('artifacts').rglob('*.plugin.zip'))
+          assert len(plugins) == 1
+          plugin = plugins[0]
+          assert plugin.name == f'ntpu-ai-{version}.plugin.zip'
+          with zipfile.ZipFile(plugin) as archive:
+              assert archive.testzip() is None
+              assert set(archive.namelist()) == {'ntpu-ai/plugin.json', 'ntpu-ai/mcp.json', 'ntpu-ai/server.bundle.cjs', 'ntpu-ai/skills/ntpu-ai/SKILL.md'}
+              manifest = json.loads(archive.read('ntpu-ai/plugin.json'))
+              assert manifest['version'] == version and manifest['name'] == 'ntpu-ai'
+              for source in ['plugin.json', 'mcp.json', 'skills/ntpu-ai/SKILL.md']:
+                  assert archive.read('ntpu-ai/' + source) == Path('plugins/ntpu-ai', source).read_bytes()
+              assert b'--connection' not in archive.read('ntpu-ai/mcp.json')
+              assert len(archive.read('ntpu-ai/server.bundle.cjs')) > 100000
+          shutil.copy2(plugin, assets / plugin.name)
+          lines = [hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name for p in sorted(assets.iterdir())]
           (assets / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n')
           PY
       - name: Upload with GitHub CLI and publish the verified draft
@@ -125,7 +139,7 @@ jobs:
           if url not in body:
               notes.write_text(body + '\n\n四平台 × Node 20／22 共八組 CI 全部通過；四種 VSIX 均於對應平台原生打包。CI：' + url + '\n')
           PY
-          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/release-assets/"*.vsix "$RUNNER_TEMP/release-assets/SHA256SUMS.txt" --clobber
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/release-assets/"*.vsix "$RUNNER_TEMP/release-assets/"*.plugin.zip "$RUNNER_TEMP/release-assets/SHA256SUMS.txt" --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest --notes-file "$RUNNER_TEMP/release-notes.md"
           gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/published.json"
           gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > "$RUNNER_TEMP/tag.json"
@@ -145,5 +159,5 @@ jobs:
               if asset.get('digest'):
                   assert asset['digest'] == 'sha256:' + local[asset['name']]
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
-              output.write('Published ' + release['html_url'] + '\n\nFour native VSIX packages and SHA256SUMS.txt verified.\n')
+              output.write('Published ' + release['html_url'] + '\n\nFour native VSIX packages, portable plugin and SHA256SUMS.txt verified.\n')
           PY
