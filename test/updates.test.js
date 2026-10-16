@@ -171,7 +171,7 @@ test('VS Code adapter blocks every active state, saves before native install and
     globalState: { get: (key, fallback) => storage.get(key) ?? fallback, update: async (key, value) => storage.set(key, value) } };
   const updater = createUpdater(app, context, vscode); app.updates = updater; t.after(async () => { for (const item of disposables) item.dispose(); await updater.dispose(); });
   for (const [object, key, value] of [[app, 'controller', {}], [app.gate, 'pending', {}], [app, 'agentSettingsBusy', true], [app.changeReview, 'applying', true],
-    [app.memoryActions, 'managingSessions', true], [app, 'queue', [{}]], [app, 'queueTransactions', new Set([1])], [app, 'loginOperation', Promise.resolve()]]) {
+    [app, 'attachmentPicking', true], [app, 'attachmentPreparation', {}], [app.memoryActions, 'managingSessions', true], [app, 'queue', [{}]], [app, 'queueTransactions', new Set([1])], [app, 'loginOperation', Promise.resolve()]]) {
     const old = object[key]; object[key] = value; assert.throws(() => updater.options.acquire(), /請先/); object[key] = old;
   }
   const unlock = updater.options.acquire(); assert.equal(app.busy(), true); unlock(); assert.equal(app.busy(), false);

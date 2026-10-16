@@ -32,6 +32,36 @@ async function testUI(page, origin) {
   assert.equal(await page.locator('#composer').evaluate(node => !!node.nextElementSibling.querySelector('#workspace')), true);
   assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
   assert.equal(await page.locator('#loginNotice').isHidden(), true);
+  await send(state);
+  await send({ kind: 'message', message: { id: 'format-fixture', role: 'assistant', text:
+    '核心問題：最大攝氧量（$VO_{2max}$）是衡量**心肺耐力（CRF）**的黃金標準，也是評估健康老化的關鍵生物標記。\n\n$$\n\\frac{a}{b}=\\sum_{i=1}^n i\n$$\n\n| 格式 | 結果 |\n| --- | --- |\n| **粗體** | ~~刪除~~ |\n\n```javascript\nconst formula = "$x$";\n```' } });
+  const formatted = page.locator('[data-id="format-fixture"]');
+  assert.equal(await formatted.locator('strong').first().textContent(), '心肺耐力（CRF）');
+  assert.equal(await formatted.locator('math').count(), 2);
+  assert.equal(await formatted.locator('math').first().isVisible(), true);
+  assert.equal(await formatted.locator('msub').first().isVisible(), true);
+  assert.equal(await formatted.locator('table').count(), 1);
+  assert.equal(await formatted.locator('.code-block code').textContent(), 'const formula = "$x$";\n');
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'format-ui.png') });
+  await page.locator('#prompt').fill('等待附件準備完成');
+  await send({ ...state, attachmentPreparation: { name: 'large-fixture.pdf', stage: '正在進行本機安全檢查' } });
+  assert.equal(await page.locator('#attachment .attachment-spinner').isVisible(), true);
+  assert.equal(await page.locator('#attachment').getAttribute('aria-busy'), 'true');
+  assert.match(await page.locator('#attachment').textContent(), /large-fixture\.pdf.*尚未傳送/);
+  assert.equal(await page.locator('#send').isDisabled(), true);
+  await page.evaluate(() => { window.hostMessages = []; });
+  await page.locator('#prompt').press('Enter');
+  assert.equal(await page.evaluate(() => window.hostMessages.some(message => message.kind === 'ask')), false);
+  await page.screenshot({ path: path.join(__dirname, '..', '.local', 'attachment-preparing-ui.png') });
+  await page.getByRole('button', { name: '取消準備附件', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), 'removeAttachment');
+  await send({ ...state, attachment: { name: 'large-fixture.pdf', mimeType: 'application/pdf' }, attachmentPreparation: null });
+  assert.equal(await page.locator('#attachment .attachment-spinner').count(), 0);
+  assert.equal(await page.locator('#attachment').getAttribute('aria-busy'), 'false');
+  assert.equal(await page.locator('#send').isEnabled(), true);
+  await send({ ...state, attachment: null, attachmentPreparation: null });
+  assert.equal(await page.locator('#attachment').isHidden(), true);
+  await page.locator('#prompt').fill('');
   await send({ kind: 'session', session: { id: 'welcome-fixture', title: '新工作階段', messages: [
     { id: 'diag1', role: 'notice', text: '遇到登入失效或服務限制，立即停止，降級為單一請求；不會重試或繞過限制。' },
     { id: 'diag2', role: 'notice', text: '當次環境已驗證最多 4 個同時串流請求；非官方上限或永久保證。' }

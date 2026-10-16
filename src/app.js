@@ -41,7 +41,7 @@ class AgentApp {
     this.store = new SessionStore(context.workspaceState.get('ntpuAI.sessions.v2', []));
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.toString() || '';
     this.session = this.store.get(context.workspaceState.get('ntpuAI.activeSession')) || this.store.sessions[0] || this.store.create(workspace);
-    this.queue = []; this.queuePaused = false; this.contextFiles = []; this.attachment = null; this.policies = new Map();
+    this.queue = []; this.queuePaused = false; this.contextFiles = []; this.attachment = null; this.attachmentPreparation = null; this.policies = new Map();
     this.approvalPreferences = new ApprovalPreferences(context.globalState, mode => {
       for (const session of this.store.loaded?.values() || []) session.options.permission = mode;
       this.session.options.permission = mode;
@@ -142,6 +142,7 @@ class AgentApp {
       progress: this.progress, modelRequest: this.modelRequest, connection: this.connection, parallel: this.parallelState(),
       model: this.model, options: this.session.options, agentSettingsBusy: !!this.agentSettingsBusy, submitMode: config.get('chat.submitMode', 'enter'), submitModifier: process.platform === 'darwin' ? '⌘' : 'Ctrl', workspace: this.workspace()?.name || '未開啟專案',
       budget: this.budget, persistenceError: this.persistenceError, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
+      attachmentPreparation: this.attachmentPreparation ? { name: this.attachmentPreparation.name, stage: this.attachmentPreparation.stage } : null,
       attachment: this.attachment ? { name: this.attachment.name, mimeType: this.attachment.mimeType, preview: this.attachment.preview } : null,
       queuePaused: !!this.queuePaused, queueResumeAvailable: !!this.queue.length && !this.busy(),
       queue: this.queue.map(item => ({ id: item.id, messageId: item.messageId, request: item.request, steeringPending: !!item.steeringPending,
@@ -370,7 +371,7 @@ class AgentApp {
         if (warning && !warning.dismissed) { this.patch(warning.id, { dismissed: true }); clearTimeout(this.saveTimer); await this.save(); }
         break;
       }
-      case 'switch': if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.restoreQueue(); this.contextFiles = []; this.attachment = null; await this.refreshSkills(); this.render(); this.persist(); } break;
+      case 'switch': if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy && this.store.sessions.some(item => item.id === message.id)) { await this.save(); this.session = await this.store.openSession(message.id); this.restoreQueue(); this.contextFiles = []; this.attachment = null; this.attachmentPreparation = null; await this.refreshSkills(); this.render(); this.persist(); } break;
       case 'rename': await this.memoryActions.handle({ kind: 'renameSession', id: this.session.id }); break;
       case 'option': await this.setOption(message.key, message.value); break;
       case 'openAgentSettings': await this.agentSettings.openProject(); break;
@@ -389,7 +390,7 @@ class AgentApp {
       case 'addContext': await this.addContext(); break;
       case 'removeContext': this.contextFiles = this.contextFiles.filter(file => file.relative !== message.path); this.state(); break;
       case 'attach': await this.attach(); break;
-      case 'removeAttachment': this.attachment = null; this.state(); break;
+      case 'removeAttachment': this.attachment = null; this.attachmentPreparation = null; this.state(); break;
       case 'change': await this.showChange(message.id); break;
       case 'revert': await this.revert(message.id); break;
       case 'reviewChange': await this.changeReview.act(message); break;
@@ -432,7 +433,7 @@ class AgentApp {
       if (this.busy() || this.gate.pending || this.agentSettingsBusy || this.changeReview.applying || this.memoryActions.managingSessions) return;
       const next = empty || this.store.create(workspace);
       if (next.id !== this.session.id) {
-        this.session = next; this.restoreQueue(); this.contextFiles = []; this.attachment = null; this.streamId = null;
+        this.session = next; this.restoreQueue(); this.contextFiles = []; this.attachment = null; this.attachmentPreparation = null; this.streamId = null;
         await this.refreshSkills();
       }
       await this.save(); this.render();
@@ -507,6 +508,7 @@ class AgentApp {
     await this.approvalPreferences.tail.catch(() => {});
     if (this.updateInstalling) throw new Error('正在更新，請等更新完成後再送出任務。');
     if (!this.busy() && !this.gate.pending) this.approvalPreferences.refresh();
+    if (this.attachmentPreparation) throw new Error('附件正在準備，請等待安全檢查完成，或先移除附件。');
     request = redact(request.trim()); if (!request) return;
     if (request.length > 20000) throw new Error('提問超過 20000 字。');
     const slash = request.match(/^\/(build|plan|review|research|ask)\b\s*/);
@@ -514,7 +516,7 @@ class AgentApp {
     if (this.queue.length >= 5) throw new Error('佇列最多保留五個提問。');
     const item = { id: randomUUID(), createdAt: Date.now(), request, includeEditor, sessionId: this.session.id, attachment: this.attachment, files: [...this.contextFiles] };
     this.session.tasks ||= []; this.session.tasks.push({ id: item.id, request, createdAt: item.createdAt, status: 'queued', records: [], files: [], pending: [] });
-    this.attachment = null; this.contextFiles = [];
+    this.attachment = null; this.attachmentPreparation = null; this.contextFiles = [];
     const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name } : null });
     item.messageId = user.id;
     if (this.session.tasks.length === 1 && this.session.titleSource !== 'manual') { item.nameSession = true; this.session.title = shortTitle(request); }
@@ -869,19 +871,49 @@ class AgentApp {
   }
   configureScanner() { const config = vscode.workspace.getConfiguration('ntpuAI'); scanner.options = { ...config.get('attachments.ocr', {}) }; }
   async attach() {
-    const files = await vscode.window.showOpenDialog({ canSelectMany: false, title: '附加圖片或 PDF（會隨提問送給 NTPU AI）',
-      filters: { '圖片或 PDF': ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'] } });
-    if (!files?.length) return;
-    const file = files[0]; const stat = await fs.stat(file.fsPath);
-    await this.approveData(await fs.realpath(file.fsPath), true);
-    if (stat.size > 20 * 1024 * 1024) throw new Error('附件上限 20 MB。');
-    const buffer = await fs.readFile(file.fsPath);
-    this.configureScanner();
-    let mimeType, preview;
-    if (buffer.subarray(0, 5).toString() === '%PDF-') mimeType = 'application/pdf';
-    else { mimeType = imageMime(buffer); preview = 'data:image/png;base64,' + (await thumbnail(buffer)).toString('base64'); }
-    await scanner.scan(buffer, mimeType);
-    this.attachment = { name: path.basename(file.fsPath), mimeType, buffer, preview, approved: true }; this.state();
+    if (this.disposed || this.updateInstalling || this.attachmentPicking || this.attachmentPreparation) return;
+    this.attachmentPicking = true;
+    const session = this.session;
+    let preparation;
+    const active = () => this.session === session && this.attachmentPreparation === preparation;
+    const stage = value => { if (active()) { preparation.stage = value; this.state(); } };
+    try {
+      let files;
+      try {
+        files = await vscode.window.showOpenDialog({ canSelectMany: false, title: '附加圖片或 PDF（會隨提問送給 NTPU AI）',
+          filters: { '圖片或 PDF': ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'] } });
+      } finally { this.attachmentPicking = false; }
+      if (!files?.length || this.disposed || this.session !== session) return;
+      const file = files[0];
+      preparation = { name: path.basename(file.fsPath), stage: '等待資料傳送確認' };
+      this.attachment = null; this.attachmentPreparation = preparation; this.state();
+      const stat = await fs.stat(file.fsPath);
+      const real = await fs.realpath(file.fsPath);
+      if (!active()) return;
+      await this.approveData(real, true);
+      if (!active()) return;
+      if (stat.size > 20 * 1024 * 1024) throw new Error('附件上限 20 MB。');
+      stage('正在讀取檔案');
+      const buffer = await fs.readFile(real);
+      if (!active()) return;
+      if (buffer.length > 20 * 1024 * 1024) throw new Error('附件上限 20 MB。');
+      this.configureScanner();
+      let mimeType, preview;
+      if (buffer.subarray(0, 5).toString() === '%PDF-') mimeType = 'application/pdf';
+      else {
+        stage('正在產生預覽');
+        mimeType = imageMime(buffer); preview = 'data:image/png;base64,' + (await thumbnail(buffer)).toString('base64');
+      }
+      if (!active()) return;
+      stage('正在進行本機安全檢查');
+      await scanner.scan(buffer, mimeType);
+      if (!active()) return;
+      this.attachment = { name: preparation.name, mimeType, buffer, preview, approved: true };
+    } catch (error) {
+      if (!preparation || active()) throw error;
+    } finally {
+      if (preparation && active()) { this.attachmentPreparation = null; this.state(); }
+    }
   }
   async addSkillDirectory() {
     if (this.busy()) return;
@@ -1070,7 +1102,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { clearInterval(this.poller); await this.updates?.dispose(); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { this.disposed = true; this.attachmentPreparation = null; clearInterval(this.poller); await this.updates?.dispose(); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

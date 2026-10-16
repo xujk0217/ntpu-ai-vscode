@@ -10,6 +10,8 @@
 | @modelcontextprotocol/sdk | MCP client 與 transports | MIT |
 | playwright-core | 正常 Chrome 網頁橋接 | Apache-2.0 |
 | markdown-it | Markdown 呈現 | MIT |
+| markdown-it-cjk-friendly | 中文標點周圍的 Markdown 強調規則 | MIT |
+| katex | 安全離線公式轉 MathML | MIT |
 | highlight.js | 程式碼高亮 | BSD-3-Clause |
 | diff | 修改差異 | BSD-3-Clause |
 | jsonc-parser | JSONC 設定讀取 | MIT |

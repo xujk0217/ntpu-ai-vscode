@@ -130,3 +130,9 @@
 /* Current model request stays visible below completed tools. */
 .model-activity{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:18px 0 4px;padding:4px 2px;color:var(--muted);font-size:12px;line-height:1.6}
 .model-activity .pulse{flex:none}.model-phase{overflow-wrap:anywhere}.model-wait-time{font-size:11px;opacity:.8}
+
+/* MathML stays local and needs no remote fonts or inline styles. */
+.markdown math{font-size:1.1em}.math-block{overflow-x:auto;margin:12px 0;padding:4px 0}.math-block math{margin:auto}.math-source{white-space:pre-wrap}
+.attachment-label{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}.attachment-label>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-label small{color:var(--muted);font-size:10px}
+.attachment-card .attachment-spinner{flex:none;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:attachment-spin .9s linear infinite}@keyframes attachment-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.attachment-card .attachment-spinner{animation:none}}

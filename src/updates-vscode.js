@@ -6,7 +6,7 @@ function createUpdater(app, context, vscode) {
   const config = () => vscode.workspace.getConfiguration('ntpuAI');
   const acquire = () => {
     if (app.busy() || app.gate.pending || app.agentSettingsBusy || app.changeReview.applying || app.memoryActions?.managingSessions ||
-        app.queue.length || app.queueTransactions?.size || app.loginOperation || app.connection?.connecting) throw new Error('請先完成或停止任務、處理核准與排隊留言，並完成登入後再更新。');
+        app.attachmentPicking || app.attachmentPreparation || app.queue.length || app.queueTransactions?.size || app.loginOperation || app.connection?.connecting) throw new Error('請先完成或停止任務、處理核准與排隊留言，並完成登入及附件準備後再更新。');
     app.updateInstalling = true; app.state();
     return () => { app.updateInstalling = false; app.state(); };
   };

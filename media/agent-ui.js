@@ -3,13 +3,7 @@
 const { loginPresentation } = require('./login-state');
 const { shouldSubmitEnter } = require('./composer-keys');
 const { contextBudgetPresentation } = require('./context-budget');
-const MarkdownIt = require('markdown-it');
-const highlight = require('highlight.js/lib/core');
-const languages = { javascript: require('highlight.js/lib/languages/javascript'), typescript: require('highlight.js/lib/languages/typescript'),
-  python: require('highlight.js/lib/languages/python'), json: require('highlight.js/lib/languages/json'), bash: require('highlight.js/lib/languages/bash'),
-  css: require('highlight.js/lib/languages/css'), xml: require('highlight.js/lib/languages/xml'), markdown: require('highlight.js/lib/languages/markdown'),
-  cpp: require('highlight.js/lib/languages/cpp'), java: require('highlight.js/lib/languages/java'), yaml: require('highlight.js/lib/languages/yaml') };
-for (const [name, language] of Object.entries(languages)) highlight.registerLanguage(name, language);
+const { md } = require('./markdown-renderer.mjs');
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const send = (kind, extra = {}) => vscode.postMessage({ kind, ...extra });
@@ -25,12 +19,6 @@ let modelActivity;
 const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', open_browser: '開啟網頁', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
 const icons = { open_browser: 'globe', run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
-const md = new MarkdownIt({ html: false, breaks: false, linkify: false, highlight: (code, language) => {
-  if (code.length < 32000 && highlight.getLanguage(language)) { try { return highlight.highlight(code, { language, ignoreIllegals: true }).value; } catch {} }
-  return md.utils.escapeHtml(code);
-} });
-md.validateLink = url => /^https?:\/\//i.test(url) || (!/^[a-z]+:/i.test(url) && !url.startsWith('//'));
-md.renderer.rules.image = (tokens, index) => `<span class="image-reference">${md.utils.escapeHtml(tokens[index].content || '圖片')}</span>`;
 
 function element(tag, className, text) { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = text; return item; }
 function icon(name) { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', '#i-' + name); svg.append(use); svg.setAttribute('aria-hidden', 'true'); return svg; }
@@ -339,8 +327,8 @@ function renderChanges(changes) {
 }
 
 function updateComposer() {
-  $('send').disabled = !!state.updateInstalling || !$('prompt').value.trim();
-  $('send').title = state.busy ? '排入佇列，等待目前任務完成後執行' : '送出';
+  $('send').disabled = !!state.updateInstalling || !!state.attachmentPreparation || !$('prompt').value.trim();
+  $('send').title = state.attachmentPreparation ? '等待附件安全檢查完成，或先移除附件' : state.busy ? '排入佇列，等待目前任務完成後執行' : '送出';
   $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
   $('sendLabel').hidden = !state.busy;
   $('sendHint').hidden = !!state.busy;
@@ -397,8 +385,17 @@ function renderState(value) {
   if (includeEditor && state.editor) { const chip = element('span', 'context-chip'); chip.append(icon('file'), element('span', '', state.editor.name + (state.editor.selected ? ':' + state.editor.line + '–' + state.editor.endLine : '')), iconButton('close', '不帶入目前檔案', () => { includeEditor = false; renderState(state); })); chips.append(chip); }
   for (const file of state.contexts || []) { const chip = element('span', 'context-chip'); chip.append(icon('file'), element('span', '', file.name), iconButton('close', '移除脈絡檔案', () => send('removeContext', { path: file.path }))); chips.append(chip); }
 
-  $('attachment').hidden = !state.attachment; $('attachment').replaceChildren();
-  if (state.attachment) {
+  const pendingAttachment = state.attachmentPreparation;
+  $('attachment').hidden = !state.attachment && !pendingAttachment; $('attachment').replaceChildren();
+  $('attachment').classList.toggle('preparing', !!pendingAttachment);
+  $('attachment').setAttribute('aria-busy', String(!!pendingAttachment));
+  $('attachment').setAttribute('role', 'status'); $('attachment').setAttribute('aria-live', 'polite');
+  if (pendingAttachment) {
+    $('attachment').append(element('span', 'attachment-spinner'));
+    const label = element('div', 'attachment-label');
+    label.append(element('span', '', pendingAttachment.name), element('small', '', pendingAttachment.stage + ' · 尚未傳送'));
+    $('attachment').append(label, iconButton('close', '取消準備附件', () => send('removeAttachment')));
+  } else if (state.attachment) {
     if (state.attachment.preview) { const image = element('img'); image.src = state.attachment.preview; image.alt = state.attachment.name; $('attachment').append(image); }
     $('attachment').append(element('span', '', state.attachment.name), iconButton('close', '移除附件', () => send('removeAttachment')));
   }
@@ -666,7 +663,7 @@ window.addEventListener('message', event => {
   else if (message.kind === 'prefill') { $('prompt').value = message.text; includeEditor = true; $('prompt').focus(); renderState(state); }
 });
 
-$('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text || state.updateInstalling) return; send('ask', { text, includeEditor }); $('prompt').value = ''; updateComposer(); $('prompt').style.height = ''; $('slashMenu').hidden = true; });
+$('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text || state.updateInstalling || state.attachmentPreparation) return; send('ask', { text, includeEditor }); $('prompt').value = ''; updateComposer(); $('prompt').style.height = ''; $('slashMenu').hidden = true; });
 $('prompt').addEventListener('keydown', event => {
   if (shouldSubmitEnter(event, state.submitMode)) { event.preventDefault(); $('composer').requestSubmit(); }
   if (event.key === 'Escape') $('slashMenu').hidden = true;
