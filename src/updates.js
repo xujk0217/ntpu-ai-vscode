@@ -164,12 +164,13 @@ class UpdateManager {
     this.controller = new AbortController(); this.set({ phase: 'checking', message: '正在檢查 GitHub 最新正式版本…' });
     try {
       if (!TARGETS.includes(this.options.target)) throw new Error(`尚不支援此 Extension Host 平台：${this.options.target}。`);
+      // Count failed attempts too, so an outage/rate limit cannot cause hourly auto retries.
+      await this.options.storage.update('updates.lastCheck', Date.now());
       const result = await this.transport(API, { signal: this.controller.signal, maxBytes: 1024 * 1024 });
       const metadata = JSON.parse(result.buffer.toString('utf8'));
       this.release = selectRelease(metadata, this.options.version, this.options.target);
       await this.options.storage.update('updates.release', { tag_name: metadata.tag_name, html_url: metadata.html_url, draft: false, prerelease: false,
         assets: (metadata.assets || []).map(({ name, size, state, digest, browser_download_url }) => ({ name, size, state, digest, browser_download_url })) });
-      await this.options.storage.update('updates.lastCheck', Date.now());
       this.set({ latest: this.release?.version, phase: this.release ? 'available' : 'current', message: this.release ? `可更新至 ${this.release.version}。` : '目前已是最新正式版本。' });
       if (automatic && this.release && this.options.storage.get('updates.notified') !== this.release.version) {
         await this.options.storage.update('updates.notified', this.release.version);

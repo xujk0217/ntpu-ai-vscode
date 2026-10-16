@@ -121,6 +121,12 @@ test('coalesces simultaneous checks and installs', async t => {
   const f = await fixture(t); await Promise.all([f.manager.check(), f.manager.check()]); assert.equal(f.calls.length, 1);
   await Promise.all([f.manager.install(), f.manager.install()]); assert.equal(f.installs.length, 1);
 });
+test('failed automatic check is also throttled for 24 hours; manual check remains available', async t => {
+  let attempts = 0;
+  const f = await fixture(t, { transport: async () => { attempts++; throw new Error('GitHub 回應 HTTP 429。'); } });
+  await f.manager.check({ automatic: true }); await f.manager.check({ automatic: true }); assert.equal(attempts, 1);
+  await f.manager.check(); assert.equal(attempts, 2);
+});
 test('busy work and failed save prevent installer and release maintenance lock', async t => {
   for (const overrides of [{ acquire: () => { throw new Error('請先完成任務。'); } }, { save: async () => { throw new Error('disk full'); } }]) {
     const f = await fixture(t, overrides); await f.manager.check(); await f.manager.install();
