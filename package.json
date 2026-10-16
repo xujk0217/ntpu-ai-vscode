@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.14",
+  "version": "0.6.15",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -63,6 +63,14 @@
       {
         "command": "ntpuAI.testConcurrency",
         "title": "NTPU AI: 選用並行診斷（2–4，不影響動態排程）"
+      },
+      {
+        "command": "ntpuAI.checkForUpdates",
+        "title": "NTPU AI: 檢查更新"
+      },
+      {
+        "command": "ntpuAI.installUpdate",
+        "title": "NTPU AI: 下載並安裝更新"
       }
     ],
     "menus": {
@@ -295,6 +303,12 @@
           "default": 8,
           "scope": "application",
           "description": "本機模型請求節奏，預設每分鐘最多 8 次（可調低或最高 10）；超出本機額度先等待，不重送失敗請求。校方及其他視窗的用量限制仍優先，429 仍立即停止。"
+        },
+        "ntpuAI.updates.autoCheck": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "啟用後自動檢查 GitHub 正式版本並提醒；不會自動安裝或重新載入。每 24 小時至多自動查詢一次，可隨時手動檢查。"
         }
       }
     },
@@ -327,7 +341,8 @@
     "playwright-core": "1.64.0",
     "saxes": "6.0.0",
     "sharp": "0.35.5",
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "@vscode/vsce": "3.2.2",

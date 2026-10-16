@@ -121,7 +121,7 @@ class AgentApp {
     }
   }
   post(message) { void this.view?.webview.postMessage(sanitize(message)); }
-  busy() { return !!(this.controller || this.diagnosticController); }
+  busy() { return !!(this.controller || this.diagnosticController || this.updateInstalling); }
   workspace(session = this.session) {
     return vscode.workspace.workspaceFolders?.find(folder => folder.uri.toString() === session.workspace) ||
       (!session.workspace ? vscode.workspace.workspaceFolders?.[0] : null);
@@ -137,7 +137,9 @@ class AgentApp {
   }
   state() {
     const config = vscode.workspace.getConfiguration('ntpuAI');
-    this.post({ kind: 'state', busy: this.busy(), progress: this.progress, modelRequest: this.modelRequest, connection: this.connection, parallel: this.parallelState(),
+    this.post({ kind: 'state', busy: this.busy(), updateInstalling: !!this.updateInstalling,
+      update: this.updates ? { ...this.updates.state, autoCheck: this.updates.autoCheckEnabled() } : null,
+      progress: this.progress, modelRequest: this.modelRequest, connection: this.connection, parallel: this.parallelState(),
       model: this.model, options: this.session.options, agentSettingsBusy: !!this.agentSettingsBusy, submitMode: config.get('chat.submitMode', 'enter'), submitModifier: process.platform === 'darwin' ? '⌘' : 'Ctrl', workspace: this.workspace()?.name || '未開啟專案',
       budget: this.budget, persistenceError: this.persistenceError, editor: this.editor(), contexts: this.contextFiles.map(file => ({ path: file.relative, name: path.basename(file.relative) })),
       attachment: this.attachment ? { name: this.attachment.name, mimeType: this.attachment.mimeType, preview: this.attachment.preview } : null,
@@ -342,6 +344,11 @@ class AgentApp {
     if (!message || typeof message !== 'object' || typeof message.kind !== 'string') return;
     if (!this.busy() && !this.gate.pending && !this.agentSettingsBusy) this.approvalPreferences.refresh();
     switch (message.kind) {
+      case 'checkForUpdates': await this.updates?.check(); break;
+      case 'installUpdate': await this.updates?.install(); break;
+      case 'cancelUpdate': this.updates?.cancel(); break;
+      case 'reloadUpdate': await this.updates?.reload(); break;
+      case 'updateAutoCheck': await this.updates?.setAutoCheck(message.value); break;
       case 'ready': await this.ready; this.render(); if (!this.initialAutoConnect) { this.initialAutoConnect = true; await this.login(false); } break;
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
       case 'memory': case 'resumeTask': case 'renameSession': case 'exportSession': case 'sessionsAction': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
@@ -493,10 +500,12 @@ class AgentApp {
     return redact(pieces.join('\n\n'));
   }
   async ask(request, includeEditor = true) {
+    if (this.updateInstalling) throw new Error('正在更新，請等更新完成後再送出任務。');
     if (this.agentSettingsBusy) throw new Error('請先完成 Agent 設定檔操作，再送出任務。');
     if (this.changeReview.applying) throw new Error('正在處理變更，請稍候再送出任務。');
     await this.ready;
     await this.approvalPreferences.tail.catch(() => {});
+    if (this.updateInstalling) throw new Error('正在更新，請等更新完成後再送出任務。');
     if (!this.busy() && !this.gate.pending) this.approvalPreferences.refresh();
     request = redact(request.trim()); if (!request) return;
     if (request.length > 20000) throw new Error('提問超過 20000 字。');
@@ -1061,7 +1070,7 @@ class AgentApp {
     }
     await this.context.globalState.update('ntpuAI.mcpServers', this.servers); this.capabilities();
   }
-  async dispose() { clearInterval(this.poller); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
+  async dispose() { clearInterval(this.poller); await this.updates?.dispose(); await this.ready; this.stop(); await this.agentSettings.operation?.catch(() => {}); await this.approvalPreferences.tail.catch(() => {}); clearTimeout(this.saveTimer); await this.loginOperation?.catch(() => {}); await this.connectionCheck?.catch(() => {}); await this.concurrencyOperation?.catch(() => {}); await this.runOperation?.catch(() => {}); this.requestRate.close(); await this.save(); await this.bridge?.close(); await this.mcp.close(); await this.sandbox.close(); }
 }
 
 module.exports = { AgentApp };

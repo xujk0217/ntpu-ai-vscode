@@ -223,7 +223,7 @@ function renderMessage(message) {
 }
 function nearBottom() { return $('messages').scrollHeight - $('messages').scrollTop - $('messages').clientHeight < 100; }
 function renderModelActivity() {
-  const request = state.busy && !approval ? state.modelRequest : null;
+  const request = state.busy && !state.updateInstalling && !approval ? state.modelRequest : null;
   if (!request) { modelActivity?.remove(); modelActivity = null; return; }
   const follow = nearBottom();
   if (!modelActivity) {
@@ -339,7 +339,7 @@ function renderChanges(changes) {
 }
 
 function updateComposer() {
-  $('send').disabled = !$('prompt').value.trim();
+  $('send').disabled = !!state.updateInstalling || !$('prompt').value.trim();
   $('send').title = state.busy ? '排入佇列，等待目前任務完成後執行' : '送出';
   $('send').setAttribute('aria-label', state.busy ? '排入佇列' : '送出');
   $('sendLabel').hidden = !state.busy;
@@ -352,6 +352,7 @@ function renderState(value) {
   const busyChanged = !!state.busy !== !!value.busy;
   const queuedMessages = new Set([...(state.queue || []), ...(value.queue || [])].map(item => item.messageId));
   state = value;
+  renderUpdates();
   steeringRequests.clear();
   if (state.sessionTitle) $('rename').textContent = state.sessionTitle;
   for (const key of ['agent', 'depth', 'permission']) { $(key).value = state.options[key]; $(key).disabled = state.busy || !!approval; }
@@ -374,13 +375,13 @@ function renderState(value) {
   $('parallelStatus').hidden = !liveParallel?.enabled;
   $('parallelStatus').textContent = liveParallel ? `並行上限 ${liveParallel.effectiveConcurrency}/4 · 執行中 Agent ${liveParallel.runningAgents} · 模型請求 ${liveParallel.activeRequests} · 排隊 ${liveParallel.queuedRequests}${liveParallel.queuedTasks ? ' · 待執行提問 ' + liveParallel.queuedTasks : ''}${liveParallel.blocked ? ' · 已暫停發送' : ''}` : '';
   $('parallelStatus').title = 'Agent 包含主 Agent 和運作中的唯讀子任務；模型請求排隊共用動態名額與每分鐘節奏。';
-  $('progress').hidden = !state.busy; $('progressText').textContent = state.progress;
+  $('progress').hidden = !state.busy || !!state.updateInstalling; $('progressText').textContent = state.progress;
   renderModelActivity();
   const budget = contextBudgetPresentation(state.budget), budgetLabel = $('budgetLabel');
   budgetLabel.textContent = budget.text; budgetLabel.title = budget.title;
   budgetLabel.setAttribute('aria-label', budget.title); budgetLabel.setAttribute('role', 'status');
   budgetLabel.setAttribute('aria-live', 'polite');
-  $('stop').hidden = !state.busy; updateComposer();
+  $('stop').hidden = !state.busy || !!state.updateInstalling; updateComposer();
   if (busyChanged && state.busy) resetHistoryEditing();
   if (busyChanged) renderChanges(session.changes || []);
   $('web').classList.toggle('on', state.options.web); $('web').setAttribute('aria-pressed', String(state.options.web)); $('web').disabled = state.busy; $('web').title = state.options.web ? '網路搜尋已開啟：Agent 可使用 Exa 搜尋和公開網頁讀取；按一下關閉。AI4X 是獨立的官方研究工具。' : '網路搜尋已關閉：按一下允許 Agent 使用 Exa 搜尋和公開網頁讀取。';
@@ -422,6 +423,34 @@ function renderApproval(value) {
 }
 
 function resetHistoryEditing() { historyEditing = false; includeArchived = false; selectedSessions.clear(); }
+function renderUpdates() {
+  const update = state.update || {}, pending = ['checking', 'downloading', 'installing'].includes(update.phase);
+  const ready = update.phase === 'installed', available = !!update.latest;
+  const blocked = state.busy || !!approval || !!state.agentSettingsBusy || !!state.queue?.length;
+  const control = $('update');
+  control.hidden = !available && !ready;
+  control.textContent = ready ? '重新載入' : update.phase === 'downloading' ? `更新 ${update.percent || 0}%` : update.phase === 'installing' ? '安裝中…' : '更新';
+  control.title = ready ? `${update.latest} 已安裝，重新載入後生效` : `下載並安裝 NTPU AI Agent ${update.latest || ''}；保留本機聊天與設定`;
+  control.setAttribute('aria-label', ready ? '重新載入以完成更新' : '下載並安裝更新');
+  control.disabled = pending || blocked;
+  const panel = $('updatePanel'); if (!panel) return;
+  panel.replaceChildren(element('h3', '', '版本與更新'), element('p', 'panel-description', `目前版本 ${update.current || '—'} · ${update.target || ''}`));
+  const status = element('p', update.phase === 'error' ? 'warning-text' : 'panel-description', update.message || '從 GitHub Releases 取得符合目前平台的正式版本。');
+  status.setAttribute('role', 'status'); panel.append(status);
+  const actions = element('div', 'panel-actions');
+  const check = button(pending ? '處理中…' : '檢查更新', 'secondary-button', () => send('checkForUpdates'));
+  check.disabled = pending || ready; actions.append(check);
+  if (available || ready) {
+    const install = button(ready ? '重新載入' : '下載並安裝', 'secondary-button', () => send(ready ? 'reloadUpdate' : 'installUpdate'));
+    install.disabled = pending || blocked; actions.append(install);
+  }
+  if (update.phase === 'downloading') actions.append(button('取消下載', 'text-button', () => send('cancelUpdate')));
+  panel.append(actions);
+  const label = element('label', 'privacy-option'), auto = element('input'); auto.type = 'checkbox'; auto.checked = update.autoCheck !== false;
+  auto.addEventListener('change', () => send('updateAutoCheck', { value: auto.checked }));
+  label.append(auto, element('span', '', '自動檢查並提醒新版')); panel.append(label,
+    element('p', 'panel-footnote', '只在你按下更新後安裝；校驗平台、套件身分與 SHA-256。重新載入前會保存本機聊天，任務執行或等待核准時請先處理完成。'));
+}
 function openDrawer(nextTab) { resetHistoryEditing(); tab = nextTab; $('drawer').hidden = false; if (tab === 'memory') send('memory'); renderDrawer(); }
 function renderDrawer() {
   $('drawerTitle').textContent = { sessions: '聊天紀錄', skills: 'Skills', connection: '連線', security: '安全與權限', tools: '工具', memory: '記憶與隱私' }[tab];
@@ -546,6 +575,7 @@ function renderDrawer() {
     const apply = button('更換瀏覽器並連線', 'secondary-button full-width', () => send('browserUpdate', { browser: browserChoice.value, customPath: customPath.value, profileLocation: profileLocation.value })); apply.disabled = state.busy; content.append(apply);
     const reconnect = button('重新連線', 'secondary-button full-width', () => send('reconnectBrowser')); reconnect.disabled = state.busy; content.append(reconnect);
     content.append(element('p', 'panel-description', (browser.info?.message || '尚未啟動可控制的瀏覽器') + '\nExtension Host：' + (browser.host || '') + (browser.remoteName ? ' · 工作區連線：' + browser.remoteName : '') + (browser.info?.profile ? '\n專用 Profile：' + browser.info.profile : '')));
+    const updatePanel = element('section'); updatePanel.id = 'updatePanel'; content.append(updatePanel); renderUpdates();
   } else {
     content.append(element('h3', '', 'Agent 設定檔'));
     content.append(element('p', 'panel-description', '保存 Agent 模式、分析深度、核准模式、網路與預載 Skills。核准模式所有聊天共用；其他選項套用目前聊天。可編輯專案內的 .ntpu-ai.json，儲存後套用。'));
@@ -636,7 +666,7 @@ window.addEventListener('message', event => {
   else if (message.kind === 'prefill') { $('prompt').value = message.text; includeEditor = true; $('prompt').focus(); renderState(state); }
 });
 
-$('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text) return; send('ask', { text, includeEditor }); $('prompt').value = ''; updateComposer(); $('prompt').style.height = ''; $('slashMenu').hidden = true; });
+$('composer').addEventListener('submit', event => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text || state.updateInstalling) return; send('ask', { text, includeEditor }); $('prompt').value = ''; updateComposer(); $('prompt').style.height = ''; $('slashMenu').hidden = true; });
 $('prompt').addEventListener('keydown', event => {
   if (shouldSubmitEnter(event, state.submitMode)) { event.preventDefault(); $('composer').requestSubmit(); }
   if (event.key === 'Escape') $('slashMenu').hidden = true;
@@ -649,6 +679,7 @@ $('prompt').addEventListener('input', () => {
 });
 for (const key of ['agent', 'depth', 'permission']) $(key).addEventListener('change', event => send('option', { key, value: event.target.value }));
 $('web').addEventListener('click', () => send('option', { key: 'web', value: !state.options.web }));
+$('update').addEventListener('click', () => send(state.update?.phase === 'installed' ? 'reloadUpdate' : 'installUpdate'));
 $('history').addEventListener('click', () => openDrawer('sessions')); $('settings').addEventListener('click', () => openDrawer('connection')); $('skills').addEventListener('click', () => openDrawer('skills')); $('model').addEventListener('click', () => openDrawer('tools'));
 $('closeDrawer').addEventListener('click', () => { resetHistoryEditing(); $('drawer').hidden = true; });
 function requestNewSession() { resetHistoryEditing(); send('new'); $('drawer').hidden = true; $('prompt').focus(); }

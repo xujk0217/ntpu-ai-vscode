@@ -1,5 +1,13 @@
 # 本地使用驗證
 
+## 0.6.15 內建版本更新（2026-10-16）
+
+- 本機 347 項單元測試、UI build、Chrome localhost BrowserBridge／Webview fixture 通過，並成功打包 macOS arm64 VSIX。新更新器也讀取打包後的 ZIP，確認發布者、名稱、版本及平台相符。
+- 更新核心與 VS Code adapter 測試涵蓋四平台選包、正式版本比較、固定來源、精確附件比對、SHA-256、損壞／重複／缺少的 manifest、下載大小及截斷、取消、同時點擊、保存失敗、任務／核准／佇列阻擋及重新載入檢查。安裝命令由 mock 驗證，尚未以真實 Extension Host 點擊完成整段安裝。
+- 實際 Chrome UI 使用本機模擬版本狀態，確認新版按鈕位於匯出左側、無新版隱藏、忙碌停用、下載進度、安裝後重新載入入口及自動檢查設定。已檢視 340px 設定畫面；不表示已在所有平台人工點擊安裝。
+- 真實 GitHub API 及 SHA256SUMS.txt 可讀取。當次大型公開 VSIX 下載偏慢，curl 35 秒下載約 2.6 MB；下載採串流寫入，套件總等待最多 15 分鐘，單次連線／閒置 30 秒、metadata 45 秒，不自動重試。完整套件下載驗證結果另於發布驗收記錄。
+- 自動檢查不呼叫校方模型、不使用登入憑證；固定使用公開 GitHub Release，不增加 Agent 的任意下載或執行權限。既有 sandbox-runtime 的 node-forge 間接弱點仍依安全文件列示，新加 yauzl 無新增 npm audit 項目。
+
 ## 0.6.10 空白聊天重用與警告收起（2026-10-15）
 
 - 本機 177 項單元測試、build 與 macOS Chrome localhost BrowserBridge／Webview fixture 通過。

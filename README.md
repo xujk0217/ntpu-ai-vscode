@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.14 · 實驗性專案 · MIT License**
+**版本：0.6.15 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -31,12 +31,24 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.14.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.14.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.14.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.14.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.15.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.15.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.15.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.15.vsix` |
 
-更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
+### 一鍵更新
+
+從 0.6.15 起，擴充套件會自動檢查 GitHub 正式版本。有新版時，聊天頂端的「匯出」左側會顯示 **更新**，按下即可下載並安裝符合目前平台的 VSIX。安裝完成後，按 **重新載入** 生效。
+
+<img src="docs/images/update.png" alt="有新版時，匯出左側顯示更新按鈕（本機模擬版本狀態）" width="340">
+
+也可以在 **設定 → 連線 → 版本與更新** 或命令面板執行 **NTPU AI: 檢查更新**。自動檢查預設啟用，每 24 小時至多一次，可在該區或 `ntpuAI.updates.autoCheck` 關閉；手動檢查不受間隔限制。只會提醒，不會自動安裝或重新載入，也不會發送校方模型請求或專案內容。
+
+安裝前會保存本機聊天、核對平台、套件身分、版本與 SHA-256，並交由 VS Code 安裝。下載時可取消；Agent 執行中、等待核准、排隊留言或登入中會阻擋安裝與重新載入，請先處理完成。網路失敗、GitHub 用量限制或校驗失敗時保留原版本，仍可從 Releases 手動安裝。更新下載使用固定 GitHub 來源，最多 128 MB；此上限不影響 Agent 工具的 10 MB 下載限制。
+
+**0.6.14 及以前的版本需先以 VSIX 安裝一次 0.6.15，之後即可使用上述更新流程。** 此功能適用於支援的本機 UI Extension Host；Remote SSH／WSL／Container 依擴充功能實際執行所在主機選包，不會將 macOS 原生套件用於 Linux。
+
+手動更新時安裝新版 VSIX 並重新載入即可。既有本機聊天、Project Memory 與專用 Browser Profile 沿用原儲存位置。Remote SSH、Dev Container、WSL 必須區分本機 UI Extension Host 與遠端工作區；不能假設遠端主機具備本機桌面瀏覽器。
 
 ## 使用方式
 

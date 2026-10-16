@@ -15,6 +15,7 @@
 | jsonc-parser | JSONC 設定讀取 | MIT |
 | sharp | 縮圖及 SVG 轉 PNG | Apache-2.0；原生函式庫另有授權 |
 | saxes | SVG XML 驗證 | ISC |
+| yauzl | VSIX 更新套件身分與平台驗證 | MIT |
 | yaml | Skill frontmatter | ISC |
 
 ## 架構與互動參考

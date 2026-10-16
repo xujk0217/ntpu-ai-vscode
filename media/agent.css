@@ -57,6 +57,7 @@
 
 /* Dense sidebar: one chat header, full-width timeline, workspace below input. */
 .topbar{padding:5px 7px;gap:4px;min-height:35px;border-bottom:1px solid var(--line)}
+.top-actions .update-button{color:var(--accent);font-size:11px;white-space:nowrap;padding:3px 6px;border:1px solid var(--line);border-radius:5px;align-self:center}.top-actions .update-button:hover:not(:disabled){background:var(--raised)}
 .topbar .session-title{min-width:0;font-size:12px;padding:5px 2px;font-weight:500}
 .top-actions{flex:none;gap:0}.top-actions .icon-button{width:25px;height:25px}
 .conversation{padding:10px 8px 5px}.message{margin-bottom:15px}.user-body{padding:8px 10px}
