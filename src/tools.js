@@ -145,7 +145,7 @@ class WorkspaceTools {
       if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file', 'computer_open', 'computer_observe', 'computer_action', 'computer_close'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
     }
-    catch (error) { if (this.signal.aborted || name === 'search_tools' && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
+    catch (error) { if (this.signal.aborted || ['search_tools', 'computer_observe'].includes(name) && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
   }
 
   needsComputerObservation() { return !!this.options.computer?.needsObservation; }

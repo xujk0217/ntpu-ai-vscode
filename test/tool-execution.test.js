@@ -277,3 +277,22 @@ test('disabling workspace web access removes and blocks downloads and URL-based 
   const install = await tools.execute('install_skill', { name: 'remote-skill', url: 'https://example.com/SKILL.md' });
   assert.equal(download.denied, true); assert.equal(install.denied, true); assert.equal(fetches, 0);
 });
+
+test('computer dispatch still requires controller approval in full mode and readonly modes never reach the controller', async t => {
+  const root = await fixture(t), mock = mockVscode();
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const { ComputerController } = require('../src/computer/controller');
+  let approvals=0;
+  const computer = new ComputerController({ platform:'linux', approve:async()=>{approvals++;return false;},
+    desktop:async()=>({windows:[{id:'1',title:'Synthetic',class:'notes'}]}), selectWindow:async w=>w[0] });
+  t.after(()=>computer.dispose());
+  const make = agent => new WorkspaceTools({fsPath:root},new PreviewProvider(),new AbortController().signal,()=>{},async()=>{throw new Error('unneeded outer approval');}, {computer,policy:new PermissionPolicy({agent,mode:'full'})});
+  assert.equal((await make('build').execute('computer_open',{mode:'desktop'})).denied,true); assert.equal(approvals,1);
+  assert.equal((await make('ask').execute('computer_open',{mode:'desktop'})).denied,true); assert.equal(approvals,1);
+});
+test('computer vision service limits propagate rather than becoming a retryable ordinary tool failure', async t => {
+  const root=await fixture(t), {WorkspaceTools,PreviewProvider}=loadTools(mockVscode());
+  const tools=new WorkspaceTools({fsPath:root},new PreviewProvider(),new AbortController().signal,()=>{},async()=>{},
+    {computer:{observe:async()=>{throw new Error('HTTP 429 rate limit');}},policy:new PermissionPolicy({mode:'full'})});
+  await assert.rejects(tools.execute('computer_observe',{question:'Synthetic fixture'}),/429/);
+});

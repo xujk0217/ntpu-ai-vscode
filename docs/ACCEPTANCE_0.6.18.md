@@ -2,7 +2,7 @@
 
 日期：2026-10-16。Linux x64／Ubuntu 24.04，非 root 桌面；Wayland 工作階段，透過 DISPLAY 使用 XWayland。模型學校登入 Profile、既有聊天、Session／Checkpoint／Project Memory 不需遷移，未匯出校方憑證。
 
-- `npm test`：385／385 通過。新增本機 MCP broker 的原文長文分頁、無權限／Origin／描述檔拒絕、取消保存、真正打包 stdio 握手與五工具呼叫、外部分析核准／429／無工具與記憶隔離、重複啟用及匯出、保存失敗；另測 computer 權限／取消／網路限制、一次性觀察、未驗證結語攔截及最低 16,000 字元預算。
+- `npm test`：387／387 通過。新增本機 MCP broker 的原文長文分頁、無權限／Origin／描述檔拒絕、取消保存、真正打包 stdio 握手與五工具呼叫、外部分析核准／429／無工具與記憶隔離、重複啟用及匯出、保存失敗；另測 computer 權限／取消／網路限制、一次性觀察、未驗證結語攔截及最低 16,000 字元預算。
 - `npm run build`、Linux 原生 VSIX 與可攜 Plugin ZIP 打包成功，Linux VSIX 已用 VS Code CLI 安裝。可攜包不含連線檔、機器路徑或校方登入資料。
 - `npm run computer:fixture`：本機真實 Google Chrome、Chromium sandbox 啟用、獨立 Profile、正常視窗。Playwright 觀察合成頁面，填入中文與 emoji、點擊並讀回原文；共三次截圖，登入欄位／iframe 擷取拒絕，舊 observation 拒絕；零校方請求。
 - `npm run desktop:fixture`：只建立並選擇自己的合成 GTK X11 視窗。擷取 480×240 視窗、點擊、鍵盤輸入、重新觀察，以 fixture 收據驗證完整字串及 click。此欄位關閉輸入法以測試鍵盤後端；實際桌面打字仍受使用者 IME 影響。此測試注入合成影像分析回呼，**不代表校方視覺模型已驗收**。

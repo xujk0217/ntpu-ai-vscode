@@ -105,7 +105,7 @@ class ComputerController {
     const image = await this.options.image(buffer, args.question, signal);
     const verificationAvailable = !this.unverifiedClosed && (this.mode === 'browser' || typeof image.analysis === 'string' && !!image.analysis.trim());
     if (verificationAvailable) this.needsObservation = false;
-    this.observation = randomUUID(); return { ok: true, mode: this.mode, observation: this.observation, ...result, ...image, verificationAvailable, requiresObservationAfterAction: true }; 
+    this.observation = randomUUID(); return { ok: true, mode: this.mode, observation: this.observation, ...result, ...image, verificationAvailable, requiresObservationAfterAction: true };
   }, signal); }
   action(args, signal) { return this.serial(async () => {
     if (!this.mode || !this.observation || args.observation !== this.observation) throw new Error('需要最近一次 computer_observe 的 observation；操作後必須重新觀察。');
