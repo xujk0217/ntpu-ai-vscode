@@ -12,6 +12,8 @@
 
 本機系統 PATH 缺少 Tesseract／socat；後兩項使用先前下載到獨立驗證目錄的工具及明確 LD_LIBRARY_PATH／TESSDATA_PREFIX 執行，未冒充系統已安裝。實際截圖功能仍需安裝 OCR 依賴或設定持久執行檔路徑。沒有為了驗證更改使用者 VS Code 設定或重新載入中的視窗。
 
+第一輪跨平台 CI 發現測試清理順序在 Windows 會先刪除仍被 MCP 子程序當作 cwd 的資料夾，回報 EBUSY；已改成同一清理 hook 先關閉子程序再清除 fixture，沒有跳過 Windows stdio 測試。
+
 跨平台發布要求 CI 的四個原生平台 × Node 20／22 全部通過，各組另跑受控工作瀏覽器 localhost 驗證；只有 Node 22 組原生打包。原生桌面後端不在 Windows／macOS 執行，也未宣稱支援原生 Wayland。公開 Release 是否成功及實際 CI 結果以該標籤與 Actions 紀錄為準。
 
 尚待真人：重新載入已安裝的 VS Code，匯出 Plugin，從支援 MCP 的外部 Agent 提交非敏感提問並在 VS Code 核准；以及核准截圖後的真實校方視覺分析。這次未自動操作真人 SSO，未發出校方模型請求，也未將 Plugin 上架 OpenAI 公開目錄。

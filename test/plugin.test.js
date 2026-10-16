@@ -14,7 +14,11 @@ const { AdaptiveConcurrency } = require('../src/adaptive-concurrency');
 const { RequestRateGate } = require('../src/request-rate');
 async function fixture(t, run = async text => ({ text, completed: true })) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ntpu-plugin-')); const broker = new PluginBroker({ directory: root, run, status: () => ({ lastKnownReady: true }) });
-  await broker.start(); t.after(async () => { await broker.close(); await fs.rm(root, { recursive: true, force: true }); }); return broker;
+  await broker.start(); t.after(async () => {
+    // Windows cannot remove a live child's working directory. Keep the ordering
+    // in one hook so an early cleanup error cannot skip transport shutdown.
+    try { await broker.beforeCleanup?.(); } finally { await broker.close(); await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  }); return broker;
 }
 test('broker durably saves exact long output and returns bounded pages without exposing arbitrary files or history', async t => {
   const text = '完整原文🧪\n'.repeat(4000);
@@ -57,7 +61,7 @@ test('bundled portable MCP server is a real stdio server with task, result and c
   const bundle = path.join(broker.instanceDirectory, 'server.bundle.cjs');
   await require('esbuild').build({ entryPoints: [path.join(__dirname, '../src/plugin/server.js')], outfile: bundle, bundle: true, platform: 'node', target: 'node20.9' });
   const client = new Client({ name: 'plugin-fixture', version: '1' });
-  t.after(() => client.close());
+  broker.beforeCleanup = () => client.close();
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bundle, '--connection', broker.connectionFile], cwd: broker.instanceDirectory, stderr: 'pipe' }));
   const tools = await client.listTools(); assert.equal(tools.tools.length, 5);
   const task = (await client.callTool({ name: 'ntpu_start_task', arguments: { prompt: 'fixture prompt' } })).structuredContent;
