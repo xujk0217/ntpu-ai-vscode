@@ -16,8 +16,8 @@ const selectedSessions = new Set();
 const steeringRequests = new Set();
 const nodes = new Map();
 let modelActivity;
-const names = { name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', open_browser: '開啟網頁', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
-const icons = { open_browser: 'globe', run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
+const names = { search_tools: '探索可用工具', describe_tool: '載入工具規格', name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', open_browser: '開啟網頁', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const icons = { search_tools: 'search', describe_tool: 'connect', open_browser: 'globe', run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 
 function element(tag, className, text) { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = text; return item; }
@@ -599,6 +599,7 @@ function renderDrawer() {
       sample.title = '將範例填入聊天；確認內容後自行送出。'; content.append(sample);
     }
     content.append(element('p', 'panel-description', '工具與 skills 由 Agent 按需求選擇。複雜任務可自動分派探索、研究、審查子任務；單純提問通常直接處理。'));
+    content.append(element('p', 'hint', 'Agent 會依任務搜尋全部已連線工具，按需載入完整參數規格；已設定但未連線的 MCP 會先提出核准。工具數量不再受前 40 個限制。'));
     if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.originalName || tool.name), element('p', '', tool.description)); list.append(row); } content.append(list); }
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));

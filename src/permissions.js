@@ -1,6 +1,6 @@
 'use strict';
 
-const READ_TOOLS = new Set(['list_files', 'read_file', 'search_text', 'search_history', 'read_history', 'load_skill', 'get_capabilities', 'refresh_skills', 'update_plan', 'ask_user']);
+const READ_TOOLS = new Set(['list_files', 'read_file', 'search_text', 'search_history', 'read_history', 'load_skill', 'get_capabilities', 'search_tools', 'describe_tool', 'refresh_skills', 'update_plan', 'ask_user']);
 const EDIT_TOOLS = new Set(['write_file', 'edit_file', 'create_visual', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp', 'open_browser']);
 const READ_ONLY_AGENTS = new Set(['plan', 'review', 'research', 'ask']);
 const MODES = ['ask', 'assisted', 'full'];

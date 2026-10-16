@@ -3,10 +3,10 @@ const { randomUUID } = require('node:crypto');
 const { runAgent } = require('./agent');
 const { isServiceLimit } = require('./parallel-policy');
 const { MAX_SUBAGENTS } = require('./adaptive-concurrency');
+const { workerTool, DISCOVERY } = require('./tool-discovery');
 const { batchNames } = require('./parallel');
 const { sanitize, redact } = require('./security/guard');
 const { PARENT_RESERVE, MIN_CHILD_ROUNDS, remainingRounds, requestKey, requestShape, explorationEvidence, concreteSingleRationale, delegationState, validateAssessment } = require('./delegation');
-const SAFE = new Set(['list_files', 'read_file', 'search_text', 'search_history', 'read_history', 'load_skill', 'web_search', 'web_fetch', 'ntpu_lookup']);
 const DEFINITIONS = [
   { name: 'delegate_tasks', description: '背景分派獨立唯讀子任務；role 是 explore/research/review。子任務不能修改檔案或執行 shell；主 agent 負責整合、實作與驗證。模型輪數共用父任務預算。', example: '{"tasks":[{"title":"找出入口","role":"explore","request":"檢查專案入口並附檔案行號"}]}' },
   { name: 'get_task_results', description: '等待子任務結束並收集真實結果；ids 可省略。錯誤或取消不能當成完成。', example: '{"ids":["task-id"]}' },
@@ -14,8 +14,9 @@ const DEFINITIONS = [
   { name: 'cancel_task', description: '取消指定唯讀子任務，保留已取得的證據。', example: '{"id":"task-id"}' },
 ];
 function readonly(base) {
-  const catalog = () => base.catalog().filter(tool => SAFE.has(tool.name) || tool.readOnly && ['exa', 'ntpu_ai4x'].includes(tool.server));
-  return { catalog, skills: base.skills, loadedSkills: base.loadedSkills, parallelNames: () => batchNames(catalog()), execute(name, args) {
+  const catalog = options => base.catalog(options).filter(workerTool);
+  return { catalog, prepareTools(request) { base.restrictDiscovery?.(workerTool); return base.prepareTools?.(request); }, skills: base.skills, loadedSkills: base.loadedSkills, parallelNames: () => batchNames(catalog()), execute(name, args) {
+    if (DISCOVERY.has(name)) base.restrictDiscovery?.(workerTool);
     if (!catalog().some(tool => tool.name === name)) throw new Error('唯讀子任務禁止修改、shell 或再次分派。');
     return base.execute(name, args);
   } };
@@ -26,7 +27,8 @@ class AgentWorkers {
     this.maxWorkers = Math.min(MAX_SUBAGENTS, Math.max(1, Math.floor(Number(maxWorkers) || MAX_SUBAGENTS))); this.maxTasks = Math.max(4, this.maxWorkers * 2);
     this.jobs = new Map(); this.closed = false; this.assessment = null; this.reassessmentUsed = false;
   }
-  catalog() { return this.base.catalog().concat(DEFINITIONS.map(tool => tool.name === 'delegate_tasks' ? { ...tool, description: `背景分派 1–${this.maxWorkers} 個獨立唯讀子任務，role 是 explore/research/review；同時最多 ${this.maxWorkers} 個未結束子任務，父任務最多 ${this.maxTasks} 個。提供 expectedOutput 與 independent:true，主 Agent 繼續獨立工作。不能寫檔或執行 shell，最多六輪／子任務且共用父任務模型預算與請求排程，保留主 Agent ${PARENT_RESERVE} 輪整合。一般失敗不影響其他獨立工作；同一失敗內容不能改標題重派，重要的一般失敗只可透過 retry_task 排回 Queue 一次，附具體理由。429／登入／服務限制不得重試。` } : tool)); }
+  catalog(options) { return this.base.catalog(options).concat(DEFINITIONS.map(tool => tool.name === 'delegate_tasks' ? { ...tool, description: `背景分派 1–${this.maxWorkers} 個獨立唯讀子任務，role 是 explore/research/review；同時最多 ${this.maxWorkers} 個未結束子任務，父任務最多 ${this.maxTasks} 個。提供 expectedOutput 與 independent:true，主 Agent 繼續獨立工作。不能寫檔或執行 shell，最多六輪／子任務且共用父任務模型預算與請求排程，保留主 Agent ${PARENT_RESERVE} 輪整合。一般失敗不影響其他獨立工作；同一失敗內容不能改標題重派，重要的一般失敗只可透過 retry_task 排回 Queue 一次，附具體理由。429／登入／服務限制不得重試。` } : tool)); }
+  prepareTools(request) { return this.base.prepareTools?.(request); }
   get skills() { return this.base.skills; }
   get loadedSkills() { return this.base.loadedSkills; }
   parallelNames() { return batchNames(this.base.catalog()); }

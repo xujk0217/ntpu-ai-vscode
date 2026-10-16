@@ -32,6 +32,28 @@ function alias(server, name) {
   return base.slice(0, 54) + '_' + suffix;
 }
 
+// Fetch every page atomically. Limits fail explicitly instead of hiding tools.
+async function listToolPages(client, signal) {
+  const tools = [], names = new Set(), cursors = new Set(); let cursor, bytes = 0;
+  const timeout = AbortSignal.timeout(60000);
+  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  for (let page = 0; page < 100; page++) {
+    if (requestSignal.aborted) throw new Error('工具目錄讀取已停止或逾時。');
+    const response = await client.listTools(cursor ? { cursor } : {}, { signal: requestSignal, timeout: 20000 });
+    if (requestSignal.aborted) throw new Error('工具目錄讀取已停止或逾時。');
+    for (const tool of response.tools || []) {
+      if (typeof tool.name !== 'string' || !tool.name || names.has(tool.name)) throw new Error('MCP 工具目錄包含無效或重複名稱。');
+      bytes += Buffer.byteLength(JSON.stringify(tool), 'utf8');
+      if (bytes > 8 * 1024 * 1024 || tools.length >= 10000) throw new Error('MCP 工具目錄超過安全容量；未套用不完整清單。');
+      names.add(tool.name); tools.push(tool);
+    }
+    if (!response.nextCursor) return tools;
+    if (cursors.has(response.nextCursor)) throw new Error('MCP 工具目錄分頁游標重複；未套用不完整清單。');
+    cursors.add(response.nextCursor); cursor = response.nextCursor;
+  }
+  throw new Error('MCP 工具目錄分頁過多；未套用不完整清單。');
+}
+
 class McpManager {
   constructor({ secrets, onState = () => {}, onContent = async content => content, sandbox, workspace = () => null } = {}) {
     this.secrets = secrets; this.onState = onState; this.onContent = onContent;
@@ -71,21 +93,48 @@ class McpManager {
         transport = new Transport(new URL(config.url), { requestInit: { headers }, ...(config.agentAdded ? { fetch: pinnedPublicFetch() } : {}) });
       }
       await client.connect(transport, { timeout: 20000 });
-      const response = await client.listTools({}, { timeout: 20000 });
-      const connection = { client, transport, config, isolated, tools: response.tools || [] };
+      const tools = await listToolPages(client);
+      const connection = { client, transport, config, isolated, tools };
+      this.replaceTools(connection);
       this.connections.set(config.name, connection); this.failures.delete(config.name);
-      for (const tool of connection.tools) {
-        const name = alias(config.name, tool.name);
-        this.tools.set(name, { name, originalName: tool.name, server: config.name,
-          description: String(tool.description || tool.name).slice(0, 500), inputSchema: tool.inputSchema,
-          readOnly: config.readOnly === true, external: true });
-      }
       this.onState(); return connection;
     } catch (error) {
       await client.close().catch(() => {});
       await isolated?.cleanup().catch(() => {});
       this.failures.set(config.name, redact(error.message)); this.onState(); throw new Error(redact(error.message));
     }
+  }
+  replaceTools(connection, tools = connection.tools) {
+    const { config } = connection;
+    const next = tools.map(tool => ({ name: alias(config.name, tool.name), originalName: tool.name, server: config.name,
+      description: redact(String(tool.description || tool.name)).slice(0, 500), inputSchema: tool.inputSchema,
+      readOnly: config.readOnly === true, external: true }));
+    const names = new Set();
+    for (const tool of next) {
+      if (names.has(tool.name) || this.tools.has(tool.name) && this.tools.get(tool.name).server !== config.name) throw new Error('MCP 工具名稱衝突，未套用不完整清單。');
+      names.add(tool.name);
+    }
+    for (const [name, tool] of this.tools) if (tool.server === config.name) this.tools.delete(name);
+    for (const tool of next) this.tools.set(tool.name, tool);
+    connection.tools = tools;
+  }
+  async refresh(name, signal) {
+    if (signal?.aborted) throw new Error('已停止');
+    const connection = this.connections.get(name);
+    if (!connection) throw new Error('只能重新讀取已連線 MCP 的工具目錄。');
+    if (!connection.refreshing) {
+      const work = (async () => {
+        const tools = await listToolPages(connection.client, signal);
+        if (signal?.aborted || this.connections.get(name) !== connection) throw new Error('已停止或 MCP 已中斷，未套用工具目錄。');
+        this.replaceTools(connection, tools); this.onState();
+        return { ok: true, name, tools: tools.length };
+      })();
+      connection.refreshing = work;
+      void work.finally(() => { if (connection.refreshing === work) connection.refreshing = null; }).catch(() => {});
+    }
+    const result = await connection.refreshing;
+    if (signal?.aborted) throw new Error('已停止');
+    return result;
   }
   catalog() { return [...this.tools.values()]; }
   states() {
@@ -138,4 +187,4 @@ class McpManager {
   }
   async close() { for (const name of [...this.connections.keys()]) await this.disconnect(name); if (this.ownsSandbox) await this.sandbox.close(); }
 }
-module.exports = { McpManager, EXA, AI4X, BUILTINS, validateServer, alias };
+module.exports = { listToolPages, McpManager, EXA, AI4X, BUILTINS, validateServer, alias };

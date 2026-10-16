@@ -442,6 +442,7 @@ async function testUI(page, origin) {
   await page.screenshot({ path: path.join(directory, 'docs-changes.png') });
   await send({ kind: 'capabilities', skills: [], servers: [{ name: 'ntpu_ai4x', label: 'NTPU AI4X · 官方研究資料', target: 'https://ai4x.mcp.ntpu.ai/mcp', connected: true, tools: 11, builtin: true }], tools: [], parallel: { enabled: true, verified: true, effectiveConcurrency: 2 }, thinking: '模型由校方自動選擇。', image: '圖片／PDF 分析與 SVG 繪圖。' });
   await page.locator('#settings').click(); await page.locator('[data-tab="tools"]').click();
+  assert.match(await page.locator('#drawer').textContent(), /工具數量不再受前 40 個限制/);
   await page.screenshot({ path: path.join(directory, 'docs-tools.png') });
 }
 module.exports = { assets, testUI };

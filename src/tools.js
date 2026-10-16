@@ -12,6 +12,7 @@ const { parseSkill } = require('./skills');
 const { imageMime, renderSvg } = require('./visuals');
 const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
+const { ToolDiscovery } = require('./tool-discovery');
 const { scanner } = require('./security/attachments');
 const { SandboxExecutor } = require('./security/sandbox');
 const { searchHistory, readHistory } = require('./memory/history');
@@ -41,15 +42,48 @@ class WorkspaceTools {
     for (const name of options.selectedSkills || []) {
       try { this.loadedSkills.set(name, this.skills.load(name)); } catch {}
     }
+    this.discovery = new ToolDiscovery(() => this.inventory(), () => this.discoveryServers());
     this.snapshots = new Map();
     this.sandbox = options.sandbox || new SandboxExecutor(); this.approvedData = new Set();
   }
 
-  catalog() {
-    return DEFINITIONS.filter(tool => typeof this.options.history === 'function' || !['search_history', 'read_history'].includes(tool.name))
+  inventory() {
+    return DEFINITIONS.filter(tool => tool.name === 'run_command' || this.policy.decision(tool.name) !== 'deny')
+      .filter(tool => typeof this.options.history === 'function' || !['search_history', 'read_history'].includes(tool.name))
       .filter(tool => this.options.web !== false || !['web_search', 'web_fetch', 'download_file'].includes(tool.name))
-      .concat((this.options.mcp?.catalog() || []).filter(tool => this.options.web !== false || tool.server !== 'exa')).slice(0, 40);
+      .concat((this.options.mcp?.catalog() || []).filter(tool => (this.options.web !== false || tool.server !== 'exa') &&
+        this.policy.decision(tool.name, {}, tool) !== 'deny'))
+      .filter(tool => !this.discoveryScope || this.discoveryScope(tool));
   }
+  discoveryServers() {
+    const manager = this.options.mcp;
+    const configured = [...(this.options.servers || []), ...(this.options.builtins || []),
+      ...[...(manager?.connections?.values?.() || [])].map(item => item.config)];
+    const states = manager?.states?.() || [];
+    return [...new Map(configured.map(config => [config.name, config])).values()]
+      .filter(config => (this.options.web !== false || config.name !== 'exa') &&
+        (!this.discoveryScope || this.discoveryScope({ server: config.name, readOnly: config.readOnly })))
+      .map(config => ({ kind: 'server', name: config.name, server: config.name,
+        description: config.label || config.name, connected: states.some(item => item.name === config.name && item.connected),
+        canConnect: typeof this.options.connectMcp === 'function' && this.policy.decision('connect_mcp') !== 'deny' && !this.discoveryScope }));
+  }
+  restrictDiscovery(predicate) {
+    const previous = this.discoveryScope;
+    this.discoveryScope = tool => (!previous || previous(tool)) && predicate(tool);
+  }
+  prepareTools(request) { this.discovery.prepare(request); }
+  catalog(options) { return this.discovery.active(options); }
+  async searchTools(args) {
+    this.discovery.search(args); // Validate before any optional catalog network request.
+    if (args.refresh === true) {
+      const manager = this.options.mcp;
+      if (typeof args.server !== 'string' || !manager?.connections?.has(args.server) || typeof manager.refresh !== 'function') throw new Error('refresh 需要已連線的 server 名稱；尚未連線請先 connect_mcp。');
+      if (!this.discoveryServers().some(item => item.name === args.server)) throw new Error('此 server 不在目前工具權限範圍。');
+      await manager.refresh(args.server, this.signal); this.checkStopped(); this.options.onCatalogChange?.();
+    }
+    this.onActivity('搜尋可用工具'); return this.discovery.search(args);
+  }
+  describeTool(args) { this.onActivity('載入工具參數規格'); return this.discovery.describe(args); }
 
   parallelNames() { return this.options.parallel ? require('./parallel').batchNames(this.catalog()) : new Set(); }
 
@@ -92,6 +126,7 @@ class WorkspaceTools {
       write_file: () => this.write(args), edit_file: () => this.edit(args), run_command: () => this.command(args),
       open_browser: () => this.openBrowser(args),
       update_plan: () => this.plan(args), ask_user: () => this.question(args), load_skill: () => this.skill(args),
+      search_tools: () => this.searchTools(args), describe_tool: () => this.describeTool(args),
       get_capabilities: () => this.getCapabilities(), refresh_skills: () => this.refreshSkills(),
       install_skill: () => this.installSkill(args), connect_mcp: () => this.connectMcp(args), add_mcp: () => this.addMcp(args), download_file: () => this.download(args),
       ntpu_lookup: () => this.options.mcp.lookup(args, this.signal), web_search: () => this.webSearch(args), web_fetch: () => this.webFetch(args),
@@ -101,6 +136,8 @@ class WorkspaceTools {
     if (!methods[name] && !mcpTool) throw new Error('未知工具。');
     if (this.options.web === false && (['web_search', 'web_fetch', 'download_file'].includes(name) || name === 'install_skill' && typeof args.url === 'string' || mcpTool?.server === 'exa')) return { ok: false, denied: true, error: '這個工作階段未啟用公開網路工具；請先開啟輸入框旁的地球按鈕。' };
     if (this.policy.decision(name, args, mcpTool) === 'deny') return { ok: false, denied: true, error: '目前 agent 模式禁止這個操作。' };
+    if (mcpTool && !this.inventory().some(tool => tool.name === name)) return { ok: false, denied: true, error: '工具不在目前權限範圍。' };
+    if (mcpTool && !this.discovery.isLoaded(name)) return { ok: false, needsToolLoad: true, error: '工具尚未載入或規格已變更；請先 search_tools，再以 describe_tool 完整讀取規格。' };
     try {
       if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       return sanitize(methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal));
@@ -266,6 +303,9 @@ class WorkspaceTools {
     return { ok: true, workspace: path.basename(this.root.fsPath), workspaceScoped: true,
       networkSearchEnabled: this.options.web !== false, mcp: this.options.mcp?.states?.() || [],
       tools: this.catalog().map(({ name, server, description }) => ({ name, server, description })),
+      toolDiscovery: { availableTools: this.inventory().length, activeTools: this.catalog().length, configuredServers: this.discoveryServers().length,
+        instruction: '使用 search_tools 搜尋全部工具或已設定 server，再用 describe_tool 分頁取得完整參數；工具目錄不再截斷於前 40 個。' },
+      servers: this.discoveryServers().slice(0, 20).map(({ name, connected, canConnect }) => ({ name, connected, canConnect })),
       skills: this.skills?.list?.() || [], limits: { downloadBytes: 10 * 1024 * 1024,
         downloadedFilesAreExecuted: false, skillInstallLocation: '.agents/skills/<name>/SKILL.md' } };
   }
@@ -321,7 +361,8 @@ class WorkspaceTools {
     this.checkStopped();
     if (answer !== '連接 MCP') return { ok: false, denied: true, message: '使用者未批准連接。' };
     await this.options.connectMcp(config);
-    return { ok: true, name: config.name, tools: manager.catalog().filter(tool => tool.server === config.name).map(({ name, originalName, description, inputSchema }) => ({ name, originalName, description, inputSchema })) };
+    const discovered = this.discovery.search({ server: config.name, limit: 5 });
+    return { ...discovered, name: config.name, tools: discovered.matches.filter(item => item.kind === 'tool') };
   }
   async addMcp(args) {
     if (typeof args.name !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(args.name) || typeof args.url !== 'string') throw new Error('需要有效的 MCP 名稱與公開 HTTPS 網址。');
@@ -337,7 +378,8 @@ class WorkspaceTools {
     this.checkStopped();
     if (answer !== '新增並連接 MCP') return { ok: false, denied: true, message: '使用者未批准新增 MCP。' };
     await this.options.addMcp(config);
-    return { ok: true, name: config.name, tools: this.options.mcp.catalog().filter(tool => tool.server === config.name).map(({ name, originalName, description, inputSchema }) => ({ name, originalName, description, inputSchema })) };
+    const discovered = this.discovery.search({ server: config.name, limit: 5 });
+    return { ...discovered, name: config.name, tools: discovered.matches.filter(item => item.kind === 'tool') };
   }
   async download(args) {
     inspectOutboundPayload({ url: args.url }, { reject: true });

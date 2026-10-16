@@ -8,7 +8,7 @@ const { OutputParts, partialOutput, MAX_OUTPUT_BYTES } = require('./output-parts
 const { previouslyDenied } = require('./denied-actions');
 
 const COORDINATION_TOOLS = new Set(['delegate_tasks', 'get_task_results', 'retry_task', 'cancel_task']);
-const CONTROL_TOOLS = new Set(['update_plan', 'get_capabilities', 'load_skill', 'refresh_skills', 'ask_user', ...COORDINATION_TOOLS]);
+const CONTROL_TOOLS = new Set(['update_plan', 'get_capabilities', 'search_tools', 'describe_tool', 'load_skill', 'refresh_skills', 'ask_user', ...COORDINATION_TOOLS]);
 function semanticEvidence(value) {
   if (Array.isArray(value)) return value.map(semanticEvidence);
   if (!value || typeof value !== 'object') return value;
@@ -117,6 +117,8 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     return { completed: false, unstructured: true, protocolError: true, steps: step + 1 };
   };
   const finalText = text => output.parts.length ? output.text + (text && text !== output.text ? '\n\n' + text : '') : text;
+  if (signal.aborted) throw new Error('已停止');
+  await tools?.prepareTools?.(request);
   for (let step = 0; step < maxSteps; step++) {
     if (signal.aborted) throw new Error('已停止');
     const round = reservedRound ?? (modelBudget ? modelBudget.consume() : step + 1); reservedRound = null;
@@ -125,7 +127,7 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
     await consumeSteering();
     onActivity(`AI 正在處理（${round}/${modelBudget?.limit || maxSteps}）`);
     let characters = 0, lastProgress = 0;
-    const catalog = tools.catalog?.();
+    const catalog = tools.catalog?.({ budget });
     const delegationState = !assessmentBypassed ? tools.delegationState?.(assessmentOptions()) : null;
     const built = buildPromptDetailed({ request: redact(request), context: sanitize(context), workspace, records, budget, profile,
       ...(catalog ? { catalog } : {}), outputState: output.promptState(), delegationState,
