@@ -18,14 +18,16 @@ function semanticEvidence(value) {
 function verifiedEnvironmentBlocker(failed, records) {
   if (failed?.name !== 'run_command') return false;
   const detail = [failed.result?.error, failed.result?.output].filter(Boolean).join(' ');
-  if (!/(?:沙箱|sandbox).{0,80}(?:不支援|無法|未啟用|不可用|缺少|missing|unavailable|not supported|failed|cannot|requires)|(?:bwrap|bubblewrap|unshare|user namespace).{0,80}(?:not permitted|permission denied|unavailable|missing|not found)|缺少 OS 沙箱執行期|需要 Node\.js 22/i.test(detail)) return false;
+  if (!/(?:沙箱|sandbox).{0,80}(?:不支援|無法|未啟用|不可用|缺少|missing|unavailable|not supported|failed|cannot|requires)|(?:bwrap|bubblewrap|unshare|user namespace|socat).{0,80}(?:not permitted|permission denied|unavailable|missing|not found|not installed)|缺少 OS 沙箱執行期|需要 Node\.js 22|(?:node|npm|python3?|git): (?:command )?not found|(?:is not recognized as (?:an internal or external )?command)/i.test(detail)) return false;
   const index = records.indexOf(failed);
   return records.slice(index + 1).some(record => record.type === 'tool' && record.result?.ok === true &&
     ['get_capabilities', 'read_file', 'search_text', 'web_search', 'web_fetch'].includes(record.name));
 }
 function malformedControl(text) {
   const raw = String(text || '').trim().replace(/^```(?:json|xml)?\s*/i, '');
-  return /^\{\s*(?:["'}]|$)|^\[\s*(?:["{[\]\d-]|true\b|false\b|null\b|$)/.test(raw) || /^<(?:[a-z_]+:)?(?:invoke|function(?:_calls?)?|tool(?:_calls?)?)\b/i.test(raw);
+  return /^\{\s*(?:["'}]|$)|^\[\s*(?:["{[\]\d-]|true\b|false\b|null\b|$)/.test(raw) ||
+    /<(?:[a-z_]+:)?(?:invoke|function(?:_calls?)?|tool(?:_calls?)?)\b/i.test(raw) ||
+    /\{\s*["']kind["']\s*:\s*["'](?:tool|parallel|output|delegation)["']/i.test(raw);
 }
 
 function unresolvedToolFailure(records) {
@@ -45,8 +47,29 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
   initialRecords = [], attachment, profile = {}, modelBudget, onOutputPart = async () => {},
   getSteering = async () => [], onSteeringCommitted = async () => {} }) {
   const records = sanitize(initialRecords);
-  const execute = async (name, args) => previouslyDenied(records, name, args) ?
-    { ok: false, denied: true, error: '此操作先前已被拒絕，未再次執行或要求核准。' } : tools.execute(name, args);
+  const readCoverage = new Map();
+  const addReadCoverage = record => {
+    const result = record?.result, path = result?.path || record?.args?.path;
+    if (record?.name !== 'read_file' || result?.ok !== true || typeof path !== 'string' ||
+        !Number.isInteger(result.start_line) || !Number.isInteger(result.end_line) || result.end_line < result.start_line || typeof result.text !== 'string') return false;
+    const lines = readCoverage.get(path) || new Map();
+    const content = result.text.split('\n').map(line => line.match(/^(\d+): (.*)$/)).filter(Boolean).map(match => [Number(match[1]), match[2]]);
+    if (!content.length) return false;
+    const covered = content.every(([line, text]) => lines.has(line) && lines.get(line) === text);
+    for (const [line, text] of content) lines.set(line, text);
+    readCoverage.set(path, lines);
+    return covered;
+  };
+  for (const record of records) addReadCoverage(record);
+  const execute = async (name, args) => {
+    if (previouslyDenied(records, name, args)) return { ok: false, denied: true, error: '此操作先前已被拒絕，未再次執行或要求核准。' };
+    const result = sanitize(await tools.execute(name, args));
+    if (name === 'read_file' && addReadCoverage({ name, args, result })) {
+      return { ok: true, path: result.path || args.path, start_line: result.start_line, end_line: result.end_line,
+        total_lines: result.total_lines, unchanged: true, hint: '這個未變更檔案範圍已讀取過，沒有重複傳送內容。請使用既有讀取結果，或改讀尚未覆蓋的行。' };
+    }
+    return result;
+  };
   const output = new OutputParts(records);
   const repeated = [];
   let consecutiveFailures = 0, recoveryChecks = 0, stagnantRecoveryChecks = 0, lastRecoveryEvidence = '';
@@ -241,8 +264,17 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
         await checkpoint(); continue;
       }
       const failed = unresolvedToolFailure(records);
-      const recoverable = failed && !(reply.completed === false && verifiedEnvironmentBlocker(failed, records));
       const denied = records.some(record => record.result?.denied);
+      const environmentBlocked = !denied && verifiedEnvironmentBlocker(failed, records);
+      if (environmentBlocked) {
+        const detail = redact([failed.result?.error, failed.result?.output].filter(Boolean).join(' ').slice(0, 500));
+        const action = /socat/i.test(detail) ? '請在 VS Code Extension Host 可見的環境安裝 socat，或使用已具備該相依套件的 VS Code 執行環境。' :
+          /node|npm/i.test(detail) ? '請讓所需執行檔可在 VS Code Extension Host 的隔離 PATH 中使用，再從檢查點接續。' :
+            '請依錯誤補齊該平台的 OS 沙箱相依環境，再從檢查點接續。';
+        onFinal(`已確認本機工具環境阻止後續驗證：${detail || 'OS 沙箱或執行檔不可用'}。${action} 已保存的修改與檢查點保留；本任務尚未完成。`);
+        return { completed: false, steps: step + 1, environmentBlocked: true, failedTool: failed.name };
+      }
+      const recoverable = !!failed;
       const evidence = JSON.stringify([...new Set(records.filter(record => record.type === 'tool' && !CONTROL_TOOLS.has(record.name))
         .map(record => JSON.stringify(semanticEvidence({ name: record.name, args: record.args, result: record.result }))))]);
       if (recoverable && !denied && recoveryChecks < 6) {

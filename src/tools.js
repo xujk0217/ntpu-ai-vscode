@@ -157,7 +157,7 @@ class WorkspaceTools {
       if (mcpTool) { this.registry.markToolCall(mcpTool.server, result?.ok === true); if (result?.ok === false) this.checkMcpLimit(mcpTool.server, JSON.stringify(result)); }
       return sanitize(result);
     }
-    catch (error) { if (mcpTool) { this.registry.markToolCall(mcpTool.server, false); this.checkMcpLimit(mcpTool.server, error.message); } if (this.signal.aborted || ['search_tools', 'computer_observe'].includes(name) && isServiceLimit(error)) throw error; return sanitize({ ok: false, error: error.message }); }
+    catch (error) { if (mcpTool) { this.registry.markToolCall(mcpTool.server, false); this.checkMcpLimit(mcpTool.server, error.message); } if (this.signal.aborted || ['search_tools', 'computer_observe'].includes(name) && isServiceLimit(error)) throw error; return sanitize({ ok: false, ...(error.denied === true ? { denied: true } : {}), error: error.message }); }
   }
 
   mcpLimited(server, url) {
@@ -600,7 +600,7 @@ class WorkspaceTools {
     const result = await this.onApproval?.({ title: '確認資料傳送：' + relative,
       detail: '資料將交給 NTPU AI。文字憑證會遮蔽；圖片／PDF 會先在本機檢查已知秘密，但 OCR 可能漏辨，請確認內容適合傳送。', accept }, this.signal);
     this.checkStopped();
-    if (result !== accept) throw new Error('未批准敏感資料傳送。');
+    if (result !== accept) throw Object.assign(new Error('未批准敏感資料傳送。'), { denied: true });
     if (!attachment) this.approvedData.add(relative);
   }
 }

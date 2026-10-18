@@ -57,10 +57,10 @@ Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區�
 
 | 系統 | 0.6.5 安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-win32-x64-0.6.10.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-darwin-arm64-0.6.10.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-darwin-x64-0.6.10.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.10/ntpu-ai-coder-linux-x64-0.6.10.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-win32-x64-0.6.21.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-darwin-arm64-0.6.21.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-darwin-x64-0.6.21.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-linux-x64-0.6.21.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -212,7 +212,7 @@ Extension 優先在本機 UI Host 執行。Remote SSH／Dev Container／WSL 不�
 
 核准卡支援單次核准，或在此工作階段允許同一工具。資料確認與自訂 MCP 僅授權單次呼叫。重新載入擴充功能恢復「要求核准」。完整存取切換時會說明範圍並確認。
 
-檔案工具限制於選定工作區，檢查符號連結、秘密檔案及修改衝突。Shell 與 stdio MCP 必須在 OS 沙箱中執行，禁止網路與一般使用者資料存取；隔離不可用即停止。目前 macOS 使用 Seatbelt，Linux 使用 bubblewrap（待桌面驗收），Windows 暫時阻止 Shell／stdio。需要 Node 22.12 以上；完整存取也不會繞過隔離。
+檔案工具限制於選定工作區，檢查符號連結、秘密檔案及修改衝突。Shell 與 stdio MCP 必須在 OS 沙箱中執行，禁止網路與一般使用者資料存取；隔離不可用即停止。目前 macOS 使用 Seatbelt，Linux 使用 bubblewrap，Windows 暫時阻止 Shell／stdio。需要 Node 22.12 以上；完整存取也不會繞過隔離。三平台共用 Agent 與流程的範圍，以及 OS 專屬差異見[平台對照](PLATFORM_PARITY_0.6.21.md)。
 
 ### 自動核准指令
 

@@ -59,6 +59,44 @@ test('protocol rejects unknown tools and budget retains authoritative request', 
   assert.ok(prompt.length < 16000);
 });
 
+test('protocol recovers one complete JSON control envelope wrapped in prose but rejects mixed controls', () => {
+  const single = '我已檢查檔案，接下來讀取入口： {"kind":"tool","name":"read_file","args":{"path":"src/main.js"}}';
+  assert.deepEqual(parseReply(single), { kind: 'tool', name: 'read_file', args: { path: 'src/main.js' } });
+  const first = '{"kind":"tool","name":"read_file","args":{"path":"a.js"}}';
+  const second = '{"kind":"tool","name":"read_file","args":{"path":"b.js"}}';
+  assert.equal(parseReply(`先讀 A ${first} 再讀 B ${second}`).kind, 'unstructured');
+  assert.equal(parseReply(`先讀 A ${first} <invoke name="edit_file"><parameter name="path">a.js</parameter></invoke>`).kind, 'unstructured');
+  assert.equal(parseReply('文字後接不完整封裝 {"kind":"tool"').kind, 'unstructured');
+  assert.equal(parseReply('範例： `{"kind":"tool","name":"read_file","args":{"path":"a.js"}}`').kind, 'unstructured');
+});
+
+test('mixed JSON and XML controls in prose are kept internal, rejected, and never execute either operation', async () => {
+  const tool = '{"kind":"tool","name":"read_file","args":{"path":"a.js"}}';
+  const conflicting = `我會先查檔案 ${tool} <invoke name="edit_file"><parameter name="path">a.js</parameter></invoke> {"kind":"tool","name":"read_file","args":{"path":"b.js"}}`;
+  let calls = 0, execution = 0, prompt = '';
+  const result = await runAgent({ request: '檢查程式', signal: new AbortController().signal,
+    bridge: { chat: async value => { prompt = value; calls++; return { text: calls === 1 ? conflicting : '{"kind":"final","message":"格式衝突未執行，已繼續。"}' }; } },
+    tools: { catalog: () => [{ name: 'read_file' }], execute: async () => { execution++; return { ok: true }; } } });
+  assert.equal(result.completed, true); assert.equal(calls, 2); assert.equal(execution, 0);
+  assert.match(prompt, /Invalid control envelope/); assert.match(prompt, /XML invoke\/function calls are unsupported/);
+});
+
+test('re-reading the same unchanged source range returns a concise no-progress receipt', async () => {
+  let calls = 0, prompt = '', final = '';
+  const replies = [
+    { kind: 'tool', name: 'read_file', args: { path: 'src/main.js', start_line: 1, end_line: 3 } },
+    { kind: 'tool', name: 'read_file', args: { path: 'src/main.js', start_line: 1, end_line: 3 } },
+    { kind: 'final', message: '已使用既有讀取內容完成檢查。' },
+  ];
+  const result = await runAgent({ request: '檢查入口', signal: new AbortController().signal,
+    bridge: { chat: async value => { prompt = value; return { text: JSON.stringify(replies.shift()) }; } },
+    tools: { execute: async () => { calls++; return { ok: true, path: 'src/main.js', start_line: 1, end_line: 3, total_lines: 3, text: '1: const a=1;\n2: const b=2;\n3: const c=3;' }; } },
+    onFinal: value => { final = value; } });
+  assert.equal(result.completed, true); assert.equal(calls, 2);
+  assert.match(prompt, /"unchanged":true/); assert.match(prompt, /沒有重複傳送內容/);
+  assert.match(final, /使用既有讀取內容/);
+});
+
 test('Build repairs prose and continues actual tool calls before finalizing', async () => {
   const replies = ['我會建立程式。', JSON.stringify({ kind: 'tool', name: 'write_file', args: { path: 'main.js', content: '42' }, message: '我會建立主程式。' }), JSON.stringify({ kind: 'final', message: '已建立 main.js。' })];
   const prompts = [], tools = [], events = [];
@@ -144,6 +182,21 @@ test('ordinary tool failure becomes evidence and parent tries another safe step'
   const result = await runAgent({ request: '檢查', profile: { agent: 'ask' }, signal: new AbortController().signal,
     bridge: { chat: async prompt => { prompts.push(prompt); return { text: JSON.stringify(replies.shift()) }; } }, tools: { execute: async () => { if (++calls === 1) throw new Error('File missing'); return { ok: true, content: 'data' }; } } });
   assert.equal(result.completed, true); assert.equal(calls, 2); assert.match(prompts[2], /safe alternative/);
+});
+
+test('verified OS sandbox dependency failures stop repeated read-only investigations with an actionable blocker', async () => {
+  const replies = [
+    { kind: 'tool', name: 'run_command', args: { command: 'npm test' } },
+    { kind: 'tool', name: 'read_file', args: { path: 'package.json' } },
+    { kind: 'final', completed: false, message: '目前仍無法執行測試。' },
+  ];
+  let calls = 0, final = '';
+  const result = await runAgent({ request: '實作並測試功能', profile: { agent: 'build' }, signal: new AbortController().signal,
+    bridge: { chat: async () => ({ text: JSON.stringify(replies.shift()) }) },
+    tools: { execute: async name => { calls++; return name === 'run_command' ? { ok: false, error: 'OS 沙箱依賴不可用：socat not installed' } : { ok: true, path: 'package.json', text: '{}' }; } },
+    onFinal: text => { final = text; } });
+  assert.equal(result.completed, false); assert.equal(result.environmentBlocked, true); assert.equal(calls, 2);
+  assert.match(final, /socat not installed/); assert.match(final, /Extension Host/); assert.match(final, /尚未完成/);
 });
 
 test('desktop shell failure cannot finalize implicitly; agent researches and opens through the host', async () => {

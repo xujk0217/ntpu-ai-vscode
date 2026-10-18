@@ -49,6 +49,20 @@ async function fixture(t) {
   return root;
 }
 
+test('declined CSV disclosure remains a denial so the agent cannot retry it as an ordinary read error', async t => {
+  const root = await fixture(t), mock = mockVscode();
+  await fs.writeFile(path.join(root, 'sample.csv'), 'description,amount\nsynthetic-private-row,10\n');
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  let approvals = 0;
+  const tools = new WorkspaceTools(mock.Uri.file(root), new PreviewProvider(), new AbortController().signal, () => {},
+    async () => { approvals++; return undefined; }, { policy: new PermissionPolicy({ mode: 'full', agent: 'build' }) });
+  const result = await tools.execute('read_file', { path: 'sample.csv' });
+  assert.equal(result.ok, false); assert.equal(result.denied, true); assert.equal(approvals, 1);
+  assert.doesNotMatch(JSON.stringify(result), /synthetic-private-row/);
+  const { previouslyDenied } = require('../src/denied-actions');
+  assert.equal(previouslyDenied([{ type: 'tool', name: 'read_file', args: { path: 'sample.csv' }, result }], 'read_file', { path: 'sample.csv' }), true);
+});
+
 test('workspace HTML opens through VS Code after approval without launching a shell', async t => {
   const root = await fixture(t), mock = mockVscode(), opened = []; let approvals = 0;
   await fs.writeFile(path.join(root, 'index.html'), '<!doctype html><title>Fixture</title>');

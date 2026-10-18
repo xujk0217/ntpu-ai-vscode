@@ -72,7 +72,12 @@ class SandboxExecutor {
       const denied = await this.boundaries(realRoot, reviewPaths, approved), roots = await this.readRoots();
       const filesystem = { denyRead: [process.platform === 'win32' ? path.parse(realRoot).root : '/', ...PROTECTED, ...denied],
         allowRead: [realRoot, scratch, ...roots], allowWrite: readOnly ? [scratch] : [realRoot, scratch], denyWrite: [...PROTECTED, ...denied] };
-      const specification = await manager.wrapWithSandboxArgv(command, undefined, { filesystem }, signal, realCwd, { commandId: randomUUID() });
+      // The runtime inserts its own TMPDIR inside the sandbox shell, after the
+      // spawn environment. Reassert this invocation's already-allowed scratch
+      // directory there, without changing process.env (parallel jobs share it).
+      const sandboxCommand = `export TMPDIR=${quote(scratch)} TMP=${quote(scratch)} TEMP=${quote(scratch)}; ` + command;
+      const specification = await manager.wrapWithSandboxArgv(sandboxCommand, undefined, { filesystem }, signal, realCwd,
+        { commandId: randomUUID(), commandText: command });
       if (!specification.argv?.length) throw new Error('OS 沙箱未回傳可用指令。');
       const env = cleanEnvironment();
       for (const [key, value] of Object.entries(specification.env || {})) if (value !== process.env[key]) env[key] = value;

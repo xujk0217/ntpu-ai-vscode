@@ -83,3 +83,25 @@ test('incomplete streams retain their typed error and callback failures do not b
   assert.equal(rejected.code, 'INCOMPLETE_MODEL_RESPONSE'); assert.equal(rejected.diagnostics.responseCharacters, 7);
   assert.equal(bridge.pending, null);
 });
+
+test('content-free receipts distinguish no response, accepted silent response and stalled content', () => {
+  for (const phase of ['awaiting_response', 'awaiting_content', 'streaming']) {
+    const bridge = new BrowserBridge(); let rejected;
+    const at = Date.now();
+    bridge.pending = { id: 'request', startedAt: at - 600000, promptCharacters: 15000,
+      text: phase === 'streaming' ? 'synthetic-secret-must-not-appear' : '', tokenEvents: 0, eventCounts: {},
+      opened: phase !== 'awaiting_response', idleTimeoutMs: 600000, totalTimeoutMs: 900000,
+      reject: error => { rejected = error; } };
+    if (phase !== 'awaiting_response') bridge.pending.openedAt = at - 590000;
+    if (phase === 'streaming') Object.assign(bridge.pending, { firstTokenMs: 20000, lastContentAt: at - 1000, maxContentGapMs: 2000 });
+    bridge._fail(Object.assign(new Error('timeout'), { code: 'IDLE_RESPONSE_TIMEOUT' }));
+    const receipt = rejected.diagnostics;
+    assert.equal(receipt.phase, phase);
+    assert.equal(receipt.responseOpenMs, phase === 'awaiting_response' ? null : 10000);
+    assert.equal(receipt.idleTimeoutMs, 600000); assert.equal(receipt.totalTimeoutMs, 900000);
+    if (phase === 'streaming') { assert.ok(receipt.lastContentAgoMs >= 1000); assert.equal(receipt.maxContentGapMs, 2000); }
+    else assert.equal(receipt.lastContentAgoMs, null);
+    assert.equal(bridge.pending, null);
+    assert.doesNotMatch(JSON.stringify(receipt), /synthetic-secret|cookie|authorization/i);
+  }
+});

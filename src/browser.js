@@ -336,6 +336,7 @@ class BrowserBridge {
     const abort = () => { this._fail(new Error('已停止')); void this._abortPage(); };
     options.signal?.addEventListener('abort', abort, { once: true });
     this.pending = { id, resolve, reject, watchdog, text: '', model: null, startedAt: Date.now(), promptCharacters: prompt.length,
+      idleTimeoutMs: options.timeoutMs || 240000, totalTimeoutMs: watchdog.totalMs, maxContentGapMs: 0,
       opened: false, tokenEvents: 0, eventCounts: {}, onResponseMetadata: options.onResponseMetadata,
       ownsConversation: options.newConversation !== false, onToken: options.onToken, onJudge: options.onJudge, onOpen: options.onOpen, signal: options.signal, abort };
     try {
@@ -364,7 +365,7 @@ class BrowserBridge {
     const pending = this.pending;
     if (!pending || payload?.id !== pending.id) return;
     if (payload.kind === 'conversation') { if (pending.ownsConversation && typeof payload.sessionId === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(payload.sessionId)) this.ownedConversations.add(payload.sessionId); return; }
-    if (payload.kind === 'opened') { pending.opened = true; pending.onOpen?.(); return; }
+    if (payload.kind === 'opened') { pending.opened = true; pending.openedAt ??= Date.now(); pending.onOpen?.(); return; }
     if (payload.kind === 'failure') {
       const suffix = [401, 403].includes(payload.status) ? ' 請回瀏覽器重新登入或完成驗證。' :
         payload.status === 429 ? ' 已達網站用量限制，請等待或使用學校帳號；不會自動重試。' : '';
@@ -376,11 +377,16 @@ class BrowserBridge {
     if (!event) return;
     const eventType = ['judge', 'token', 'done', 'error', 'search', 'search_quota'].includes(event.type) ? event.type : 'unknown';
     pending.eventCounts[eventType] = (pending.eventCounts[eventType] || 0) + 1;
-    if (event.type === 'judge') { pending.model = event.model || event.selected_model || event; pending.onJudge?.(event); }
+    if (event.type === 'judge') { pending.judgedAt ??= Date.now(); pending.model = event.model || event.selected_model || event; pending.onJudge?.(event); }
     else if (event.type === 'token') {
       pending.tokenEvents++; const token = typeof event.content === 'string' ? event.content : '';
-      if (token && pending.firstTokenMs === undefined) pending.firstTokenMs = Date.now() - pending.startedAt;
-      if (token) pending.watchdog?.progress();
+      if (token) {
+        const at = Date.now();
+        pending.firstTokenMs ??= at - pending.startedAt;
+        if (pending.lastContentAt !== undefined) pending.maxContentGapMs = Math.max(pending.maxContentGapMs || 0, at - pending.lastContentAt);
+        pending.lastContentAt = at;
+        pending.watchdog?.progress();
+      }
       pending.text += token; pending.onToken?.(token);
     }
     else if (event.type === 'error') { const error = new Error(event.message || 'NTPU AI 回答失敗'); error.status = Number(event.status || event.status_code || event.code) || undefined; error.serviceLimited = /quota|rate.?limit|capacity|resource.?exhausted/i.test(String(event.code || '')); this._fail(error); }
@@ -407,8 +413,14 @@ class BrowserBridge {
   }
 
   _responseMetadata(pending, outcome, error) {
-    const metadata = { outcome, promptCharacters: pending.promptCharacters, durationMs: Date.now() - pending.startedAt,
+    const at = Date.now();
+    const metadata = { outcome, promptCharacters: pending.promptCharacters, durationMs: at - pending.startedAt,
       opened: pending.opened, tokenEvents: pending.tokenEvents, responseCharacters: pending.text.length, firstTokenMs: pending.firstTokenMs ?? null,
+      phase: pending.firstTokenMs !== undefined ? 'streaming' : pending.opened ? 'awaiting_content' : 'awaiting_response',
+      responseOpenMs: pending.openedAt === undefined ? null : pending.openedAt - pending.startedAt,
+      judgeMs: pending.judgedAt === undefined ? null : pending.judgedAt - pending.startedAt,
+      lastContentAgoMs: pending.lastContentAt === undefined ? null : at - pending.lastContentAt,
+      maxContentGapMs: pending.maxContentGapMs || 0, idleTimeoutMs: pending.idleTimeoutMs, totalTimeoutMs: pending.totalTimeoutMs,
       events: { ...pending.eventCounts }, model: typeof pending.model === 'string' ? pending.model : undefined,
       siteElapsedMs: pending.siteElapsedMs, code: error?.code, status: error?.status };
     try { pending.onResponseMetadata?.(metadata); } catch {}

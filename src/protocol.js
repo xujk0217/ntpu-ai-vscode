@@ -67,7 +67,26 @@ function parseReply(text, allowedTools = TOOLS, parallelTools = new Set()) {
   if (fence) raw = fence[1].trim();
   let value;
   try { value = JSON.parse(raw); }
-  catch { return { kind: 'unstructured', message: text }; }
+  catch {
+    // Some provider responses add a short preamble around a single JSON
+    // envelope. Recover only one complete top-level object; mixed JSON/XML,
+    // multiple tool envelopes, and partial objects remain untrusted prose.
+    if (/<(?:[a-z_]+:)?(?:invoke|function(?:_calls?)?|tool(?:_calls?)?)\b/i.test(raw)) return { kind: 'unstructured', message: text };
+    const objects = [];
+    let depth = 0, start = -1, quoted = false, escaped = false;
+    for (let index = 0; index < raw.length; index++) {
+      const char = raw[index];
+      if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; continue; }
+      if (char === '"') { quoted = true; continue; }
+      if (char === '{') { if (depth++ === 0) start = index; }
+      else if (char === '}' && depth > 0 && --depth === 0) objects.push(raw.slice(start, index + 1));
+    }
+    if (depth !== 0 || objects.length !== 1) return { kind: 'unstructured', message: text };
+    const before = raw.slice(0, raw.indexOf(objects[0])), after = raw.slice(raw.indexOf(objects[0]) + objects[0].length);
+    if (/[`<>"']/.test(before + after)) return { kind: 'unstructured', message: text };
+    try { value = JSON.parse(objects[0]); }
+    catch { return { kind: 'unstructured', message: text }; }
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('模型回傳的操作格式不正確。');
   if (value.kind === 'final' && typeof value.message === 'string') return value;
   if (value.kind === 'output') return validateOutputPart(value);

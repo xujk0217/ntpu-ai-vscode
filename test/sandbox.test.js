@@ -20,3 +20,26 @@ test('sandbox blocks protected, binary, symlink and unapproved Review paths', as
 test('stdio requires a workspace and never falls back to a host process', async () => {
   await assert.rejects(new SandboxExecutor().stdio({ command: 'node' }, null), /工作區/);
 });
+
+test('parallel sandbox commands reassert distinct scratch directories inside the runtime shell', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ntpu-scratch-space's-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const executor = new SandboxExecutor(), calls = [];
+  executor.runtime = async () => ({ wrapWithSandboxArgv: async (command, shell, config, signal, cwd, options) => {
+    calls.push({ command, config, options }); return { argv: ['/test/runtime'], env: {} };
+  }, cleanupAfterCommand() {} });
+  executor.readRoots = async () => [];
+  const originalTmpdir = process.env.TMPDIR;
+  const launches = await Promise.all([executor.prepare(root, root, 'node first.js'), executor.prepare(root, root, 'node second.js')]);
+  t.after(async () => { for (const launch of launches) await launch.cleanup(); });
+  assert.notEqual(launches[0].env.TMPDIR, launches[1].env.TMPDIR);
+  assert.equal(process.env.TMPDIR, originalTmpdir);
+  for (const [index, launch] of launches.entries()) {
+    const call = calls.find(value => value.options.commandText === `node ${index ? 'second' : 'first'}.js`);
+    const prefix = `export TMPDIR=${quote(launch.env.TMPDIR)} TMP=${quote(launch.env.TMPDIR)} TEMP=${quote(launch.env.TMPDIR)}; `;
+    assert.equal(call.command, prefix + call.options.commandText);
+    assert.ok(call.config.filesystem.allowWrite.includes(launch.env.TMPDIR));
+    assert.ok(call.config.filesystem.allowRead.includes(launch.env.TMPDIR));
+    assert.equal(call.config.filesystem.allowWrite.includes('/tmp/claude'), false);
+  }
+});

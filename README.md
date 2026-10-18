@@ -2,7 +2,7 @@
 
 NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本機專案讀取、檔案修改、工具執行、研究查詢及可接續的 Agent 任務。模型透過專用瀏覽器連線；登入由使用者完成，日常運作使用背景瀏覽器。
 
-**版本：0.6.20 · 實驗性專案 · MIT License**
+**版本：0.6.21 · 實驗性專案 · MIT License**
 
 本專案為第三方工具，與國立臺北大學、Microsoft、OpenAI 及其他參考專案無隸屬或官方背書關係。使用資格、驗證、用量與資料處理仍受校方服務政策約束。
 
@@ -24,7 +24,7 @@ NTPU AI Agent 是使用 NTPU AI 網站模型的 VS Code 擴充套件，提供本
 
 可匯出本機 Plugin／MCP 設定，讓其他 Agent 透過啟用中的 VS Code 請 NTPU AI 提供分析；每次請求仍需確認，不繼承本機聊天、Project Memory 或工具權限。命令面板執行 **NTPU AI: 匯出本機 Plugin／MCP 設定** 即可取得設定與可攜 stdio 工具包。
 
-build Agent 新增 `computer_open`、`computer_observe`、`computer_action`、`computer_close`：核准後操作獨立、單一來源的工作瀏覽器；Linux 另可選定 X11／XWayland 原生視窗。每次動作需確認，操作後必須重新觀察。原生 Wayland、Windows／macOS 桌面後端尚未支援；跨平台工作瀏覽器不受此桌面範圍限制。詳見[接線、工具與平台限制](docs/PLUGIN_COMPUTER_USE.md)。
+build Agent 新增 `computer_open`、`computer_observe`、`computer_action`、`computer_close`：核准後操作獨立、單一來源的工作瀏覽器；Linux 另可選定 X11／XWayland 原生視窗。每次動作需確認，操作後必須重新觀察。原生 Wayland、Windows／macOS 桌面後端尚未支援；跨平台工作瀏覽器不受此桌面範圍限制。詳見[接線、工具與平台限制](docs/PLUGIN_COMPUTER_USE.md)及[三平台功能對照](docs/PLATFORM_PARITY_0.6.21.md)。
 
 ## 安裝與更新
 
@@ -37,10 +37,10 @@ build Agent 新增 `computer_open`、`computer_observe`、`computer_action`、`c
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.20.vsix` |
-| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.20.vsix` |
-| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.20.vsix` |
-| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.20.vsix` |
+| Windows x64 | `ntpu-ai-coder-win32-x64-0.6.21.vsix` |
+| macOS Apple Silicon | `ntpu-ai-coder-darwin-arm64-0.6.21.vsix` |
+| macOS Intel | `ntpu-ai-coder-darwin-x64-0.6.21.vsix` |
+| Linux x64，glibc | `ntpu-ai-coder-linux-x64-0.6.21.vsix` |
 
 ### 一鍵更新
 
@@ -69,6 +69,8 @@ build Agent 新增 `computer_open`、`computer_observe`、`computer_action`、`c
 Agent 會依任務選用工具、載入 skills，並分派最多四個探索、研究或審查唯讀子任務。主 Agent 負責整合、修改與 Shell；所有模型請求共用 Adaptive Concurrency 排程器、每分鐘節奏和任務輪數預算。單純提問可直接處理。
 
 複雜工作會先評估可獨立分派的範圍，為子任務指定問題和預期結果；確實無法拆分時記錄理由，主 Agent 接續處理。一般子任務失敗不會封鎖其他獨立工作；仍保留共用預算、一次重要重試及服務限制。詳見[分工策略](docs/DELEGATION.md)。
+
+0.6.21 另收斂模型附帶敘述的單一 JSON 操作封裝、拒絕互相矛盾的多重封裝、減少重讀相同檔案區段，並在確認 OS 沙箱依賴缺失後停止無進展循環。已測 Linux 桌面案例沒有遇到 240 秒或 600 秒逾時；Windows 的同類問題未能在本機 Windows 實機重現，跨平台差異與尚未支援項目見[平台對照](docs/PLATFORM_PARITY_0.6.21.md)。
 
 在 **設定 → 工具 → Agent 設定檔** 可編輯專案 `.ntpu-ai.json`、匯出目前選項，或預覽後套用設定檔至目前聊天。分析深度與核准模式都能寫入檔案，核准模式由所有聊天共用並於重新載入後恢復；其他選項仍各聊天獨立，首次完整存取仍需確認。詳細欄位與範例見[設定檔說明](docs/AGENT_SETTINGS.md)。
 
@@ -146,6 +148,8 @@ Skills 是任務指引，不能授予權限。選擇 skills 代表預先載入�
 - [完整操作與設定手冊](docs/USER_GUIDE.md)
 - [開發與問題回報](CONTRIBUTING.md)
 - [更新紀錄](CHANGELOG.md)
+- [Linux 真實專案測試與 Agent 改善分析（2026-10-18）](docs/AGENT_EVALUATION_2026-10-18.md)
+- [Linux VS Code 桌面 Agent 實測（2026-10-18）](docs/AGENT_UI_EVALUATION_2026-10-18.md)
 - [安全回報](SECURITY.md)
 - [使用規範](docs/USAGE_TERMS.md)
 - [第三方授權與參考來源](THIRD_PARTY_NOTICES.md)

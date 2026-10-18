@@ -42,7 +42,7 @@ test('a failed read-only child result does not become an unresolved parent execu
   assert.equal(f.checkpoints.at(-1).filter(record => record.type === 'recovery_check').length, 0);
 });
 
-test('verified sandbox dependency limitation accepts one truthful incomplete terminal instead of forcing six recovery cycles', async () => {
+test('verified sandbox dependency limitation reports the actual blocker instead of forcing more recovery cycles', async () => {
   const f = fixture([{ kind: 'tool', name: 'run_command', args: { command: 'node visual-test.js' } }, { kind: 'final', message: '所有測試都已完成。' },
     { kind: 'tool', name: 'get_capabilities', args: {} }, { kind: 'tool', name: 'read_file', args: { path: 'game.js' } },
     { kind: 'tool', name: 'get_task_results', args: {} }, { kind: 'final', completed: false, message: '程式已保存；OS 沙箱缺少 rg／socat，尚未執行視覺測試，需要人工開啟檢查。' }], {
@@ -51,7 +51,7 @@ test('verified sandbox dependency limitation accepts one truthful incomplete ter
       name === 'get_task_results' ? { ok: false, tasks: [{ status: 'error', result: 'invalid parallel envelope' }] } : { ok: true, content: 'actual inspected capability/source evidence' },
   });
   assert.equal((await f.run()).completed, false); assert.equal(f.calls(), 6); assert.equal(f.finals.length, 1);
-  assert.match(f.finals[0], /尚未執行視覺測試/); assert(!f.streams.some(text => text.includes('所有測試都已完成')));
+  assert.match(f.finals[0], /socat not installed/); assert.match(f.finals[0], /尚未完成/); assert(!f.streams.some(text => text.includes('所有測試都已完成')));
   assert.equal(f.checkpoints.at(-1).filter(record => record.type === 'recovery_check').length, 1);
 });
 
