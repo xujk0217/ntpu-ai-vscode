@@ -29,6 +29,7 @@ async function testUI(page, origin) {
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [], browser: { selection: 'auto', host: 'Fixture host' }, thinking: 'Fixture', image: 'Fixture' });
   assert.equal(await page.locator('.brand, .session-heading').count(), 0);
   assert.equal(await page.locator('.topbar #rename').count(), 1);
+  assert.equal(await page.locator('#export').count(), 0);
   assert.equal(await page.locator('#composer').evaluate(node => !!node.nextElementSibling.querySelector('#workspace')), true);
   assert.equal(await page.locator('#loginView, #browserImage').count(), 0, 'no screenshot login surface');
   assert.equal(await page.locator('#loginNotice').isHidden(), true);
@@ -246,7 +247,7 @@ async function testUI(page, origin) {
   await page.screenshot({ path: path.join(__dirname, '..', '.local', 'updates-ui.png') });
   await page.locator('#closeDrawer').click();
   assert.equal(await page.locator('#update').isVisible(), true);
-  assert.equal(await page.locator('#update').evaluate(node => node.nextElementSibling.id), 'export');
+  assert.equal(await page.locator('#update').evaluate(node => node.nextElementSibling.id), 'history');
   await page.locator('.topbar').screenshot({ path: path.join(__dirname, '..', '.local', 'update-available-ui.png') });
   await page.locator('#update').click(); assert.equal(await page.evaluate(() => window.hostMessages.at(-1).kind), 'installUpdate');
   await send({ ...state, update, busy: true }); assert.equal(await page.locator('#update').isDisabled(), true);
@@ -345,8 +346,9 @@ async function testUI(page, origin) {
   assert.equal(await page.locator('.session-select').count(), 1);
   await page.locator('.session-menu > summary').click(); await page.getByRole('button', { name: '重新命名', exact: true }).click();
   assert.equal(await page.evaluate(() => window.hostMessages.at(-1).id), 'other');
-  await page.locator('.session-menu > summary').click(); await page.getByRole('button', { name: '匯出 Markdown', exact: true }).click();
-  assert.deepEqual(await page.evaluate(() => window.hostMessages.at(-1)), { kind: 'exportSession', id: 'other' });
+  await page.locator('.session-menu > summary').click();
+  assert.equal(await page.getByRole('button', { name: '匯出 Markdown', exact: true }).count(), 0);
+  await page.locator('.session-menu > summary').click();
   await search.fill('');
   const switchesBefore = await page.evaluate(() => window.hostMessages.filter(message => message.kind === 'switch').length);
   await page.locator('.session-row').filter({ hasText: '程式重構' }).click();

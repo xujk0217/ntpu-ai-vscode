@@ -22,14 +22,13 @@ class MemoryActions {
     if (this.managingSessions) throw new Error('請先完成目前的聊天管理操作。');
     this.managingSessions = true;
     try {
-      const action = message.kind === 'renameSession' ? 'rename' : message.kind === 'exportSession' ? 'export' : message.action;
-      if (!['rename', 'export', 'archive', 'unarchive', 'delete'].includes(action)) throw new Error('不支援的聊天管理操作。');
+      const action = message.kind === 'renameSession' ? 'rename' : message.action;
+      if (!['rename', 'archive', 'unarchive', 'delete'].includes(action)) throw new Error('不支援的聊天管理操作。');
       if (message.ids !== undefined && !Array.isArray(message.ids)) throw new Error('聊天選取格式無效。');
       const ids = [...new Set(message.ids || [message.id])];
       if (!ids.length || ids.some(id => !app.store.sessions.some(item => item.id === id))) throw new Error('找不到選取的聊天紀錄，請重新選取。');
-      if (['rename', 'export'].includes(action) && ids.length !== 1) throw new Error('請選取一個聊天紀錄。');
+      if (action === 'rename' && ids.length !== 1) throw new Error('請選取一個聊天紀錄。');
       clearTimeout(app.saveTimer); await app.save();
-      if (action === 'export') return await app.exportSession(ids[0]);
       if (action === 'rename') {
         const session = await app.store.openSession(ids[0]);
         const title = await vscode.window.showInputBox({ title: '重新命名聊天', value: session.title, validateInput: text => text.trim() ? undefined : '請輸入名稱' });
@@ -39,7 +38,7 @@ class MemoryActions {
       }
       if (action === 'delete') {
         const titles = ids.slice(0, 5).map(id => '• ' + app.store.sessions.find(item => item.id === id).title).join('\n');
-        if (!await this.confirm(`刪除 ${ids.length} 個本機聊天紀錄？`, titles + (ids.length > 5 ? '\n…' : '') + '\n只刪除選取聊天的歷史與檢查點，不修改專案檔案、Project Memory 或校方資料。既有備份仍會保留；建議先匯出或備份。')) return;
+        if (!await this.confirm(`刪除 ${ids.length} 個本機聊天紀錄？`, titles + (ids.length > 5 ? '\n…' : '') + '\n只刪除選取聊天的歷史與檢查點，不修改專案檔案、Project Memory 或校方資料。既有備份仍會保留。')) return;
       }
       if (app.busy() || app.gate.pending) throw new Error('請先停止目前任務，再管理聊天。');
       try {
@@ -62,7 +61,7 @@ class MemoryActions {
     const { app, vscode } = this;
     if (message.kind === 'memory') return this.view();
     if (app.busy() || app.gate.pending || app.agentSettingsBusy) throw new Error('請先停止目前任務或完成設定操作，再管理記憶。');
-    if (['renameSession', 'exportSession', 'sessionsAction', 'archiveSession', 'deleteSession'].includes(message.kind)) {
+    if (['renameSession', 'sessionsAction', 'archiveSession', 'deleteSession'].includes(message.kind)) {
       if (message.kind === 'archiveSession') message = { ...message, action: app.store.sessions.find(item => item.id === message.id)?.archived ? 'unarchive' : 'archive' };
       if (message.kind === 'deleteSession') message = { ...message, action: 'delete' };
       return this.manageSessions(message);

@@ -21,18 +21,17 @@ async function environment(t) {
   const app = new AgentApp({ subscriptions: [], extensionPath: directory, globalStorageUri: uri(path.join(directory, 'storage')), workspaceState: memento, globalState: memento, secrets: { get: async () => undefined } });
   await app.ready; const posts = []; app.post = value => posts.push(value);
   const file = path.join(directory, 'fixture.pdf'); await fs.writeFile(file, '%PDF-1.4\nsynthetic fixture');
-  mock.window.showOpenDialog = async () => [uri(file)]; mock.window.showWarningMessage = async () => '確認傳送';
+  mock.window.showOpenDialog = async () => [uri(file)]; mock.window.showWarningMessage = async () => { throw new Error('upload must not show a warning dialog'); };
   const oldScan = scanner.scan; let scans = 0;
   scanner.scan = async () => { scans++; return {}; };
   t.after(async () => { scanner.scan = oldScan; await app.dispose(); });
   return { app, posts, file, scans: () => scans };
 }
-test('placeholder precedes approval, survives delayed scanning, blocks sending, then exposes only ready metadata', async t => {
-  const { app, posts, file } = await environment(t), approved = deferred(), scanStarted = deferred(), finish = deferred();
-  mock.window.showWarningMessage = async () => { approved.resolve(); return '確認傳送'; };
+test('user-selected attachment needs no warning, survives delayed scanning, blocks sending, then exposes only ready metadata', async t => {
+  const { app, posts, file } = await environment(t), scanStarted = deferred(), finish = deferred();
   scanner.scan = async () => { scanStarted.resolve(); await finish.promise; };
-  const operation = app.attach(); await approved.promise; await scanStarted.promise;
-  assert.equal(posts.find(p => p.attachmentPreparation)?.attachmentPreparation.stage, '等待資料傳送確認');
+  const operation = app.attach(); await scanStarted.promise;
+  assert.equal(posts.find(p => p.attachmentPreparation)?.attachmentPreparation.stage, '正在準備附件');
   const current = posts.at(-1); assert.equal(current.attachment, null);
   assert.deepEqual(current.attachmentPreparation, { name: 'fixture.pdf', stage: '正在進行本機安全檢查' });
   assert.doesNotMatch(JSON.stringify(current), /synthetic fixture|%PDF|fsPath|buffer/);
@@ -41,11 +40,9 @@ test('placeholder precedes approval, survives delayed scanning, blocks sending, 
   assert.equal(app.attachmentPreparation, null); assert.equal(app.attachment.name, path.basename(file));
   assert.equal(posts.at(-1).attachment.mimeType, 'application/pdf'); assert.equal(posts.at(-1).attachmentPreparation, null);
 });
-test('denial, oversize, missing file and scan failure remove pending state and never attach unchecked bytes', async t => {
+test('oversize, missing file and scan failure remove pending state and never attach unchecked bytes', async t => {
   const { app, file, scans } = await environment(t);
-  mock.window.showWarningMessage = async () => undefined;
-  await assert.rejects(app.attach(), /未批准/); assert.equal(scans(), 0); assert.equal(app.attachmentPreparation, null);
-  mock.window.showWarningMessage = async () => '確認傳送';
+  mock.window.showWarningMessage = async () => { throw new Error('upload must not show a warning dialog'); };
   await fs.truncate(file, 20 * 1024 * 1024 + 1);
   await assert.rejects(app.attach(), /20 MB/); assert.equal(scans(), 0); assert.equal(app.attachmentPreparation, null);
   await fs.writeFile(file, '%PDF-1.4\nfixture'); scanner.scan = async () => { throw new Error('scan rejected'); };
@@ -80,4 +77,26 @@ test('canceling picker preserves the existing attachment; disposed picker result
   const finish = deferred(); mock.window.showOpenDialog = async () => finish.promise;
   const operation = app.attach(); await app.dispose(); finish.resolve([uri(file)]); await operation;
   assert.equal(scans(), 0); assert.equal(app.attachment, previous); assert.equal(app.attachmentPreparation, null);
+});
+
+test('explicit attachment selection skips review dialog but protected paths and non-attachment review remain enforced', async t => {
+  const { app, file, scans } = await environment(t);
+  const protectedFile = path.join(path.dirname(file), '.ssh', 'fixture.pdf');
+  await fs.mkdir(path.dirname(protectedFile)); await fs.writeFile(protectedFile, '%PDF-1.4');
+  mock.window.showOpenDialog = async () => [uri(protectedFile)];
+  await assert.rejects(app.attach(), /受保護路徑/); assert.equal(scans(), 0); assert.equal(app.attachment, null);
+  let warnings = 0; mock.window.showWarningMessage = async () => { warnings++; return '確認傳送'; };
+  await app.approveData('config.local.json', true); assert.equal(warnings, 0);
+  await app.approveData('private.csv'); assert.equal(warnings, 1);
+  mock.window.showWarningMessage = async () => undefined;
+  await assert.rejects(app.approveData('private.csv'), /未批准/);
+});
+test('all supported user-selected image types and PDF attach without any transfer warning', async t => {
+  const { app, file } = await environment(t); const sharp = require('sharp');
+  for (const format of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf']) {
+    const selected = path.join(path.dirname(file), 'selected.' + format);
+    const buffer = format === 'pdf' ? Buffer.from('%PDF-1.4') : await sharp({ create: { width: 2, height: 2, channels: 3, background: '#fff' } }).toFormat(format === 'jpg' ? 'jpeg' : format).toBuffer();
+    await fs.writeFile(selected, buffer); mock.window.showOpenDialog = async () => [uri(selected)];
+    await app.attach(); assert.equal(app.attachment.name, 'selected.' + format); assert.equal(app.attachment.approved, true);
+  }
 });

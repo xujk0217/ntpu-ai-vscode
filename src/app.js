@@ -363,7 +363,7 @@ class AgentApp {
       case 'updateAutoCheck': await this.updates?.setAutoCheck(message.value); break;
       case 'ready': await this.ready; this.render(); if (!this.initialAutoConnect) { this.initialAutoConnect = true; await this.login(false); } break;
       case 'historyPage': this.post({ kind: 'historyPage', sessionId: this.session.id, ...this.store.page(this.session, message.before) }); break;
-      case 'memory': case 'resumeTask': case 'renameSession': case 'exportSession': case 'sessionsAction': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
+      case 'memory': case 'resumeTask': case 'renameSession': case 'sessionsAction': case 'deleteSession': case 'archiveSession': case 'refreshMemory': case 'editMemory': case 'deleteMemory': case 'clearMemory': case 'privacySetting': case 'backupMemory': case 'restoreMemory': await this.memoryActions.handle(message); break;
       case 'login': await this.login(); break;
       case 'browserUpdate': await this.updateBrowser(message); break;
       case 'reconnectBrowser': await this.reconnectBrowser(true); break;
@@ -405,7 +405,6 @@ class AgentApp {
       case 'change': await this.showChange(message.id); break;
       case 'revert': await this.revert(message.id); break;
       case 'reviewChange': await this.changeReview.act(message); break;
-      case 'export': await this.memoryActions.handle({ kind: 'exportSession', id: this.session.id }); break;
       case 'exportMessage': await this.exportMessage(message.id); break;
       case 'refreshSkills': await this.refreshSkills(); break;
       case 'openSkill': { const skill = this.skills.load(message.name); await vscode.window.showTextDocument(vscode.Uri.file(skill.file)); break; }
@@ -924,7 +923,7 @@ class AgentApp {
       } finally { this.attachmentPicking = false; }
       if (!files?.length || this.disposed || this.session !== session) return;
       const file = files[0];
-      preparation = { name: path.basename(file.fsPath), stage: '等待資料傳送確認' };
+      preparation = { name: path.basename(file.fsPath), stage: '正在準備附件' };
       this.attachment = null; this.attachmentPreparation = preparation; this.state();
       const stat = await fs.stat(file.fsPath);
       const real = await fs.realpath(file.fsPath);
@@ -1044,16 +1043,6 @@ class AgentApp {
       await vscode.env.openExternal(vscode.Uri.parse(url));
     } else if (!/^[a-z]+:/i.test(url)) await this.openFile(url);
   }
-  async exportSession(id = this.session.id) {
-    const source = await this.store.openSession(id);
-    const snapshot = sanitize({ title: source.title, messages: source.messages });
-    const target = await vscode.window.showSaveDialog({ title: '匯出工作階段', defaultUri: vscode.Uri.joinPath(this.context.globalStorageUri, 'NTPU-AI-session.md'), filters: { Markdown: ['md'] } });
-    if (!target) return;
-    const text = '# ' + snapshot.title + '\n\n' + snapshot.messages.map(message =>
-      `## ${message.role === 'user' ? '使用者' : 'NTPU AI'}${message.incomplete ? '（未完成原文）' : ''}\n\n${message.text || message.workerResult || JSON.stringify({ name: message.name, args: message.args, result: message.result })}\n`).join('\n');
-    await vscode.workspace.fs.writeFile(target, Buffer.from(redact(text))); await vscode.window.showTextDocument(target);
-  }
-
   async exportMessage(id) {
     const message = this.session.messages.find(item => item.id === id);
     if (!message || !['assistant', 'stream', 'tool', 'notice'].includes(message.role)) throw new Error('找不到可匯出的完整內容。');
@@ -1069,9 +1058,11 @@ class AgentApp {
   async approveData(file, attachment = false) {
     const level = classifyPath(file, vscode.workspace.getConfiguration('ntpuAI').get('privacy.reviewPaths', [])).level;
     if (level === 'protected') throw new Error('受保護路徑禁止傳送。');
-    if (!attachment && level !== 'review') return;
+    // Selecting an attachment in the explicit NTPU upload picker is consent.
+    // Protected paths and the byte-bound OCR scan still run before attachment readiness.
+    if (attachment || level !== 'review') return;
     const answer = await vscode.window.showWarningMessage('這份資料將傳送至 NTPU AI：' + redact(file),
-      { modal: true, detail: '文字秘密會遮蔽。圖片與 PDF 的秘密無法由文字掃描辨識，請先確認附件。完整存取仍需要此次資料確認。' }, '確認傳送');
+      { modal: true, detail: '此專案檔案可能包含私人資訊。確認後會傳送遮蔽後的文字；完整存取仍需要此次資料確認。' }, '確認傳送');
     if (answer !== '確認傳送') throw new Error('未批准資料傳送。');
   }
 

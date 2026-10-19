@@ -173,9 +173,9 @@ test('real AgentApp durably stores, resumes and exports full segmented output wi
         assert.equal(task.outputParts[0].message, full);
         assert.equal(saved.checkpoint.records.find(record => record.type === 'output_part').message, full);
         exportTarget = uri(path.join(f.workspace, 'interrupted-document.md'));
-        await f.app.memoryActions.handle({ kind: 'exportSession', id: f.app.session.id });
+        await f.app.exportMessage(preserved.id);
         const markdown = await fs.readFile(exportTarget.fsPath, 'utf8');
-        assert.ok(markdown.includes(full)); assert.match(markdown, /未完成原文/);
+        assert.equal(markdown, full);
       }
     } finally { WorkspaceTools.prototype.execute = execute; }
   });
@@ -214,7 +214,7 @@ test('real AgentApp durably stores, resumes and exports full segmented output wi
     assert.equal(reopened.budget.used, calls.at(-1).prompt.length);
   });
 
-  await t.test('message and session Markdown exports use full assistant and worker text beyond preview limits', async () => {
+  await t.test('individual document saves retain full assistant and worker text beyond preview limits', async () => {
     const f = await make('exports');
     const full = '主 Agent 完整文件。\n'.repeat(2400), worker = '子 Agent 完整研究證據。\n'.repeat(2200);
     const assistant = f.app.add('assistant', full);
@@ -227,11 +227,10 @@ test('real AgentApp durably stores, resumes and exports full segmented output wi
     await f.app.exportMessage(child.id);
     const workerMarkdown = await fs.readFile(exportTarget.fsPath, 'utf8');
     assert.ok(workerMarkdown.includes(worker));
-    exportTarget = uri(path.join(f.workspace, 'session.md'));
-    await f.app.memoryActions.handle({ kind: 'exportSession', id: f.app.session.id });
-    const sessionMarkdown = await fs.readFile(exportTarget.fsPath, 'utf8');
-    assert.ok(sessionMarkdown.includes(full)); assert.ok(sessionMarkdown.includes(worker));
-    assert.ok(sessionMarkdown.includes(f.history.text)); assert.ok(sessionMarkdown.includes(f.previousAnswer.text));
+    const local = await f.disk();
+    assert.ok(local.messages.some(message => message.text === full));
+    assert.ok(local.messages.some(message => message.workerResult === worker));
+    assert.equal(typeof f.app.exportSession, 'undefined');
     assert.ok(opened.some(target => target.fsPath === exportTarget.fsPath));
     const invalidTarget = uri(path.join(f.workspace, 'invalid.md')); exportTarget = invalidTarget;
     await assert.rejects(f.app.exportMessage('missing-message'));

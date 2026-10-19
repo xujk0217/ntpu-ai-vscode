@@ -516,7 +516,7 @@ function renderDrawer() {
         row.disabled = locked; row.title = (historyEditing ? '勾選／取消選取：' : '開啟聊天：') + item.title;
         const menu = element('details', 'session-menu'); const summary = element('summary', '', '⋯'); summary.setAttribute('aria-label', '管理聊天：' + item.title);
         menu.append(summary); const actions = element('div', 'session-menu-actions');
-        for (const [text, kind] of [['重新命名', 'renameSession'], ['匯出 Markdown', 'exportSession'], [item.archived ? '取消封存' : '封存', 'archiveSession'], ['刪除', 'deleteSession']]) {
+        for (const [text, kind] of [['重新命名', 'renameSession'], [item.archived ? '取消封存' : '封存', 'archiveSession'], ['刪除', 'deleteSession']]) {
           const control = button(text, 'text-button' + (kind === 'deleteSession' ? ' danger-text' : ''), () => { menu.open = false; send(kind, { id: item.id }); }); control.disabled = locked; actions.append(control);
         }
         menu.addEventListener('toggle', () => { if (menu.open) for (const other of list.querySelectorAll('.session-menu')) if (other !== menu) other.open = false; });
@@ -561,7 +561,7 @@ function renderDrawer() {
         button('接續任務', 'secondary-button', () => { send('resumeTask', { id: task.id }); $('drawer').hidden = true; })); content.append(card);
     }
     content.append(element('p', 'panel-footnote', '儲存位置：' + (memory.storage || '載入中') + '\n最近更新：' + (memory.project?.updatedAt ? new Date(memory.project.updatedAt).toLocaleString('zh-TW') : '尚無') + '\n刪除本機記憶不等於刪除校方伺服器資料。'));
-    for (const [text, kind] of [['重新整理記憶', 'refreshMemory'], ['匯出完整 Session', 'export'], ['備份全部本機記憶', 'backupMemory'], ['還原備份', 'restoreMemory'], ['清空此專案記憶', 'clearMemory']]) content.append(button(text, 'secondary-button full-width', () => send(kind)));
+    for (const [text, kind] of [['重新整理記憶', 'refreshMemory'], ['備份全部本機記憶', 'backupMemory'], ['還原備份', 'restoreMemory'], ['清空此專案記憶', 'clearMemory']]) content.append(button(text, 'secondary-button full-width', () => send(kind)));
     if (memory.error) content.append(element('p', 'warning-text', memory.error));
   } else if (tab === 'security') {
     content.append(element('h3', '', '執行隔離'), element('p', 'panel-description', (capabilities.sandbox?.label || '待檢查') + ' · 禁止 Shell／stdio MCP 網路'));
@@ -713,7 +713,7 @@ function requestNewSession() { resetHistoryEditing(); send('new'); $('drawer').h
 $('historyNew').addEventListener('click', requestNewSession);
 $('historyEdit').addEventListener('click', () => { if (historyEditing) resetHistoryEditing(); else if (!state.busy && !approval) { historyEditing = true; selectedSessions.clear(); } renderDrawer(); });
 document.querySelectorAll('[data-tab]').forEach(item => item.addEventListener('click', () => { if (tab !== item.dataset.tab) resetHistoryEditing(); tab = item.dataset.tab; if (tab === 'memory') send('memory'); renderDrawer(); }));
-for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['export', 'export'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', id === 'new' ? requestNewSession : () => send(kind));
+for (const [id, kind] of [['new', 'new'], ['rename', 'rename'], ['workspace', 'chooseWorkspace'], ['stop', 'stop'], ['attach', 'attach'], ['addContext', 'addContext']]) $(id).addEventListener('click', id === 'new' ? requestNewSession : () => send(kind));
 $('loginPrimary').addEventListener('click', () => send('login'));
 $('connect').addEventListener('click', () => send(state.connection?.ready ? 'status' : 'login'));
 $('deny').addEventListener('click', () => { if (!approval) return; $('deny').disabled = true; $('approve').disabled = true; send('approval', { id: approval.id, approved: false }); });

@@ -12,21 +12,22 @@ async function fixture(t) {
   const store = await new MemoryStore(path.join(directory, 'memory')).initialize();
   const a = store.create('project-a'), b = store.create('project-a'), c = store.create('project-b');
   for (const session of [a, b, c]) { store.add(session, { role: 'user', text: session.id }); await store.save(session); }
-  let busy = false, confirmation = '確認'; const confirmations = [], exports = [];
+  let busy = false, confirmation = '確認'; const confirmations = [];
   const app = { store, session: a, gate: {}, contextFiles: ['old'], attachment: {}, busy: () => busy,
-    save: () => store.save(app.session), render() {}, post() {}, refreshSkills: async () => {}, exportSession: async id => exports.push(id) };
+    save: () => store.save(app.session), render() {}, post() {}, refreshSkills: async () => {} };
   const vscode = { window: { showInputBox: async () => '改名 PASSWORD=only-test-private', showWarningMessage: async (...args) => { confirmations.push(args); return confirmation; } } };
-  return { directory, store, a, b, c, app, vscode, actions: new MemoryActions(app, vscode), confirmations, exports,
+  return { directory, store, a, b, c, app, vscode, actions: new MemoryActions(app, vscode), confirmations,
     setBusy: value => { busy = value; }, confirm: value => { confirmation = value; } };
 }
 
-test('history list renames and exports a selected inactive chat without switching the active chat', async t => {
+test('history list renames a selected inactive chat without switching the active chat', async t => {
   const f = await fixture(t);
   await f.actions.handle({ kind: 'renameSession', id: f.b.id });
   assert.equal(f.app.session.id, f.a.id); assert.match(f.b.title, /改名/); assert.equal(f.b.title.includes('only-test-private'), false);
   const disk = new MemoryStore(path.join(f.directory, 'memory')); await disk.initialize();
   assert.equal((await disk.openSession(f.b.id)).title, f.b.title);
-  await f.actions.handle({ kind: 'exportSession', id: f.b.id }); assert.deepEqual(f.exports, [f.b.id]);
+  await assert.rejects(f.actions.handle({ kind: 'sessionsAction', action: 'export', ids: [f.b.id] }), /不支援/);
+  assert.equal(typeof f.app.exportSession, 'undefined');
 });
 test('selected chats can be archived and restored with explicit idempotent bulk actions', async t => {
   const f = await fixture(t);
