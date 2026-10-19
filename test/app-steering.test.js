@@ -46,6 +46,29 @@ test('ordinary queued requests run FIFO only after the active task, and future q
   assert.deepEqual(app.session.tasks.map(task => task.status), ['completed', 'completed', 'completed']);
   assert.deepEqual(app.session.messages.filter(message => message.role === 'commentary' && message.text.startsWith('開始下一則排隊留言：')).map(message => message.text),
     ['開始下一則排隊留言：QUEUE_A_MARKER', '開始下一則排隊留言：QUEUE_B_MARKER']);
+  const conversation = session => session.messages.filter(message => ['user', 'assistant'].includes(message.role)).map(message => message.text);
+  const expected = ['ACTIVE_MARKER', 'done 1', 'QUEUE_A_MARKER', 'done 2', 'QUEUE_B_MARKER', 'done 3'];
+  assert.deepEqual(conversation(app.session), expected, 'dequeued prompts enter the persisted transcript after the preceding answer');
+  const stored = JSON.parse(await fs.readFile(app.store.file(app.session.id), 'utf8')).session;
+  assert.deepEqual(conversation(stored), expected, 'reload and export preserve the actual dispatch order');
+  assert(app.session.messages.filter(message => message.role === 'user' && message.text.startsWith('QUEUE_')).every(message => message.queuedAt && message.enteredConversationAt));
+});
+
+test('a rejected side-task cleanup cannot leave the main composer permanently busy', async t => {
+  let sends = 0;
+  const { app, bridge } = await environment(t, async () => { sends++; return final('done'); });
+  app.session.titleSource = 'generated';
+  bridge.createChannel = async () => ({ chat: async () => ({ text: '{"title":"命名"}' }), close: async () => {} });
+  const patch = app.patch.bind(app);
+  app.patch = (id, value) => {
+    if (app.session.messages.find(message => message.id === id)?.name === 'name_session') throw new Error('fixture side-task callback failure');
+    return patch(id, value);
+  };
+  await app.ask('完成第一個工作', false);
+  assert.equal(app.busy(), false); assert.equal(app.controller, null); assert.equal(app.activeTask, null);
+  app.patch = patch;
+  await app.ask('接著可以繼續工作', false);
+  assert.equal(sends, 2); assert.equal(app.busy(), false); assert.equal(app.queue.length, 0);
 });
 
 test('Steer saves real guidance and file context then continues current task without a separate duplicate run', async t => {
@@ -78,6 +101,22 @@ test('Stop and reload preserve pending queue truthfully, including unavailable a
   assert.equal(reopened.session.tasks.find(task => task.id === item.id).status, 'queued');
   assert.equal(reopened.session.messages.find(message => message.id === item.messageId).queued, true);
   await reopened.handle({ kind: 'runQueue' }); assert.equal(reopened.queue.length, 1); assert.equal(reopened.queuePaused, true);
+});
+
+test('stopping a running task preserves queued FIFO and later messages can resume it', async t => {
+  const started = deferred(), finish = deferred(); let sends = 0;
+  const { app, prompts } = await environment(t, async prompt => {
+    if (++sends === 1) { started.resolve(); await finish.promise; }
+    return final('done');
+  });
+  const operation = app.ask('ACTIVE_TO_STOP', false); await started.promise;
+  await app.ask('FIRST_WAITING', false); app.stop(); finish.resolve(); await operation;
+  assert.equal(app.busy(), false); assert.equal(app.queuePaused, true); assert.equal(app.queue.length, 1);
+  await app.ask('SECOND_WAITING', false);
+  assert.deepEqual(app.queue.map(item => item.request), ['FIRST_WAITING', 'SECOND_WAITING']);
+  await app.handle({ kind: 'runQueue' });
+  assert.deepEqual(prompts.map(prompt => prompt.match(/(?:ACTIVE_TO_STOP|FIRST_WAITING|SECOND_WAITING)/)?.[0]), ['ACTIVE_TO_STOP', 'FIRST_WAITING', 'SECOND_WAITING']);
+  assert.equal(app.busy(), false); assert.equal(app.queue.length, 0);
 });
 
 test('reload after the first steering checkpoint repairs merged task status and never duplicates the saved guidance', async t => {

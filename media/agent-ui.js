@@ -50,16 +50,23 @@ function renderQueuedItems() {
   if (presentation === queuePresentation) return;
   queuePresentation = presentation;
   $('queue').hidden = !state.queue?.length; $('queue').replaceChildren();
+  $('queue').setAttribute('aria-label', '等待中的訊息');
+  $('queue').setAttribute('role', 'region');
   if (state.queuePaused && state.queueResumeAvailable) {
     const resume = button('繼續佇列', 'text-button queue-resume', () => send('runQueue'));
     resume.title = '依原順序繼續尚未執行的排隊留言。'; $('queue').append(resume);
   }
   for (const queued of state.queue || []) {
-    const row = element('div', 'queue-row'); row.dataset.queueId = queued.id;
-    const label = element('span', '', (steeringPending(queued) ? '等待引導 · ' : state.queuePaused ? '已暫停 · ' : '排隊 · ') + queued.request.slice(0, 55)); label.title = queued.request;
+    const row = element('article', 'queue-row'); row.dataset.queueId = queued.id;
+    const body = element('div', 'queue-body');
+    const label = element('div', 'queue-label', steeringPending(queued) ? '等待引導' : state.queuePaused ? '已暫停' : '排隊中');
+    const text = element('div', 'queue-text', queued.request); text.dir = 'auto';
+    body.append(label, text);
     const remove = iconButton('close', '移除佇列提問', () => send('cancelQueue', { id: queued.id }));
     remove.disabled = steeringPending(queued);
-    row.append(icon('clock'), label, steeringButton(queued), remove); $('queue').append(row);
+    const actions = element('div', 'queue-actions');
+    actions.append(steeringButton(queued), remove);
+    row.append(icon('clock'), body, actions); $('queue').append(row);
   }
 }
 function markdown(text) {
@@ -231,7 +238,13 @@ function renderModelActivity() {
 setInterval(() => { if (state.busy && state.modelRequest) renderModelActivity(); }, 1000);
 function addMessage(message, replace = false) {
   if (isDiagnosticNotice(message)) return;
-  const follow = nearBottom(); const old = nodes.get(message.id); const open = old?.querySelector('details')?.open; const rawOpen = old?.querySelector('.raw-result')?.open; const userExpanded = old?.querySelector('.user-expand')?.getAttribute('aria-expanded') === 'true';
+  const old = nodes.get(message.id);
+  // Queued prompts live in the fixed composer queue, never in the scrolling transcript.
+  // They return to the transcript only after the host atomically removes them from the queue.
+  if (message.role === 'user' && (message.queued || message.steeringPending || queuedForMessage(message))) {
+    old?.remove(); nodes.delete(message.id); return;
+  }
+  const follow = nearBottom(); const open = old?.querySelector('details')?.open; const rawOpen = old?.querySelector('.raw-result')?.open; const userExpanded = old?.querySelector('.user-expand')?.getAttribute('aria-expanded') === 'true';
   const item = renderMessage(message);
   if (old && replace) {
     const group = old.closest('.execution-group');
@@ -263,7 +276,7 @@ function renderSession(value) {
   for (const group of $('messages').querySelectorAll('.execution-group[data-manual]')) for (const row of group.querySelectorAll('.message.tool')) groupChoices.set(row.dataset.id, group.open);
   session = value; nodes.clear(); $('messages').replaceChildren();
   $('rename').textContent = value.title;
-  const visible = value.messages.filter(message => !isDiagnosticNotice(message));
+  const visible = value.messages.filter(message => !isDiagnosticNotice(message) && !(message.role === 'user' && (message.queued || message.steeringPending)));
   if (!hasConversation(visible)) $('messages').append(empty());
   visible.forEach(message => addMessage(message));
   for (const id of expandedUsers) nodes.get(id)?.querySelector('.user-expand')?.click();
@@ -338,7 +351,9 @@ function updateComposer() {
 
 function renderState(value) {
   const busyChanged = !!state.busy !== !!value.busy;
-  const queuedMessages = new Set([...(state.queue || []), ...(value.queue || [])].map(item => item.messageId));
+  const previousQueue = new Set((state.queue || []).map(item => item.messageId));
+  const currentQueue = new Set((value.queue || []).map(item => item.messageId));
+  const queuedMessages = new Set([...previousQueue, ...currentQueue]);
   state = value;
   renderUpdates();
   steeringRequests.clear();
@@ -402,6 +417,12 @@ function renderState(value) {
   renderQueuedItems();
   for (const message of session.messages) if (message.role === 'user' && nodes.has(message.id) && (message.queued || queuedMessages.has(message.id)) &&
     nodes.get(message.id).dataset.queuePresentation !== queuedMessagePresentation(message)) addMessage(message, true);
+  // A queued prompt becomes a transcript turn only when the host has removed it
+  // from FIFO (dispatch, accepted guidance, or explicit cancellation).
+  for (const id of previousQueue) if (!currentQueue.has(id)) {
+    const message = session.messages.find(item => item.id === id);
+    if (message && !message.queued && !message.steeringPending && !nodes.has(id)) addMessage(message);
+  }
 }
 
 function renderApproval(value) {
@@ -654,7 +675,15 @@ window.addEventListener('message', event => {
   else if (message.kind === 'historyPage' && message.sessionId === session.id) { renderSession({ ...session, messages: [...message.messages, ...session.messages], before: message.before, hasMore: message.hasMore }); $('messages').scrollTop = 0; }
   else if (message.kind === 'memory') { memory = message; if (!$('drawer').hidden && tab === 'memory') renderDrawer(); }
   else if (message.kind === 'message') { session.messages.push(message.message); addMessage(message.message); }
-  else if (message.kind === 'patch') { const index = session.messages.findIndex(item => item.id === message.message.id); if (index >= 0) session.messages[index] = message.message; addMessage(message.message, true); }
+  else if (message.kind === 'patch') {
+    const index = session.messages.findIndex(item => item.id === message.message.id);
+    if (index >= 0) {
+      const entered = message.message.enteredConversationAt && session.messages[index].enteredConversationAt !== message.message.enteredConversationAt;
+      if (entered) { session.messages.splice(index, 1); session.messages.push(message.message); }
+      else session.messages[index] = message.message;
+    } else session.messages.push(message.message);
+    addMessage(message.message, true);
+  }
   else if (message.kind === 'state') renderState(message);
   else if (message.kind === 'approval') renderApproval(message.approval);
   else if (message.kind === 'plan') renderPlan(message.steps);

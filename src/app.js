@@ -166,6 +166,15 @@ class AgentApp {
     const item = this.store.update(this.session, id, sanitize(patch));
     if (item) this.post({ kind: 'patch', message: item }); this.persist(); return item;
   }
+  enterQueuedMessage(id, extra = {}) {
+    const index = this.session.messages.findIndex(message => message.id === id);
+    if (index < 0) return;
+    const [message] = this.session.messages.splice(index, 1);
+    this.session.messages.push(message);
+    const enteredConversationAt = Date.now();
+    return this.patch(id, { queuedAt: message.queuedAt || message.at, at: enteredConversationAt,
+      enteredConversationAt, queued: false, steeringPending: false, ...extra });
+  }
   notice(text, role = 'notice') { this.add(role, text); }
   persist() {
     clearTimeout(this.saveTimer);
@@ -516,13 +525,14 @@ class AgentApp {
     const slash = request.match(/^\/(build|plan|review|research|ask)\b\s*/);
     if (slash && !this.busy()) { this.session.options.agent = slash[1]; request = request.slice(slash[0].length) || '請依目前專案提供協助。'; }
     if (this.queue.length >= 5) throw new Error('佇列最多保留五個提問。');
+    const shouldQueue = this.busy() || this.queue.length > 0 || !!this.queueTransactions?.size;
     const item = { id: randomUUID(), createdAt: Date.now(), request, includeEditor, sessionId: this.session.id, attachment: this.attachment, files: [...this.contextFiles] };
     this.session.tasks ||= []; this.session.tasks.push({ id: item.id, request, createdAt: item.createdAt, status: 'queued', records: [], files: [], pending: [] });
     this.attachment = null; this.attachmentPreparation = null; this.contextFiles = [];
-    const user = this.add('user', request, { queued: this.busy(), attachment: item.attachment ? { name: item.attachment.name } : null });
+    const user = this.add('user', request, { queued: shouldQueue, attachment: item.attachment ? { name: item.attachment.name } : null });
     item.messageId = user.id;
     if (this.session.tasks.length === 1 && this.session.titleSource !== 'manual') { item.nameSession = true; this.session.title = shortTitle(request); }
-    if (this.busy() || this.queue.length || this.queueTransactions?.size) { this.queue.push(item); this.patch(item.messageId, { queued: true }); await this.save(); this.state();
+    if (shouldQueue) { this.queue.push(item); this.patch(item.messageId, { queued: true }); await this.save(); this.state();
       if (!this.busy() && !this.queuePaused) await this.runQueued(); return; }
     this.queuePaused = false; await this.run(item);
   }
@@ -540,7 +550,9 @@ class AgentApp {
     const task = this.session.tasks.find(task => task.id === item.id);
     this.activeTask = task; this.activeItem = item;
     task.startedAt = Date.now(); task.status = 'running'; task.agent = this.session.options.agent;
-    this.patch(item.messageId, { queued: false }); this.state();
+    if (item.fromQueue) this.enterQueuedMessage(item.messageId);
+    else this.patch(item.messageId, { queued: false });
+    this.state();
     let workers, scheduler, naming;
     try {
       await this.save();
@@ -712,11 +724,17 @@ class AgentApp {
       this.notice(this.adaptive.blocked ? error.message : signal.aborted ? '已停止。已套用的修改會保留。' : error.message, this.adaptive.blocked || !signal.aborted ? 'error' : 'notice');
       this.progress = signal.aborted ? '已停止' : '需要處理';
     } finally {
-      await naming; this.namingActive = false;
-      try { await this.computer?.dispose(); } catch (error) { this.notice('Computer use 清理失敗：' + redact(error.message), 'error'); } this.computer = null;
-      await workers?.close({ cancel: signal.aborted || this.adaptive.blocked }); this.workers = null;
+      // Cleanup must never leave controller/activeTask set: a rejected side task
+      // during cancellation used to short-circuit this finally block and make the
+      // composer look permanently busy. Each independent cleanup is best-effort.
+      try { await naming; } catch (error) { if (!signal.aborted) { try { this.notice('聊天命名清理失敗：' + redact(error.message), 'error'); } catch {} } }
+      this.namingActive = false;
+      try { await this.computer?.dispose(); } catch (error) { try { this.notice('Computer use 清理失敗：' + redact(error.message), 'error'); } catch {} } finally { this.computer = null; }
+      try { await workers?.close({ cancel: signal.aborted || this.adaptive.blocked }); }
+      catch (error) { try { this.notice('子任務清理失敗：' + redact(error.message), 'error'); } catch {} }
+      finally { this.workers = null; }
       if (scheduler) task.parallel = { adaptive: true, configuredConcurrency: scheduler.limit, modelRequests: scheduler.requests, peakStreams: scheduler.peakStreams, decisions: this.adaptive.decisions.filter(decision => decision.at >= task.startedAt), blocked: this.adaptive.blocked };
-      scheduler?.close(); this.scheduler = null;
+      try { scheduler?.close(); } catch (error) { try { this.notice('模型排程清理失敗：' + redact(error.message), 'error'); } catch {} } finally { this.scheduler = null; }
       task.endedAt = Date.now(); task.pending = (this.session.plan || []).filter(step => step.status !== 'completed');
       summarize(this.session);
       try {
@@ -733,7 +751,10 @@ class AgentApp {
         this.patch(queued.messageId, { queued: true, steeringPending: false });
       }
       this.controller = null; this.activePolicy = null; this.activeTask = null; this.activeItem = null;
-      if (this.browserConfigurationChanged) { this.browserConfigurationChanged = false; await this.reconnectBrowser(false); }
+      if (this.browserConfigurationChanged) {
+        this.browserConfigurationChanged = false;
+        try { await this.reconnectBrowser(false); } catch (error) { try { this.notice('瀏覽器重新連線失敗：' + redact(error.message), 'error'); } catch {} }
+      }
       this.state(); this.persist();
       this.post({ kind: 'sessions', sessions: this.store.sessions.map(({ id, title, updatedAt, archived, workspace, tasks }) => ({ id, title, updatedAt, archived, workspace, searchText: (tasks || []).map(task => task.request).join(' '), pending: (tasks || []).filter(task => task.status !== 'completed' && !task.resolvedBy).length })) });
     }
@@ -773,7 +794,7 @@ class AgentApp {
       if (saved.sessionId !== this.session.id && !(message?.role === 'user' && message.text === saved.request && ownedTask?.request === saved.request)) continue;
       if (committed.has(saved.id)) {
         const owner = committed.get(saved.id), queuedTask = this.session.tasks?.find(task => task.id === saved.id);
-        if (message) Object.assign(message, { queued: false, steeringPending: false, steered: true, steeredInto: owner });
+        if (message) this.enterQueuedMessage(message.id, { steered: true, steeredInto: owner });
         if (queuedTask) Object.assign(queuedTask, { status: 'steered', resolvedBy: owner, endedAt: Date.now(), result: '已保存並併入目前任務引導。' });
         continue;
       }
@@ -827,7 +848,7 @@ class AgentApp {
   async commitSteering(ids, task) {
     const selected = this.queue.filter(item => ids.includes(item.id));
     for (const item of selected) {
-      this.patch(item.messageId, { queued: false, steeringPending: false, steered: true, steeredInto: task.id });
+      this.enterQueuedMessage(item.messageId, { steered: true, steeredInto: task.id });
       const queuedTask = this.session.tasks.find(queued => queued.id === item.id);
       if (queuedTask) Object.assign(queuedTask, { status: 'steered', resolvedBy: task.id, endedAt: Date.now(), result: '已保存並併入目前任務引導。' });
     }
