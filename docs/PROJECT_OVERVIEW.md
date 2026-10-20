@@ -16,7 +16,7 @@
 | `src/skills.js`、`skills/` | 探索及載入 `SKILL.md` 任務指引；Skill 不授予工具權限。 |
 | `src/memory/`、`src/sessions.js`、`src/output-parts.js` | 本機工作階段、專案記憶、完整歷史、長文分段、輸入脈絡整理與檢查點。 |
 | `src/permissions.js`、`src/approval*.js`、`src/security/` | 核准模式、拒絕紀錄、敏感路徑、秘密遮蔽、附件 OCR，以及支援平台上的 OS 隔離。 |
-| `src/computer/` | 限定目標、逐次核准、操作後重新觀察的工作瀏覽器；Linux 另有受限制的 X11／XWayland 後端。 |
+| `src/computer/` | 限定目標、逐次核准、操作後重新觀察的工作瀏覽器；Linux 有受限制的 X11／XWayland 後端；macOS 14+ 有 ScreenCaptureKit／AX 單一視窗後端。 |
 | `src/plugin/`、`plugins/ntpu-ai/` | 明確啟用的本機分析橋接與可攜 stdio MCP；外部 Agent 不繼承目前聊天、Project Memory 或本機工具。 |
 | `src/updates.js`、`src/updates-vscode.js` | GitHub Release 檢查、平台選包、下載校驗、VSIX 身分檢查與 VS Code 安裝。 |
 | `media/` | 真實 Webview 介面、Markdown／公式顯示、聊天列表、任務紀錄、核准與設定。 |
@@ -42,7 +42,7 @@
 
 ## 平台與能力邊界
 
-Windows x64、macOS arm64／x64、Linux x64 使用共用 Agent 核心與各平台原生 VSIX。Windows Shell／stdio MCP 仍未啟用；macOS 與 Linux 需相符的 Node 執行期與 OS 隔離相依環境。Computer Use 的工作瀏覽器不等同完整桌面控制，原生桌面目前限 Linux X11／XWayland。Remote SSH、WSL 或 Container 不能假定可存取本機桌面。
+Windows x64、macOS arm64／x64、Linux x64 使用共用 Agent 核心與各平台原生 VSIX。Windows Shell／stdio MCP 仍未啟用；macOS 與 Linux 需相符的 Node 執行期與 OS 隔離相依環境。Computer Use 的工作瀏覽器不等同完整桌面控制，原生桌面支援 Linux X11／XWayland 與 macOS 14+ 可核對的 AX 控制項；Windows／原生 Wayland 仍待辦。Remote SSH、WSL 或 Container 不能假定可存取本機桌面。
 
 完整限制與驗收進度見[平台對照](PLATFORM_PARITY.md)。
 

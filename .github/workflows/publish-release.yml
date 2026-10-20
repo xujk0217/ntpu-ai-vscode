@@ -106,6 +106,11 @@ jobs:
                       binary = next(n for n in archive.namelist() if '/@img/sharp-linux-x64/lib/' in n and n.endswith('.node'))
                       data = archive.read(binary)
                       assert data[:4] == b'\x7fELF' and int.from_bytes(data[18:20], 'little') == 62
+                  if target.startswith('darwin-'):
+                      helper = archive.read('extension/src/computer/bin/desktop-macos')
+                      assert helper[:4] == b'\xcf\xfa\xed\xfe', 'Expected native Mach-O helper'
+                      cpu = int.from_bytes(helper[4:8], 'little')
+                      assert cpu == (0x100000c if target == 'darwin-arm64' else 0x1000007), 'Desktop helper architecture mismatch'
               verified.add(target)
               shutil.copy2(package, assets / package.name)
               print('Verified:', target, '; CRLF/LF-only source differences:', line_ending_differences)

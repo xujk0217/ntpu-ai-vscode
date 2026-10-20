@@ -52,6 +52,7 @@ NTPU AI Agent 將校方網站模型接上本機工作區，讓 Agent 能讀取�
 
 ### 平台與相依環境
 
+- **macOS 原生視窗控制**：需要 macOS 14+，並人工允許 VS Code 的螢幕錄製與輔助使用權限；可核對的 AX 控制項才可操作。詳見 [平台範圍](docs/PLATFORM_PARITY.md)。
 - **Shell／stdio MCP**：macOS 與 Linux 使用 OS 隔離執行，需要 Extension Host 內建 Node.js 22.12 以上；請使用近期版本的 VS Code。Linux 另需 bubblewrap、socat 與 ripgrep。**Windows 的 Shell／stdio MCP 尚未啟用**，可使用受控檔案工具與 HTTPS MCP。
 - **圖片／PDF**：預設英文圖片 OCR 有隨 VSIX 的離線 WASM 後備，不需另裝 Tesseract；PDF 仍需 Poppler，自訂語言需對應原生資料。缺少依賴或檢查失敗時不會上傳。
 - **遠端環境**：目前 Agent 操作以本機工作區為範圍；Remote SSH、WSL 與 Dev Container 不能直接視為已連接使用者的本機桌面。

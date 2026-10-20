@@ -1,3 +1,4 @@
 {
-  "blockedClassPattern": "chrome|chromium|firefox|microsoft-edge|brave|vivaldi|opera|qutebrowser|epiphany|falkon|midori|seamonkey|waterfox|librewolf|floorp|zen-browser|mullvad|term|console|konsole|shell|rxvt|kitty|alacritty|wezterm|jetbrains|(?:^|\\x00)(?:st|foot|code(?:-insiders|-oss)?|vscodium|codium|emacs)(?:\\x00|$)"
+  "blockedClassPattern": "chrome|chromium|firefox|microsoft-edge|brave|vivaldi|opera|qutebrowser|epiphany|falkon|midori|seamonkey|waterfox|librewolf|floorp|zen-browser|mullvad|term|console|konsole|shell|rxvt|kitty|alacritty|wezterm|jetbrains|(?:^|\\x00)(?:st|foot|code(?:-insiders|-oss)?|vscodium|codium|emacs)(?:\\x00|$)",
+  "blockedMacBundlePattern": "com\\.(?:openai\\.codex|apple\\.(?:Safari|Terminal|systempreferences|loginwindow|SecurityAgent)|google\\.Chrome|microsoft\\.(?:edgemac|VSCode)|brave|vivaldi|operasoftware|jetbrains)|org\\.(?:mozilla|chromium|gnu\\.Emacs)|(?:iterm|kitty|alacritty|wezterm|vscodium|codium|password|keychain)|com\\.todesktop|dev\\.(?:warp|zed)|(?:cursor|windsurf|antigravity)"
 }

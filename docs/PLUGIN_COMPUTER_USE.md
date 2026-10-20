@@ -55,13 +55,13 @@ GitHub Release 另提供 `ntpu-ai-0.6.21.plugin.zip`，這是跨平台的 Node.j
 
 ### 原生桌面範圍
 
-本版原生桌面僅支援 **Linux X11／XWayland 視窗**，需 `/usr/bin/python3`、PyGObject、GDK 3、libX11 與 libXtst。使用者從視窗清單明確選定單一視窗，最大 3072×2048；不做整個桌面擷取、不讀剪貼簿、不記錄鍵盤。日常瀏覽器、終端機、常見可嵌入終端機的 IDE 及可辨識的登入視窗不提供控制；網頁使用獨立工作瀏覽器。
+Linux 原生桌面支援 **X11／XWayland 視窗**，需 `/usr/bin/python3`、PyGObject、GDK 3、libX11 與 libXtst。使用者從視窗清單明確選定單一視窗，最大 3072×2048；不做整個桌面擷取、不讀剪貼簿、不記錄鍵盤。日常瀏覽器、終端機、常見可嵌入終端機的 IDE 及可辨識的登入視窗不提供控制；網頁使用獨立工作瀏覽器。
 
 視窗類別排除只是一層防誤用措施，不是通用 OS 沙箱；無法識別任意更名程式，逐次核准不授予繞過既有檔案／Shell 權限的能力。
 
 動作限視窗內 click、少量捲動、基本單鍵及目前鍵盤映射可輸入的文字；不接受系統組合快捷鍵。操作前確認視窗幾何、焦點與滑鼠目標。原生 type 是鍵盤事件，會受目前輸入法影響；必須重新觀察文字結果，不能保證原始字串輸入成功。Unicode 表單輸入優先使用瀏覽器 fill。
 
-**原生 Wayland 視窗、Windows／macOS 原生桌面及 Remote SSH／Container／WSL 不支援此桌面後端。** Wayland 桌面下只可能看到 XWayland 視窗，沒有列出的視窗不能宣稱已控制。Windows／macOS 仍可用上述獨立工作瀏覽器。
+**原生 Wayland 視窗、Windows 原生桌面及 Remote SSH／Container／WSL 不支援此桌面後端。** Wayland 桌面下只可能看到 XWayland 視窗，沒有列出的視窗不能宣稱已控制。Windows／macOS 仍可用上述獨立工作瀏覽器。
 
 ### 截圖與模型分析
 
@@ -78,3 +78,18 @@ GitHub Release 另提供 `ntpu-ai-0.6.21.plugin.zip`，這是跨平台的 Node.j
 上述不代表真人 SSO、校方視覺模型或外部 Agent 端到端驗收已完成；需在安裝後由使用者確認授權與實際校方請求。
 
 Linux 缺少依賴時，可由使用者／系統管理員安裝 `tesseract-ocr poppler-utils python3-gi gir1.2-gtk-3.0 libxtst6 bubblewrap socat ripgrep`；這是安裝依賴，不是用 root 啟動 VS Code。若工具放在自訂路徑，附件設定中的 `ntpuAI.attachments.ocr` 可指定 Tesseract／Poppler 執行檔；不要填暫存目錄作為長期安裝位置。
+
+## macOS 原生單一視窗（0.6.25）
+
+需要 macOS 14+，使用者在「系統設定 → 隱私權與安全性」授予 VS Code **螢幕與系統音訊錄製**、**輔助使用**權限後重新啟動。工具只檢查權限，不自動修改權限或擷取整個桌面。Intel／Apple Silicon 的 VSIX 於相符主機編譯並隨附 helper；使用者不需 Swift、Python 或額外的桌面套件。
+
+選定視窗的擷取使用 `ScreenCaptureKit` 的單視窗 filter。每次重新核對視窗 ID、PID、Bundle、標題與幾何；操作時另核對焦點與座標命中的 AX 視窗。AX 安全輸入欄位、可辨識的登入內容、日常瀏覽器、終端機及常見 IDE 會拒絕。視窗結構無法安全檢查時也停止；這不是通用 OS 沙箱，不保證辨識任意更名程式或自繪敏感畫面，使用者仍需逐次核准。
+
+- `click`：以視窗內座標找到控制項，執行 AXPress，或聚焦 AXTextField／AXTextArea；無 AX 支援的控制項拒絕，不回退全域滑鼠。
+- `type`：1–1000 個可列印字元，透過定向至選定 PID 的 Unicode 鍵盤事件；每字重新確認焦點，保留輸入法／應用程式差異，必須觀察結果。
+- `key`：僅基本單鍵，不允許系統組合快捷鍵。取消在 down/up 成對送出後結束，不保留按住狀態。
+- `scroll`：指定視窗內 x/y、`direction: up|down`、`count: 1–10`；只調整該 AX 垂直捲軸的有限比例，無可核對捲軸或已到邊界會說明。
+
+螢幕錄製、Accessibility、視窗關閉／身分改變、位置改變、焦點切換、拒絕操作及 helper 缺失均回報明確錯誤。不讀剪貼簿、不做全螢幕擷取、不使用 AppleScript 或任意 Shell。
+
+開發驗收：`npm run desktop:macos:fixture`，需 Xcode Command Line Tools 與桌面權限，只建立自己的 AppKit 測試視窗，以實際程式收據驗證；CI 只編譯與執行 mock 回歸，不冒充已有 TCC 授權的真人桌面驗收。

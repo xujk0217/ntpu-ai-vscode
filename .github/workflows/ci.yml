@@ -34,6 +34,9 @@ jobs:
         if: runner.os == 'macOS' && matrix.node == '22'
         run: brew install tesseract poppler ripgrep
       - run: npm test
+      - name: Build native macOS selected-window helper (no TCC grants in CI)
+        if: runner.os == 'macOS' && matrix.node == '22'
+        run: node scripts/build-macos-desktop.js
       - name: Bundled graphics and offline OCR (no native OCR or network required)
         run: npm run capabilities:fixture
       - name: Native OS sandbox acceptance (Windows pending manual validation)

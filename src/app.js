@@ -590,7 +590,7 @@ class AgentApp {
           const cancellation = new vscode.CancellationTokenSource(); const abort = () => cancellation.cancel();
           requestSignal.addEventListener('abort', abort, { once: true });
           try {
-            const picked = await vscode.window.showQuickPick(windows.map(window => ({ label: redact(window.title || '未命名視窗'), description: window.width + '×' + window.height, window })), { title: '選擇允許 Computer use 控制的 X11／XWayland 視窗' }, cancellation.token);
+            const picked = await vscode.window.showQuickPick(windows.map(window => ({ label: redact(window.title || '未命名視窗'), description: window.width + '×' + window.height, window })), { title: '選擇允許 Computer use 控制的單一視窗' }, cancellation.token);
             return picked?.window;
           } finally { requestSignal.removeEventListener('abort', abort); cancellation.dispose(); }
         },

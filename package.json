@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.24",
+  "version": "0.6.25",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -346,7 +346,9 @@
     "computer:fixture": "node scripts/computer-fixture.js",
     "desktop:fixture": "node scripts/desktop-fixture.js",
     "plugin:package": "npm run build && python3 scripts/package-plugin.py",
-    "capabilities:fixture": "node scripts/bundled-capabilities-fixture.js"
+    "capabilities:fixture": "node scripts/bundled-capabilities-fixture.js",
+    "desktop:macos:build": "node scripts/build-macos-desktop.js",
+    "desktop:macos:fixture": "node scripts/build-macos-desktop.js && node scripts/macos-desktop-fixture.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

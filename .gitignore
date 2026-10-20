@@ -28,3 +28,5 @@ plugins/ntpu-ai/server.bundle.cjs
 
 **/__pycache__/**
 *.plugin.zip
+
+src/computer/bin/

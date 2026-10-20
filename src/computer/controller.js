@@ -15,6 +15,19 @@ function desktopCall(message, { python = '/usr/bin/python3', signal } = {}) {
     }); child.stdin.end(JSON.stringify(message)); child.stdin.on('error', () => {});
   });
 }
+function macDesktopCall(message, { signal, executable = path.join(__dirname, 'bin', 'desktop-macos') } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, [], { signal, timeout: 30000, maxBuffer: 12 * 1024 * 1024 }, (error, stdout) => {
+      if (signal?.aborted) return reject(new Error('已停止 macOS 桌面操作。'));
+      try {
+        const result = JSON.parse(stdout);
+        if (!result.ok) return reject(new Error(result.error));
+        if (error) return reject(new Error('macOS 桌面程序未正常結束；結果未確認。'));
+        resolve(result);
+      } catch { reject(new Error(error?.code === 'ENOENT' ? '缺少 macOS 原生桌面後端；請安裝對應架構的完整 VSIX。' : `macOS 桌面程序失敗或逾時（${error?.signal || error?.code || '無效回應'}）；請確認權限與視窗，重新觀察後再操作。`)); }
+    }); child.stdin.end(JSON.stringify(message)); child.stdin.on('error', () => {});
+  });
+}
 async function target(value) {
   inspectOutboundPayload(value, { reject: true }); const url = new URL(value);
   if (url.username || url.password || !['http:', 'https:'].includes(url.protocol) || url.hostname === 'ai.ntpu.edu.tw') throw new Error('Computer use 不接受憑證 URL、校方模型登入網站或非 HTTP(S) 網址。');
@@ -22,7 +35,7 @@ async function target(value) {
   return publicTarget(value);
 }
 class ComputerController {
-  constructor(options) { this.options = options; this.desktop = options.desktop || desktopCall; this.engine = options.engine || chromium; this.sequence = Promise.resolve(); this.closed = false; }
+  constructor(options) { this.options = options; this.desktop = options.desktop || ((options.platform || process.platform) === 'darwin' ? macDesktopCall : desktopCall); this.engine = options.engine || chromium; this.sequence = Promise.resolve(); this.closed = false; }
   serial(work, signal) { const next = this.sequence.then(async () => {
     if (this.closed || signal?.aborted) throw new Error('Computer use 已停止。');
     const abort = () => { void this.context?.close().catch(() => {}); }; signal?.addEventListener('abort', abort, { once: true });
@@ -38,10 +51,13 @@ class ComputerController {
     if (this.options.remote) throw new Error('Computer use 需要本機 Extension Host，不會把遠端顯示環境當成本機桌面。');
     if (this.mode) throw new Error('請先 computer_close 關閉目前控制目標。');
     if (args.mode === 'desktop') {
-      if ((this.options.platform || process.platform) !== 'linux') throw new Error('原生桌面目前支援 Linux X11／XWayland；此平台可使用獨立工作瀏覽器。');
-      const windows = (await this.desktop({ op: 'list' }, { signal })).windows.filter(window => !blockedWindowClass.test(window.class || '') && !/\b(?:sso|sign.?in|log.?in)\b|登入|驗證碼/i.test(window.title));
+      const platform = this.options.platform || process.platform;
+      if (!['linux', 'darwin'].includes(platform)) throw new Error('原生桌面目前支援 Linux X11／XWayland 與 macOS 14+；此平台可使用獨立工作瀏覽器。');
+      const macBlocked = new RegExp(require('./window-policy.json').blockedMacBundlePattern, 'i');
+      const windows = (await this.desktop({ op: 'list' }, { signal })).windows.filter(window => !blockedWindowClass.test(window.class || '') && !(platform === 'darwin' && macBlocked.test(window.bundle || '')) && !/\b(?:sso|sign.?in|log.?in)\b|登入|驗證碼/i.test(window.title));
       const selected = await this.options.selectWindow(windows, signal); if (!selected) return { ok: false, denied: true };
-      if (!await this.approve({ title: '控制選定視窗', detail: `視窗：${redact(selected.title)}\n僅限這個 X11／XWayland 視窗。觀察會讀取畫面，影像分析需另外確認；每次動作仍需核准。`, accept: '控制此視窗' }, signal)) return { ok: false, denied: true };
+      if (!windows.includes(selected)) throw new Error('選定目標不在可控制視窗清單中。');
+      if (!await this.approve({ title: '控制選定視窗', detail: `視窗：${redact(selected.title)}\n僅限這個${platform === 'darwin' ? ' macOS' : ' X11／XWayland'} 視窗。觀察會讀取畫面，影像分析需另外確認；每次動作仍需核准。`, accept: '控制此視窗' }, signal)) return { ok: false, denied: true };
       this.mode = 'desktop'; this.window = selected; return { ok: true, mode: this.mode, title: redact(selected.title), controlled: true };
     }
     if (args.mode !== undefined && args.mode !== 'browser') throw new Error('mode 需為 browser 或 desktop。');
@@ -99,7 +115,7 @@ class ComputerController {
       buffer = await this.page.screenshot({ type: 'png', timeout: 10000 });
       this.geometry = await this.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
     } else {
-      const observation = await this.desktop({ op: 'observe', id: this.window.id }, { signal });
+      const observation = await this.desktop({ op: 'observe', id: this.window.id, identity: this.window }, { signal });
       this.geometry = Object.fromEntries(['x','y','width','height'].map(key => [key, observation[key]])); buffer = Buffer.from(observation.png, 'base64'); result = { title: redact(observation.title), width: observation.width, height: observation.height };
     }
     if (buffer.length > 8 * 1024 * 1024) throw new Error('截圖超過 8 MiB，請縮小視窗。');
@@ -116,7 +132,7 @@ class ComputerController {
     this.observation = null; this.needsObservation = true;
     if (this.mode === 'desktop') {
       const keys = { Enter: 'Return', Space: 'space', Backspace: 'BackSpace', ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down', PageUp: 'Page_Up', PageDown: 'Page_Down' };
-      return this.desktop({ ...args, key: keys[args.key] || args.key, op: 'action', id: this.window.id, geometry: this.geometry }, { signal });
+      return this.desktop({ ...args, key: keys[args.key] || args.key, op: 'action', id: this.window.id, identity: this.window, geometry: this.geometry }, { signal });
     }
     await this.browserSafe();
     const handle = this.elements?.get(args.element);
@@ -140,4 +156,4 @@ class ComputerController {
   close() { return this.serial(() => this.release().then(() => ({ ok: true, closed: true }))); }
   async dispose() { this.closed = true; await this.context?.close().catch(() => {}); await this.sequence; await this.release(); }
 }
-module.exports = { ComputerController, desktopCall, target };
+module.exports = { ComputerController, desktopCall, macDesktopCall, target };

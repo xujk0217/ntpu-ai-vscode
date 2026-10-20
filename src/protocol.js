@@ -11,7 +11,7 @@ const DEFINITIONS = [
   ['write_file', '提出完整檔案內容，由權限層決定確認或自動儲存；不可省略原有內容', '{"path":"relative/path","content":"COMPLETE contents"}'],
   ['edit_file', '精確替換一段已讀取的文字；old_text 須恰好匹配一次', '{"path":"relative/path","old_text":"existing text","new_text":"replacement"}'],
   ['run_command', '執行本地 shell 指令，工作目錄限工作區；結果由主機回傳', '{"command":"npm run build","cwd":"."}'],
-  ['computer_open', '核准後開啟獨立受控工作瀏覽器（mode:browser,url），或由使用者選擇 Linux X11/XWayland 原生視窗（mode:desktop）。非日常／模型登入 Profile。跨來源頁面需重新開啟核准。', '{"mode":"browser","url":"http://localhost:3000"}'],
+  ['computer_open', '核准後開啟獨立受控工作瀏覽器（mode:browser,url），或由使用者選擇 Linux X11/XWayland、macOS 14+ 原生視窗（mode:desktop）。macOS 需螢幕錄製與輔助使用權限。非日常／模型登入 Profile。跨來源頁面需重新開啟核准。', '{"mode":"browser","url":"http://localhost:3000"}'],
   ['computer_observe', '核准後觀察選定目標，回傳一次性 observation、頁面文字／控制項和本機截圖。question 可請求額外核准的視覺分析，與主任務共用模型輪數；登入與驗證頁禁止擷取。', '{"question":"描述可操作的按鈕與座標"}'],
   ['computer_action', '每次動作需核准，必須提供剛才觀察的 observation，之後需重新觀察驗證。瀏覽器可 click/fill(element ID)、key、scroll(y)、navigate(同來源)；桌面可 click(x,y)、type(text)、key、scroll(x,y,direction,count)。不提供任意 JS／Shell／系統快捷鍵。', '{"observation":"previous-observation","action":"click","element":"1"}'],
   ['computer_close', '關閉本任務的受控工作瀏覽器／解除選定視窗控制；不關閉其他使用者視窗。', '{}'],
