@@ -34,6 +34,8 @@ jobs:
         if: runner.os == 'macOS' && matrix.node == '22'
         run: brew install tesseract poppler ripgrep
       - run: npm test
+      - name: Bundled graphics and offline OCR (no native OCR or network required)
+        run: npm run capabilities:fixture
       - name: Native OS sandbox acceptance (Windows pending manual validation)
         if: runner.os != 'Windows' && matrix.node == '22'
         run: npm run sandbox:fixture

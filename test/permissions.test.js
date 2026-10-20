@@ -23,6 +23,8 @@ test('read-only agent restrictions dominate full access and session grants', () 
     const policy = new PermissionPolicy({ mode: 'full', agent }); policy.grant('write_file');
     assert.equal(policy.decision('write_file'), 'deny');
     assert.equal(policy.decision('create_visual'), 'deny');
+    assert.equal(policy.decision('create_chart'), 'deny');
+    assert.equal(policy.decision('create_diagram'), 'deny');
     assert.equal(policy.decision('download_file'), 'deny');
     assert.equal(policy.decision('install_skill'), 'deny');
     assert.equal(policy.decision('connect_mcp'), 'deny');

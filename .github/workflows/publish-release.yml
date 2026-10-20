@@ -89,6 +89,10 @@ jobs:
                   assert package.name == f'ntpu-ai-coder-{target}-{version}.vsix'
                   metadata = json.loads(archive.read('extension/package.json'))
                   assert metadata['version'] == version and metadata['publisher'] == 'ntpu-local'
+                  # Offline graphics must work from the distributable, without a
+                  # native Tesseract installation or downloading a language model.
+                  for required in ['tesseract.js/src/worker-script/node/index.js', 'tesseract.js-core/tesseract-core-lstm.wasm', 'tesseract.js-core/tesseract-core-simd-lstm.wasm', 'tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm', '@tesseract.js-data/eng/4.0.0/eng.traineddata.gz']:
+                      assert archive.getinfo('extension/node_modules/' + required).file_size > 0
                   for source in sources:
                       packed, original = archive.read('extension/' + source), Path(source).read_bytes()
                       if packed != original:

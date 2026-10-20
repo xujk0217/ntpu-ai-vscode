@@ -292,10 +292,10 @@ async function runAgent({ bridge, tools, request, context, workspace, signal, ma
       const plan = [...records].reverse().find(record => record.name === 'update_plan' && record.result?.ok);
       const unfinished = (profile.agent || 'build') === 'build' && (plan?.result.steps || []).some(item => item.status !== 'completed');
       const implementation = (profile.agent || 'build') === 'build' && /建立|新增|實作|修正|修改|產生|implement|create|build|fix|(?:幫我|替我|直接|請).*(?:執行|啟動|開啟|打開|下載|安裝)/i.test(request) && !/^(?:請)?(?:只(?:說明|解釋|規劃)|(?:不要|不需|無需)(?:修改|實作|建立))/.test(request);
-      const noAction = implementation && !records.some(record => record.result?.ok && (['write_file', 'edit_file', 'create_visual', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name === 'expand_mcp' && record.result.connected === true || record.name?.startsWith('mcp_')));
+      const noAction = implementation && !records.some(record => record.result?.ok && (['write_file', 'edit_file', 'create_visual', 'create_chart', 'create_diagram', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name === 'expand_mcp' && record.result.connected === true || record.name?.startsWith('mcp_')));
       if (!failed && (unfinished || noAction) && !denied && reply.completed !== false) {
         const meaningful = JSON.stringify(semanticEvidence(records.filter(record => record.type === 'tool' && record.result?.ok === true &&
-          (['write_file', 'edit_file', 'create_visual', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name === 'expand_mcp' && record.result.connected === true || record.name?.startsWith('mcp_')))
+          (['write_file', 'edit_file', 'create_visual', 'create_chart', 'create_diagram', 'run_command', 'open_browser', 'download_file', 'install_skill', 'connect_mcp', 'add_mcp'].includes(record.name) || record.name === 'expand_mcp' && record.result.connected === true || record.name?.startsWith('mcp_')))
           .map(record => ({ name: record.name, args: record.args, result: record.result }))));
         stagnantCompletionChecks = meaningful === lastCompletionEvidence ? stagnantCompletionChecks + 1 : 0;
         lastCompletionEvidence = meaningful;

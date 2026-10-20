@@ -310,3 +310,62 @@ test('computer vision service limits propagate rather than becoming a retryable 
     {computer:{observe:async()=>{throw new Error('HTTP 429 rate limit');}},policy:new PermissionPolicy({mode:'full'})});
   await assert.rejects(tools.execute('computer_observe',{question:'Synthetic fixture'}),/429/);
 });
+
+test('bundled structured graphics save and preview real images through existing approval without shell or network', async t => {
+  const root = await fixture(t), mock = mockVscode(), changes = [], approvals = [], artifacts = [];
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => {
+    approvals.push(detail.tool); return detail.accept;
+  }, { policy: new PermissionPolicy({ mode: 'ask', agent: 'build' }), web: false, onChange: change => changes.push(change),
+    onArtifact: async artifact => { artifacts.push(artifact); return { id: 'actual-preview', uri: 'fixture-preview' }; },
+    sandbox: { prepare: () => { throw new Error('graphics must not spawn a process'); } } });
+  const args = { path: 'report/chart.png', type: 'bar', title: '合成資料', labels: ['A', 'B'], series: [{ name: 'Value', values: [12, 18] }] };
+  const result = await tools.execute('create_chart', args);
+  assert.equal(result.ok, true); assert.equal(result.saved, true); assert.equal(result.local, true); assert.equal(result.externalServiceUsed, false);
+  assert.equal(result.artifact, 'actual-preview'); assert.equal(result.rendering.points, 2);
+  assert.equal((await require('sharp')(await fs.readFile(path.join(root, args.path))).metadata()).format, 'png');
+  assert.deepEqual(approvals, ['create_chart']); assert.equal(artifacts.length, 1); assert.equal(changes[0].binary, true);
+  const info = tools.getCapabilities(); assert.equal(info.bundled.search.enabled, false); assert(info.bundled.graphics.tools.includes('create_diagram'));
+  assert.equal(info.bundled.imageModel.bundled, false);
+  assert.equal((await tools.execute('create_chart', args)).ok, false, 'existing image cannot be overwritten');
+  tools.policy = new PermissionPolicy({ mode: 'full', agent: 'research' });
+  assert.equal((await tools.execute('create_chart', { ...args, path: 'readonly.png' })).denied, true);
+  assert.equal((await tools.execute('create_diagram', { path: 'readonly.png' })).denied, true);
+});
+
+test('denial, cancellation, scanner failure, traversal and concurrent files never save an unapproved structured image', async t => {
+  const root = await fixture(t), mock = mockVscode();
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const args = { path: 'denied.png', title: '流程', nodes: [{ id: 'a', label: '開始' }], edges: [] };
+  const controller = new AbortController();
+  let response;
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), controller.signal, () => {}, async detail => response?.(detail), { policy: new PermissionPolicy({ mode: 'ask' }) });
+  assert.equal((await tools.execute('create_diagram', args)).denied, true);
+  await assert.rejects(fs.access(path.join(root, args.path)));
+  tools.options.onArtifact = async () => { throw new Error('fixture scanner failure'); };
+  assert.equal((await tools.execute('create_diagram', args)).ok, false); await assert.rejects(fs.access(path.join(root, args.path)));
+  tools.options.onArtifact = undefined;
+  assert.equal((await tools.execute('create_diagram', { ...args, path: '../outside.png' })).ok, false);
+  response = async detail => { await fs.writeFile(path.join(root, args.path), 'user changed file'); return detail.accept; };
+  assert.equal((await tools.execute('create_diagram', args)).ok, false);
+  assert.equal(await fs.readFile(path.join(root, args.path), 'utf8'), 'user changed file');
+  response = detail => { controller.abort(); return detail.accept; };
+  await assert.rejects(tools.execute('create_diagram', { ...args, path: 'canceled.png' }), /停止/);
+  await assert.rejects(fs.access(path.join(root, 'canceled.png')));
+});
+
+test('the actual agent loop invokes bundled graphics and accepts final completion only with saved-image evidence', async t => {
+  const root = await fixture(t), mock = mockVscode();
+  const { WorkspaceTools, PreviewProvider } = loadTools(mock);
+  const tools = new WorkspaceTools({ fsPath: root }, new PreviewProvider(), new AbortController().signal, () => {}, async detail => detail.accept,
+    { policy: new PermissionPolicy({ mode: 'ask', agent: 'build' }), web: false });
+  let calls = 0, records;
+  const replies = [{ kind: 'tool', name: 'create_diagram', args: { path: 'agent-flow.png', title: '合成流程', nodes: [{ id: 'a', label: '開始' }, { id: 'b', label: '完成' }], edges: [{ from: 'a', to: 'b' }] } },
+    { kind: 'final', message: '已儲存 agent-flow.png。' }];
+  const result = await require('../src/agent').runAgent({ bridge: { chat: async () => ({ text: JSON.stringify(replies[calls++]) }) }, tools,
+    signal: new AbortController().signal, request: '請產生合成流程圖並儲存 PNG', profile: { agent: 'build' }, maxSteps: 4,
+    onCheckpoint: async value => { records = value; } });
+  assert.equal(result.completed, true); assert.equal(calls, 2);
+  assert.equal(records.find(record => record.name === 'create_diagram').result.saved, true);
+  assert.equal((await require('sharp')(await fs.readFile(path.join(root, 'agent-flow.png'))).metadata()).format, 'png');
+});

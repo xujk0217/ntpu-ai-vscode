@@ -172,13 +172,15 @@ class McpManager {
     return this.call(alias(AI4X.name, operation), parameters, signal);
   }
   async search(query, signal) {
-    const connection = await this.connect(EXA);
+    const connection = await this.connect(EXA, signal);
     const tool = connection.tools.find(tool => tool.name === 'web_search_exa');
     if (!tool) throw new Error('Exa MCP 沒有提供 web_search_exa。');
     const properties = tool.inputSchema?.properties || {};
     const args = { query };
+    if (properties.objective) args.objective = 'Find relevant primary sources and official documentation with citable source URLs.';
     if (properties.numResults) args.numResults = 5;
     if (properties.contextMaxCharacters) args.contextMaxCharacters = 12000;
+    if ((tool.inputSchema?.required || []).some(key => !(key in args))) throw new Error('搜尋服務介面已變更，缺少可安全提供的必要參數；請更新擴充套件。');
     const name = alias(EXA.name, tool.name);
     return this.call(name, args, signal);
   }

@@ -26,7 +26,7 @@ class AttachmentScanner {
       return program;
     };
     const invoke = async (program, args) => execute(this.options.run ? program : await resolve(program), args, { timeout: 45000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, cwd: directory });
-    let pages = 0;
+    let pages = 0, bundled = false;
     try {
       const input = path.join(directory, mimeType === 'application/pdf' ? 'input.pdf' : 'input.image');
       await fs.writeFile(input, buffer, { mode: 0o600 });
@@ -53,16 +53,24 @@ class AttachmentScanner {
         }
       }
       for (const image of images) {
-        const text = (await invoke(this.options.tesseract || 'tesseract', [image, 'stdout', '-l', this.options.language || 'eng', '--psm', '11'])).stdout;
+        let text;
+        try {
+          text = (await invoke(this.options.tesseract || 'tesseract', [image, 'stdout', '-l', this.options.language || 'eng', '--psm', '11'])).stdout;
+        } catch (error) {
+          // Only a missing default executable falls back. Respect custom paths,
+          // languages and genuine native parser failures rather than masking them.
+          if (error.code !== 'ENOENT' || this.options.tesseract || ![undefined, 'eng'].includes(this.options.language)) throw error;
+          text = await require('./offline-ocr').recognize(await fs.readFile(image)); bundled = true;
+        }
         if (classifyContent(text).detected) throw new Error('附件辨識到疑似憑證，禁止上傳。');
         pages++;
       }
-      const result = { mimeType, digest, pages, engine: 'Tesseract + Poppler', checked: true };
+      const result = { mimeType, digest, pages, engine: bundled ? 'Bundled Tesseract WASM' + (mimeType === 'application/pdf' ? ' + Poppler' : '') : 'Tesseract + Poppler', checked: true };
       checked.set(buffer, result); return result;
     } catch (error) {
       // Native parser stderr can contain document text or filenames. Never expose it.
       if (error.message?.startsWith('附件') || error.message?.startsWith('PDF') || error.message?.startsWith('動畫')) throw new Error(error.message);
-      throw new Error('本機附件檢查失敗，未上傳。請確認 Tesseract 與 Poppler 已安裝，或檢查附件是否損壞。');
+      throw new Error('本機附件檢查失敗，未上傳。請確認附件可讀取、內建 OCR 資源完整；PDF 另需 Poppler，自訂 Tesseract／語言需可用。');
     } finally { await fs.rm(directory, { recursive: true, force: true }); }
   }
 }

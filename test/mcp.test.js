@@ -30,3 +30,14 @@ test('official research lookup uses only the fixed AI4X catalog, rejects secrets
   const controller=new AbortController();controller.abort();await assert.rejects(manager.lookup({operation:'get_center_info'},controller.signal));
   assert.equal(connected,1);assert.equal(called,1);await manager.close();
 });
+
+test('built-in search supplies live Exa objective schema, forwards cancellation, and fails clearly on unsupported required fields', async () => {
+  const { McpManager } = require('../src/mcp'); const manager = new McpManager(); const signal = new AbortController().signal;
+  let schema = { properties: { query: {}, objective: {}, numResults: {} }, required: ['query', 'objective'] }, called;
+  manager.connect = async (config, requestSignal) => { assert.equal(config.name, 'exa'); assert.equal(requestSignal, signal); return { tools: [{ name: 'web_search_exa', inputSchema: schema }] }; };
+  manager.call = async (name, args, requestSignal) => { called = args; assert.equal(requestSignal, signal); return { ok: true }; };
+  assert.equal((await manager.search('public SVG documentation', signal)).ok, true); assert.match(called.objective, /primary sources/); assert.equal(called.numResults, 5);
+  schema = { properties: { query: {} }, required: ['query'] }; await manager.search('query', signal); assert.deepEqual(called, { query: 'query' });
+  schema = { properties: { query: {} }, required: ['query', 'unknownRequired'] }; await assert.rejects(manager.search('query', signal), /介面已變更/);
+  await manager.close();
+});

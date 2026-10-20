@@ -34,6 +34,8 @@ const DEFINITIONS = [
   ['web_fetch', '讀取公開 HTTP(S) 網頁；拒絕本機和內部網路', '{"url":"https://example.com/docs"}'],
   ['inspect_image', '把工作區中的圖片／PDF 經本機 OCR 檢查後交由 NTPU AI 模型分析', '{"path":"image.png","question":"請分析這張圖片"}'],
   ['create_visual', '把安全 SVG 畫成 PNG，適合圖表、圖示、資訊圖、向量插畫；照片型生圖須另外連接影像 MCP', '{"path":"artwork.png","svg":"<svg ...>...</svg>","width":1024,"height":768}'],
+  ['create_chart', '內建免金鑰資料製圖並儲存 PNG。type 為 bar/line/pie；labels 最多 12 筆、series 最多 4 組且 values 與 labels 等長；圓餅圖一組非負值。數值須有真實來源，不能虛構。', '{"path":"chart.png","type":"bar","title":"季度營收","labels":["Q1","Q2"],"series":[{"name":"營收","values":[12,18]}],"unit":"萬元"}'],
+  ['create_diagram', '內建免金鑰流程圖並儲存 PNG。nodes 最多 10 個唯一 id/label、edges 最多 20 個 from/to/可選 label；direction 為 down/right。無外部程式或 OpenClaw 依賴。', '{"path":"flow.png","title":"工作流程","nodes":[{"id":"a","label":"開始"},{"id":"b","label":"驗證結果"}],"edges":[{"from":"a","to":"b"}],"direction":"down"}'],
 ].map(([name, description, example]) => ({ name, description, example }));
 const TOOLS = new Set(DEFINITIONS.map(tool => tool.name));
 const RULES = `You are a coding assistant connected to a LOCAL VS Code workspace through a host-controlled tool loop.

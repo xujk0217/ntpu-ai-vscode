@@ -296,6 +296,13 @@ async function testUI(page, origin) {
   await page.screenshot({ path: path.join(__dirname, '..', '.local', 'agent-tools-ui.png') });
   const before = await taskMessages(); await sample.click();
   assert.match(await page.locator('#prompt').inputValue(), /AI4X/); assert.deepEqual(await taskMessages(), before);
+  for (const snippet of ['MDN 的 SVG viewBox', '請用 create_chart', '請用 create_diagram']) {
+    await page.locator('#settings').click(); await page.locator('[data-tab="tools"]').click();
+    await page.getByRole('button', { name: snippet, exact: false }).click();
+    assert.ok((await page.locator('#prompt').inputValue()).includes(snippet));
+    assert.deepEqual(await taskMessages(), before, 'capability examples only prefill and never send automatically');
+    assert.equal(await page.locator('#drawer').isHidden(), true);
+  }
   await page.locator('#prompt').fill(''); await page.locator('#settings').click();
   await page.locator('[data-tab="tools"]').click();
   await send({ kind: 'capabilities', skills: [], servers: [], tools: [], parallel: { enabled: true, verified: true, maxVerifiedConcurrency: 4, effectiveConcurrency: 3, workerConcurrency: 2, maxConcurrency: 3, maxSubagents: 2, maxTestConcurrency: 5,

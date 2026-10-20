@@ -19,6 +19,8 @@
 | saxes | SVG XML 驗證 | ISC |
 | yauzl | VSIX 更新套件身分與平台驗證 | MIT |
 | yaml | Skill frontmatter | ISC |
+| tesseract.js、tesseract.js-core | 隨 VSIX 內建的離線 WASM OCR | Apache-2.0 |
+| @tesseract.js-data/eng | 離線英文字母／憑證格式辨識資料 | 套件 MIT；Tesseract traineddata 保留上游 Apache-2.0 授權 |
 
 ## 架構與互動參考
 
@@ -30,4 +32,4 @@
 
 此版本自行實作側欄與 Agent，沒有直接複製上述產品的 UI 原始碼、商標或資產。保留參考來源不表示這些專案作者為本專案協作者，亦不表示官方整合或背書。
 
-Tesseract（Apache-2.0）與 Poppler（GPL 系列）是使用者另行安裝的本機 CLI，不包含在 VSIX；實際授權以各自安裝版本為準。參考專案未複製程式碼。
+原生 Tesseract（Apache-2.0）與 Poppler（GPL 系列）CLI 仍由使用者另行安裝，不包含在 VSIX；實際授權以各自安裝版本為準。找不到預設 Tesseract 時，內建英文 OCR 使用上列隨包 WASM 與語言資料，不從 CDN 下載、不保存辨識文字。PDF 的解析／轉頁仍需要 Poppler。參考專案未複製程式碼。

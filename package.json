@@ -2,7 +2,7 @@
   "name": "ntpu-ai-coder",
   "displayName": "NTPU AI Agent",
   "description": "Use your NTPU AI browser session to read and edit a local VS Code workspace.",
-  "version": "0.6.23",
+  "version": "0.6.24",
   "publisher": "ntpu-local",
   "license": "MIT",
   "engines": {
@@ -239,7 +239,7 @@
           "default": {
             "language": "eng"
           },
-          "description": "本機附件 OCR。可指定 language、tesseract、pdfinfo、pdftotext、pdftoppm 執行檔；不存入辨識文字。",
+          "description": "本機附件 OCR；預設英文在沒有原生 Tesseract 時使用隨包離線 WASM。PDF 仍需 Poppler；可指定 language、tesseract、pdfinfo、pdftotext、pdftoppm，不存入辨識文字。",
           "additionalProperties": false,
           "properties": {
             "language": {
@@ -345,10 +345,12 @@
     "ocr:fixture": "node scripts/ocr-fixture.js",
     "computer:fixture": "node scripts/computer-fixture.js",
     "desktop:fixture": "node scripts/desktop-fixture.js",
-    "plugin:package": "npm run build && python3 scripts/package-plugin.py"
+    "plugin:package": "npm run build && python3 scripts/package-plugin.py",
+    "capabilities:fixture": "node scripts/bundled-capabilities-fixture.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@tesseract.js-data/eng": "1.0.0",
     "diff": "9.0.0",
     "highlight.js": "11.12.0",
     "jsonc-parser": "3.3.1",
@@ -358,6 +360,7 @@
     "playwright-core": "1.64.0",
     "saxes": "6.0.0",
     "sharp": "0.35.5",
+    "tesseract.js": "7.0.0",
     "yaml": "2.9.1",
     "yauzl": "3.4.0"
   },

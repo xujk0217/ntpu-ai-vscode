@@ -349,7 +349,7 @@ class AgentApp {
         ...connected.find(state => state.name === server.name) })),
       tools: this.mcp.catalog().map(({ name, originalName, description, server }) => ({ name, originalName, description, server })),
       thinking: 'NTPU AI 未提供原生 thinking 設定。分析深度會調整本地 agent 的規劃與驗證策略。',
-      image: '可分析圖片，並以 SVG 繪製 PNG。照片型生圖可透過你連接的影像 MCP 工具擴充。' });
+      image: '隨 VSIX 內建資料圖表（長條／折線／圓餅）、流程圖及 SVG→PNG 製圖；本機執行、免金鑰與額外安裝。搜尋透過內建 Exa 首次自動連線，仍需網路且受服務額度限制。照片型生圖／圖片編輯需另設實際影像模型服務，未設定時不宣稱已可用。' });
   }
 
   async handle(message) {

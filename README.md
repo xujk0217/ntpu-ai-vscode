@@ -27,6 +27,7 @@ NTPU AI Agent 將校方網站模型接上本機工作區，讓 Agent 能讀取�
 
 - **程式開發 Agent**：從專案探索、規劃到修改與驗證，持續執行多步驟任務；可將獨立的探索、研究與審查工作分派給唯讀子 Agent。
 - **研究與工具整合**：搜尋公開網頁、查詢 NTPU AI4X 研究資料，並依任務載入 Skills 與 MCP 工具；擴充外部能力仍須經過核准。
+- **內建製圖**：直接產生長條／折線／圓餅 PNG、流程圖與向量插畫，免 OpenClaw 與額外製圖程式。
 - **圖片與文件分析**：附加圖片、PDF 或專案內容，交由模型分析；附件在傳送前進行本機安全檢查。
 - **變更審閱與權限控制**：查看實際工具紀錄、指令輸出與檔案差異，保留或撤回變更，並選擇適合專案的核准模式。
 - **本機記錄與任務接續**：保存聊天、Project Memory 與任務檢查點，支援搜尋、整理與接續未完成工作。
@@ -52,7 +53,7 @@ NTPU AI Agent 將校方網站模型接上本機工作區，讓 Agent 能讀取�
 ### 平台與相依環境
 
 - **Shell／stdio MCP**：macOS 與 Linux 使用 OS 隔離執行，需要 Extension Host 內建 Node.js 22.12 以上；請使用近期版本的 VS Code。Linux 另需 bubblewrap、socat 與 ripgrep。**Windows 的 Shell／stdio MCP 尚未啟用**，可使用受控檔案工具與 HTTPS MCP。
-- **圖片／PDF**：本機附件檢查需 Tesseract；PDF 另需 Poppler。缺少依賴或檢查失敗時不會上傳。
+- **圖片／PDF**：預設英文圖片 OCR 有隨 VSIX 的離線 WASM 後備，不需另裝 Tesseract；PDF 仍需 Poppler，自訂語言需對應原生資料。缺少依賴或檢查失敗時不會上傳。
 - **遠端環境**：目前 Agent 操作以本機工作區為範圍；Remote SSH、WSL 與 Dev Container 不能直接視為已連接使用者的本機桌面。
 
 完整能力、平台差異與待驗收項目見[平台支援說明](docs/PLATFORM_PARITY.md)。
@@ -76,6 +77,12 @@ NTPU AI Agent 將校方網站模型接上本機工作區，讓 Agent 能讀取�
 | 完整存取 | 在既有工具與安全限制內自動執行；敏感資料與需獨立確認的操作仍受限制。 |
 
 模式不會授予 Agent 任意存取整台電腦的能力，也不會解除平台限制。外部 MCP、資料傳送與畫面操作仍依各自的核准流程處理。
+
+## 內建搜尋與製圖
+
+GitHub VSIX 已包含搜尋接線與本機製圖工具，不需要另外部署橋接。Build Agent 可使用 `create_chart`、`create_diagram` 或安全 SVG 產生 PNG，經安全檢查與核准後存入專案；搜尋首次自動連線 Exa，免使用者 API key，仍需網路且受服務額度限制。
+
+**設定 → 工具 → 圖像能力** 有搜尋、合成季度營收圖與流程圖範例，按下只填入聊天。照片型 AI 生圖／圖片編輯仍需實際影像服務，未隨包附帶模型。詳見[內建能力與試用](docs/BUNDLED_CAPABILITIES.md)。
 
 ## 延伸能力與文件
 

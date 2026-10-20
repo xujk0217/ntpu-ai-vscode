@@ -4,7 +4,7 @@
 
 本專案將模型推理與本地操作分開：NTPU AI 理解需求並提出下一個動作；擴充功能執行權限檢查、檔案操作、終端機與 MCP，將真實結果交回模型，持續處理到完成或遇到明確阻礙。
 
-**版本：0.6.10 · 狀態：實驗版 · Local-first Memory／敏感資料防護／多平台 Browser Manager**
+目前版本為 0.6.24；本文件的歷史範例與截圖可能保留舊版細節。主要流程以 [README](../README.md)、[內建搜尋與製圖](BUNDLED_CAPABILITIES.md)及[平台對照](PLATFORM_PARITY.md)為準。
 
 ## Agent 能力與送出快捷鍵
 
@@ -37,10 +37,10 @@ Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區�
 - Build、Plan、Review、Research、Ask 五種模式，唯讀限制由主機強制執行。
 - 三種權限模式、自訂指令開頭／正規表示式規則、單次及工作階段核准。
 - 精簡的灰色執行紀錄，點開查看實際結果、指令輸出、退出碼與耗時。
-- 工作階段、近期對話、任務清單、提問佇列、diff、回復與 Markdown 匯出。
+- 工作階段、近期對話、任務清單、提問佇列、diff、回復與個別文件另存。
 - SKILL.md 技能探索及載入，支援多種常用技能目錄。
 - 真正 MCP client，支援 stdio、Streamable HTTP、SSE 與設定匯入。
-- Exa MCP 搜尋、公開網頁讀取、真實圖片分析與 SVG → PNG 繪圖。
+- Exa MCP 搜尋、公開網頁讀取、真實圖片分析與內建資料圖表／流程圖／SVG → PNG 繪圖。
 
 ## 安裝與登入
 
@@ -55,12 +55,12 @@ Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區�
 
 從 [Releases](https://github.com/xujk0217/ntpu-ai-vscode/releases) 選擇已發布版本的對應 VSIX；最新開發套件可在 [Actions](https://github.com/xujk0217/ntpu-ai-vscode/actions) 的成功 CI 中下載平台 artifact。目前尚未上架 Marketplace。
 
-| 系統 | 0.6.5 安裝檔 |
+| 系統 | 目前版本安裝檔 |
 | --- | --- |
-| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-win32-x64-0.6.21.vsix) |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-darwin-arm64-0.6.21.vsix) |
-| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-darwin-x64-0.6.21.vsix) |
-| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.21/ntpu-ai-coder-linux-x64-0.6.21.vsix) |
+| Windows x64 | [win32-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.24/ntpu-ai-coder-win32-x64-0.6.24.vsix) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.24/ntpu-ai-coder-darwin-arm64-0.6.24.vsix) |
+| macOS Intel | [darwin-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.24/ntpu-ai-coder-darwin-x64-0.6.24.vsix) |
+| Linux x64（glibc） | [linux-x64](https://github.com/xujk0217/ntpu-ai-vscode/releases/download/v0.6.24/ntpu-ai-coder-linux-x64-0.6.24.vsix) |
 
 下載後在 VS Code 執行 **Extensions: Install from VSIX** 並選擇檔案。也可執行 `code --install-extension <下載的檔案.vsix> --force`。更新同樣安裝新版套件。
 
@@ -77,7 +77,7 @@ Agent 由本機 VS Code 擴充功能操作目前選取且已信任的工作區�
 
 開啟側欄會自動連線，且不自行彈出登入視窗。需要登入時，由使用者按 **登入** 開啟視窗；側欄只顯示簡短提示，可繼續瀏覽聊天紀錄。按 **返回登入視窗** 可將該視窗移到前景。你也可以手動關閉視窗，擴充功能會在下一次狀態檢查時回到背景連線；未完成登入時則繼續顯示 **登入**，不會反覆開視窗。到右上角 **設定 → 連線** 查看帳號狀態或登出。登出前會再次確認，並清除專用瀏覽器內 NTPU／北大網域的 Cookie 與 NTPU AI 網站儲存資料；其他網站的瀏覽器資料不會清除。也可從命令面板執行 **NTPU AI: 登出並清除本機登入資料**。
 
-每個 VS Code 使用者任務會建立一個 NTPU AI 網頁對話；同一任務的 agent 後續輪次會沿用該對話，下一個 VS Code 任務才建立新的 NTPU AI 對話。
+每次模型請求建立新的校方對話，由本機選取歷史、工具證據與接續狀態帶入，避免反覆累積整份提示詞。原始聊天及檢查點留在本機。
 
 正常使用 Agent 時不需要外部瀏覽器視窗。隱藏的 Playwright 瀏覽器在 Extension Host 執行期間保持連線；VS Code 關閉後，下一次開啟使用相同 Profile 還原網站登入狀態。同一個 profile 不可同時供兩個擴充功能視窗使用。切換帳號或瀏覽器只變更推論通道，本機歷史與檢查點仍保留。
 

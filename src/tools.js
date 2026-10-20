@@ -10,6 +10,7 @@ const { DEFINITIONS } = require('./protocol');
 const { fetchPublic, pageText, publicTarget } = require('./network');
 const { parseSkill } = require('./skills');
 const { imageMime, renderSvg } = require('./visuals');
+const { chartSvg, diagramSvg } = require('./graphics');
 const { MAX_FILE_BYTES, EXCLUDES, hash, isBlocked, safePath, diskText, numberedLines, fullyRead } = require('./workspace');
 const { classifyPath, classifyContent, sanitize, redact, inspectOutboundPayload } = require('./security/guard');
 const { isServiceLimit } = require('./parallel-policy');
@@ -143,6 +144,7 @@ class WorkspaceTools {
       install_skill: () => this.installSkill(args), connect_mcp: () => this.connectMcp(args), add_mcp: () => this.addMcp(args), download_file: () => this.download(args),
       ntpu_lookup: () => this.options.mcp.lookup(args, this.signal), web_search: () => this.webSearch(args), web_fetch: () => this.webFetch(args),
       inspect_image: () => this.inspect(args), create_visual: () => this.visual(args),
+      create_chart: () => this.structuredVisual('create_chart', args, chartSvg), create_diagram: () => this.structuredVisual('create_diagram', args, diagramSvg),
     };
     const mcpTool = this.options.mcp?.tools?.get(name);
     if (!methods[name] && !mcpTool) throw new Error('未知工具。');
@@ -152,7 +154,7 @@ class WorkspaceTools {
     if (mcpTool && !this.inventory().some(tool => tool.name === name)) return { ok: false, denied: true, error: '工具不在目前權限範圍。' };
     if (mcpTool && !this.discovery.isLoaded(name)) return { ok: false, needsToolLoad: true, error: '工具尚未載入或規格已變更；請先 search_tools，再以 describe_tool 完整讀取規格。' };
     try {
-      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file', 'computer_open', 'computer_observe', 'computer_action', 'computer_close', 'discover_mcp', 'expand_mcp'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
+      if (!['write_file', 'edit_file', 'run_command', 'open_browser', 'create_visual', 'create_chart', 'create_diagram', 'install_skill', 'connect_mcp', 'add_mcp', 'download_file', 'computer_open', 'computer_observe', 'computer_action', 'computer_close', 'discover_mcp', 'expand_mcp'].includes(name) && !(await this.authorize(name, args))) return { ok: false, denied: true, message: '使用者未批准這次操作。' };
       const result = methods[name] ? await methods[name]() : await this.options.mcp.call(name, inspectOutboundPayload(args, { reject: true }), this.signal);
       if (mcpTool) { this.registry.markToolCall(mcpTool.server, result?.ok === true); if (result?.ok === false) this.checkMcpLimit(mcpTool.server, JSON.stringify(result)); }
       return sanitize(result);
@@ -373,6 +375,9 @@ class WorkspaceTools {
   }
   getCapabilities() {
     return { ok: true, workspace: path.basename(this.root.fsPath), workspaceScoped: true,
+      bundled: { search: { enabled: this.options.web !== false, provider: 'Exa hosted MCP', autoConnect: true, requiresUserApiKey: false, requiresNetwork: true },
+        graphics: { local: true, requiresApiKey: false, tools: ['create_visual', 'create_chart', 'create_diagram'].filter(name => this.inventory().some(tool => tool.name === name)) },
+        imageModel: { bundled: false, instruction: '照片型生成或影像編輯需要實際影像模型供應器；不能把本機 SVG 圖表當成照片型生圖或宣稱免費模型已接通。' } },
       networkSearchEnabled: this.options.web !== false, mcp: this.options.mcp?.states?.() || [],
       tools: this.catalog().map(({ name, server, description }) => ({ name, server, description })),
       capabilityExpansion: { registry: 'https://registry.modelcontextprotocol.io/v0.1', available: this.canExpandCapabilities(), states: this.registry.states(),
@@ -504,18 +509,26 @@ class WorkspaceTools {
     return { ok: true, path: args.path, analysis: result.text.slice(0, 16000) };
   }
   async visual(args) {
-    if (typeof args.path !== 'string' || !args.path.toLowerCase().endsWith('.png')) throw new Error('create_visual 需要 .png 相對路徑。');
+    return this.saveVisual('create_visual', args);
+  }
+  async structuredVisual(name, args, renderer) {
+    const graphic = renderer(args);
+    const result = await this.saveVisual(name, { ...args, svg: graphic.svg, width: graphic.width, height: graphic.height });
+    return result.ok ? { ...result, rendering: graphic.summary, local: true, externalServiceUsed: false } : result;
+  }
+  async saveVisual(name, args) {
+    if (typeof args.path !== 'string' || !args.path.toLowerCase().endsWith('.png')) throw new Error(name + ' 需要 .png 相對路徑。');
     const absolute = await safePath(this.root.fsPath, args.path);
     try { await fs.access(absolute); throw new Error('輸出圖片已存在，請選擇新的檔名。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const buffer = await renderSvg(args.svg, args.width || 1024, args.height || 768);
     const artifact = await this.options.onArtifact?.({ buffer, mimeType: 'image/png', title: args.path, preview: true });
-    if (!(await this.authorize('create_visual', args, { title: '確認產生圖檔 ' + args.path,
+    if (!(await this.authorize(name, args, { title: '確認產生圖檔 ' + args.path,
       detail: `PNG · ${buffer.length} bytes\n${args.width || 1024} × ${args.height || 768}`, accept: '儲存圖片', previewUri: artifact?.uri }))) return { ok: false, denied: true };
     this.checkStopped();
     await fs.mkdir(path.dirname(absolute), { recursive: true }); await safePath(this.root.fsPath, args.path);
     await fs.writeFile(absolute, buffer, { flag: 'wx' });
     this.options.onChange?.({ id: randomUUID(), path: args.path, before: null, after: null, afterHash: hash(buffer), created: true, saved: true, binary: true });
-    return { ok: true, path: args.path, bytes: buffer.length, artifact: artifact?.id };
+    return { ok: true, saved: true, path: args.path, bytes: buffer.length, artifact: artifact?.id };
   }
 
   async openBrowser(args) {

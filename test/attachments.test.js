@@ -37,3 +37,9 @@ test('OCR cleans up private temporary files on a failed parser', async () => {
   await assert.rejects(new AttachmentScanner({ run: async (_, __, options) => { directory = options.cwd; assert.equal((await fs.stat(directory)).mode & 0o777, 0o700); throw new Error('fail'); } }).scan(await image(), 'image/png'));
   await assert.rejects(fs.access(directory)); assert.ok(path.basename(directory).startsWith('ntpu-ocr-'));
 });
+test('native OCR failures and explicit language/path settings never silently fall back', async () => {
+  for (const options of [{}, { tesseract: 'custom-ocr' }, { language: 'chi_tra' }]) {
+    const error = Object.assign(new Error('raw sensitive stderr'), { code: Object.keys(options).length ? 'ENOENT' : 'EACCES' });
+    await assert.rejects(new AttachmentScanner({ ...options, run: async () => { throw error; } }).scan(await image(), 'image/png'), failure => /未上傳/.test(failure.message) && !failure.message.includes('sensitive'));
+  }
+});

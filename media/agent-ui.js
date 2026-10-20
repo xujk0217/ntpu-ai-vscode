@@ -16,8 +16,8 @@ const selectedSessions = new Set();
 const steeringRequests = new Set();
 const nodes = new Map();
 let modelActivity;
-const names = { computer_open: '開啟受控工作目標', computer_observe: '觀察選定畫面', computer_action: '操作選定畫面', computer_close: '關閉工作目標', search_tools: '探索可用工具', discover_mcp: '搜尋外部 MCP', expand_mcp: '擴充並驗證 MCP', describe_tool: '載入工具規格', name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', open_browser: '開啟網頁', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
-const icons = { search_tools: 'search', describe_tool: 'connect', open_browser: 'globe', run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
+const names = { computer_open: '開啟受控工作目標', computer_observe: '觀察選定畫面', computer_action: '操作選定畫面', computer_close: '關閉工作目標', search_tools: '探索可用工具', discover_mcp: '搜尋外部 MCP', expand_mcp: '擴充並驗證 MCP', describe_tool: '載入工具規格', name_session: '背景建立聊天名稱', cleanup_conversations: '已清理校方任務對話', agent_task: '唯讀子任務', delegate_tasks: '分派子任務', retry_task: '重要子任務排回佇列', get_task_results: '收集子任務', cancel_task: '取消子任務', ntpu_lookup: '查詢北大官方研究資料', list_files: '探索專案', read_file: '讀取檔案', search_text: '搜尋程式碼', write_file: '修改檔案', edit_file: '編輯區段', run_command: '執行指令', open_browser: '開啟網頁', web_search: '搜尋網路', web_fetch: '讀取網頁', download_file: '下載公開檔案', inspect_image: '分析圖片', create_visual: '繪製圖片', create_chart: '繪製資料圖表', create_diagram: '繪製流程圖', load_skill: '載入 skill', install_skill: '安裝 skill', refresh_skills: '掃描 skills', connect_mcp: '連接 MCP', add_mcp: '新增 MCP', get_capabilities: '盤點 Agent 能力', update_plan: '更新計畫', ask_user: '詢問偏好' };
+const icons = { search_tools: 'search', describe_tool: 'connect', open_browser: 'globe', run_command: 'terminal', web_search: 'globe', web_fetch: 'globe', download_file: 'file', inspect_image: 'image', create_visual: 'image', create_chart: 'image', create_diagram: 'image', load_skill: 'spark', install_skill: 'spark', refresh_skills: 'spark', connect_mcp: 'connect', add_mcp: 'connect', get_capabilities: 'gear', update_plan: 'check', search_text: 'search' };
 const modelNames = { 'cloud-small-claude': 'Claude · Small', 'cloud-small-gemini': 'Gemini · Small', 'cloud-medium-claude': 'Claude · Medium', 'cloud-medium-gemini': 'Gemini · Medium', 'cloud-large-claude': 'Claude · Large', 'cloud-large-gemini': 'Gemini · Large' };
 
 function element(tag, className, text) { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = text; return item; }
@@ -149,7 +149,7 @@ function renderMessage(message) {
     let label = names[message.name] || capabilities.tools.find(tool => tool.name === message.name)?.description?.slice(0, 50) || message.name;
     if (message.status === 'done') label = { read_file: '已讀取', list_files: '已探索專案', search_text: '已搜尋程式碼',
       write_file: message.outcome?.changed === false ? '檔案無需變更' : message.outcome?.created ? '已建立' : '已修改', edit_file: '已修改',
-      open_browser: '已交給瀏覽器開啟', run_command: '已執行', web_search: '已搜尋網路', web_fetch: '已讀取網頁', create_visual: '已繪製', inspect_image: '已分析圖片',
+      open_browser: '已交給瀏覽器開啟', run_command: '已執行', web_search: '已搜尋網路', web_fetch: '已讀取網頁', create_visual: '已繪製', create_chart: '已繪製圖表', create_diagram: '已繪製流程圖', inspect_image: '已分析圖片',
       load_skill: '已載入 skill', update_plan: '已更新計畫' }[message.name] || label;
     if (message.name === 'agent_task') label = { explore: '探索子任務', research: '研究子任務', review: '審查子任務' }[message.args?.role] || '子任務';
     const meta = element('div', 'tool-meta'); meta.append(element('strong', '', label));
@@ -623,6 +623,10 @@ function renderDrawer() {
     content.append(element('p', 'hint', 'Agent 會依任務搜尋全部已連線工具，按需載入完整參數規格；已設定但未連線的 MCP 會先提出核准。工具數量不再受前 40 個限制。'));
     if (capabilities.tools.length) { const list = element('details', 'tool-inventory'); list.append(element('summary', '', '已連線工具 · ' + capabilities.tools.length)); for (const tool of capabilities.tools) { const row = element('div'); row.append(element('strong', '', tool.originalName || tool.name), element('p', '', tool.description)); list.append(row); } content.append(list); }
     content.append(element('h3', '', '圖像能力'), element('p', 'panel-description', capabilities.image));
+    for (const prompt of ['請查詢 MDN 的 SVG viewBox 官方說明，附來源連結，勿安裝額外工具。', '請用 create_chart 把合成季度營收 Q1=12、Q2=18、Q3=15、Q4=24（萬元）畫成長條圖，存成 quarter-chart.png。', '請用 create_diagram 繪製需求確認→開發→測試→交付的流程圖，存成 workflow.png。']) {
+      const sample = button(prompt, 'secondary-button full-width', () => { $('prompt').value = prompt; $('drawer').hidden = true; updateComposer(); $('prompt').focus(); });
+      sample.title = '填入範例；確認後自行送出。'; content.append(sample);
+    }
     content.append(element('h3', '', '模型與分析深度'), element('p', 'panel-description', capabilities.thinking));
     content.append(element('h3', '', '送出快捷鍵'), element('p', 'panel-description', '調整 Enter 與 Shift+Enter 的行為；輸入法正在組字時不會送出。'));
     const submitMode = element('select', 'history-search'); submitMode.id = 'submitMode'; submitMode.setAttribute('aria-label', '送出快捷鍵');

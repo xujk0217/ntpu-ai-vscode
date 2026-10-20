@@ -187,7 +187,7 @@ async function updateMemory(store, session, task) {
     if (project.taskRevisions[task.id] !== revision) for (const record of task.records || []) {
       if (!record.result?.ok || record.historical) continue;
       const file = record.result.path || record.args?.path, verifiedAt = record.at || task.endedAt;
-      if (['write_file', 'edit_file', 'create_visual'].includes(record.name) && (record.result.saved || record.name === 'create_visual')) {
+      if (['write_file', 'edit_file', 'create_visual', 'create_chart', 'create_diagram'].includes(record.name) && (record.result.saved || record.name === 'create_visual')) {
         for (const entry of project.entries) if (entry.source?.path === file && (entry.source.verifiedAt || 0) <= verifiedAt &&
           !(entry.kind === 'completed' && entry.source.taskId === task.id && entry.source.verifiedAt === verifiedAt)) entry.stale = true;
         add('completed', '已儲存檔案：' + file, file, verifiedAt);
