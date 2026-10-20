@@ -43,6 +43,6 @@ test('macOS helper missing and cancelled states report actionable errors, never 
 });
 test('native macOS source uses single-window ScreenCaptureKit, explicit permission checks and paired input cleanup', async () => {
   const source = await fs.readFile(require.resolve('../src/computer/desktop-macos.swift'), 'utf8');
-  for (const token of ['CGPreflightScreenCaptureAccess()', 'AXIsProcessTrusted()', 'SCContentFilter(desktopIndependentWindow:', 'postToPid(pid)', 'pthread_sigmask', 'kAXFocusedWindowAttribute', 'requiresObservation', 'safeContents']) assert.ok(source.includes(token), token);
+  for (const token of ['CGPreflightScreenCaptureAccess()', 'AXIsProcessTrusted()', 'SCContentFilter(desktopIndependentWindow:', 'postToPid(pid)', 'pthread_sigmask', 'installCancellation()', 'stopRequested == 0', 'kAXFocusedWindowAttribute', 'requiresObservation', 'safeContents']) assert.ok(source.includes(token), token);
   assert.ok(!source.includes('NSPasteboard')); assert.ok(!source.includes('CGDisplayCreateImage'));
 });

@@ -4,7 +4,14 @@ import ApplicationServices
 import ScreenCaptureKit
 import Darwin
 
-// Delay termination only across a down/up pair so cancellation cannot leave held inputs.
+// A process-directed signal may reach another Swift worker thread: do not terminate
+// inside a key pair. Mark cancellation and give the input loop time to release.
+nonisolated(unsafe) var stopRequested: Int32 = 0
+func installCancellation() {
+    let handler: @convention(c) (Int32) -> Void = { _ in stopRequested = 1; alarm(2) }
+    signal(SIGTERM, handler); signal(SIGINT, handler)
+}
+// Delay termination on this thread across the pair as an additional safeguard.
 func paired(_ body: () -> Void) {
     var mask = sigset_t(), previous = sigset_t(); sigemptyset(&mask); sigaddset(&mask, SIGTERM); sigaddset(&mask, SIGINT)
     pthread_sigmask(SIG_BLOCK, &mask, &previous); body(); pthread_sigmask(SIG_SETMASK, &previous, nil)
@@ -100,7 +107,7 @@ func perform(_ m: [String: Any]) async throws -> [String: Any] {
     try await Task.sleep(nanoseconds: 150_000_000); try focused()
     let source = CGEventSource(stateID: .privateState)
     func sendKey(_ code: CGKeyCode, _ text: String? = nil) throws {
-        try Task.checkCancellation(); try focused()
+        try check(stopRequested == 0, "已停止桌面操作。"); try Task.checkCancellation(); try focused()
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true), let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) else { throw Failure("無法建立鍵盤事件。") }
         if let text { let chars = Array(text.utf16); chars.withUnsafeBufferPointer { down.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: $0.baseAddress); up.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: $0.baseAddress) } }
         down.flags = []; up.flags = []; paired { down.postToPid(pid); up.postToPid(pid) }
@@ -157,6 +164,7 @@ func perform(_ m: [String: Any]) async throws -> [String: Any] {
 }
 @main struct Main {
     static func main() async {
+        installCancellation()
         var output: [String: Any]
         do {
             let data = FileHandle.standardInput.readDataToEndOfFile()
