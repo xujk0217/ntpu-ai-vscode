@@ -22,5 +22,7 @@ const { renderSvg } = require('../src/visuals');
   const secret = await sharp(Buffer.from('<svg width="1800" height="200"><rect width="100%" height="100%" fill="white"/><text x="30" y="100" font-family="Arial" font-size="30" fill="black">Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456</text></svg>')).png().toBuffer();
   await assert.rejects(scanner.scan(secret, 'image/png'), /禁止上傳/);
   await assert.rejects(recognize(Buffer.from('invalid image')), /離線 OCR/);
-  console.log('Bundled chart/diagram PNG + offline WASM OCR: clean graphics pass, synthetic credential blocked, invalid image cleans up. No external runtime, network or school upload.');
+  const recovered = await scanner.scan(await sharp({ create: { width: 160, height: 160, channels: 3, background: '#ffffff' } }).png().toBuffer(), 'image/png');
+  assert.equal(recovered.checked, true); assert.equal(recovered.engine, 'Bundled Tesseract WASM');
+  console.log('Bundled chart/diagram PNG + offline WASM OCR: clean graphics pass, synthetic credential blocked, invalid image cleans up and next scan recovers. No external runtime, network or school upload.');
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

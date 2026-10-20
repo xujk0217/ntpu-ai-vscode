@@ -22,7 +22,8 @@ function recognize(buffer) {
       });
     } finally { clearTimeout(timer); if (worker) await worker.terminate(); }
   });
-  previous = next.catch(() => {});
+  // The serialization tail must never retain a fulfilled OCR text result.
+  previous = next.then(() => undefined, () => undefined);
   return next;
 }
 module.exports = { recognize };
