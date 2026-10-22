@@ -1,6 +1,6 @@
 # 0.6.24 搜尋與製圖驗收
 
-日期：2026-10-20（Asia/Taipei）。沿用並保留遠端 0.6.23 的附件選取、移除聊天匯出與 README 更新。
+初次驗收：2026-10-20；真人補驗：2026-10-22（Asia/Taipei）。沿用並保留遠端 0.6.23 的附件選取、移除聊天匯出與 README 更新。
 
 ## 已完成的本機驗證
 
@@ -13,11 +13,26 @@
 - 真正 Exa 無金鑰搜尋 `site:developer.mozilla.org SVG viewBox` 成功，回傳包含 MDN 官方來源。已依服務實際 schema 提供必要 objective，初始化與呼叫都傳遞取消訊號。服務額度與可用性仍由 Exa 決定。
 - Linux 原生 VSIX 已實際打包；解壓安裝包後直接執行製圖／真正 WASM OCR fixture 也通過，證明不只依賴開發目錄的模組。最後正式套件以 CI 與 Release 的 SHA256SUMS 為準。
 
-## 真人 NTPU 試用的精確阻礙
+## 10/20 真人試用的歷史阻礙
 
 現有 VS Code 專用 Chrome Profile 正由其他 Chromium 實例持有，底層回報 ProcessSingleton；沒有刪除鎖或 Profile、沒有終止使用者瀏覽器。改用全新獨立測試 Profile，Playwright 確認可控制並真正開出學校登入視窗。等待人工登入 600 秒後仍未取得 authenticated 狀態，測試自行清理並關閉其持有的 context，未發送校方模型請求、未刪除校方對話。
 
-因此本次沒有「NTPU 真實模型已自行選用搜尋與製圖」或新真人 SSO／重啟恢復的通過證據。下一步是在無其他任務時，於正式側欄選取搜尋／兩張合成圖範例，人工完成登入並確認工具收據與實際 PNG；遇 429／服務限制立即停止。實際工具、真實搜尋與可重現模型循環的證據不能代替此真人驗收。
+10/20 當時沒有真人模型完成證據；10/22 已在同一獨立測試 Profile 人工完成登入後補驗，結果如下。
+
+## 10/22 Linux 真人補驗：通過
+
+測試程式為 **0.6.24／commit `2d29538aeb63265cc17b1b618e31b0d1285501e8`**。使用真正 NTPU 網站模型、正式主 Agent 工具迴圈與工作區工具；VS Code 工作區介面使用測試 adapter，不是從使用者的正式聊天側欄送出。模型沒有使用 fixture 回覆。
+
+- 人工 SSO 完成後，Playwright 確認 `ready: true`／`authenticated`，再轉回背景連線並開始任務。
+- 5 次模型請求均完整完成，個別約 3.9–10.7 秒；未觀察到 429、服務限制或逾時。此小型案例不代表長任務不會超時，600 秒閒置期限仍保留。
+- 真正執行 `web_search` 與 `web_fetch`，讀取 [MDN viewBox 官方頁面](https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Attribute/viewBox)。
+- 真正執行 `create_chart`：Q1=12、Q2=18、Q3=15、Q4=24（萬元），[合成季度營收圖](images/live-chart-0.6.24.png) 為 1000×640 PNG、20,869 bytes，收據 `saved: true`。
+- 真正執行 `create_diagram`：[需求確認 → 開發 → 測試 → 交付](images/live-workflow-0.6.24.png) 為 860×520 PNG、13,569 bytes，收據 `saved: true`。兩圖均經本機掃描，並已實際開圖檢查標籤、數值與連線。
+- 核准僅允許這次的公開搜尋／讀取及兩個製圖工具；未使用 Shell、未安裝外部服務，沒有另外的影像服務 API key。任務由真實工具證據結束，沒有持續重複結語。
+- 保存檢查點後清理擴充功能自己建立的 5 個校方測試對話，成功 5、失敗 0；未刪除既有校方對話、本機聊天或 Project Memory。
+- 關閉本次 context 後，在 **兩次不同 PID 的真實 VS Code 1.141.0 測試 Extension Host（Node v24.21.0）** 中重開同一專用 Profile，皆恢復 `ready: true`／`authenticated` 的背景連線。使用隔離的 VS Code user-data／extensions 目錄，沒有重啟或接管使用者原本的工作視窗，也沒有匯出認證資料。
+
+不含憑證、模型本文或登入頁內容的 [驗收統計](evidence/ntpu-capabilities-2026-10-22.json) 一併保存。本次證據屬 Linux／0.6.24 的限定案例，沒有因此宣稱新版 macOS 原生桌面、Windows 真人 SSO 或使用者正式側欄端到端皆已通過。原 10/20 VSIX 與 tag 保持原樣，這次僅補上後續驗收文件。
 
 ## 跨平台發行門檻
 

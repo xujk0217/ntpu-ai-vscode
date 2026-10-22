@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-22",
+  "testedVersion": "0.6.24",
+  "testedCommit": "2d29538aeb63265cc17b1b618e31b0d1285501e8",
+  "completed": true,
+  "modelRequests": 5,
+  "requestDurationsMs": [
+    4984,
+    4796,
+    3873,
+    4665,
+    10651
+  ],
+  "successfulTools": [
+    "web_search",
+    "web_fetch",
+    "create_chart",
+    "create_diagram"
+  ],
+  "source": "https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Attribute/viewBox",
+  "images": [
+    {
+      "path": "quarter-chart.png",
+      "width": 1000,
+      "height": 640,
+      "format": "png"
+    },
+    {
+      "path": "workflow.png",
+      "width": 860,
+      "height": 520,
+      "format": "png"
+    }
+  ],
+  "cleanup": {
+    "kind": "cleanup",
+    "at": "2026-10-22T06:58:27.173Z",
+    "deleted": 5,
+    "failed": 0
+  },
+  "extensionHostRestorations": [
+    {
+      "ready": true,
+      "authentication": "authenticated",
+      "background": true,
+      "vscode": "1.141.0",
+      "node": "v24.21.0"
+    },
+    {
+      "ready": true,
+      "authentication": "authenticated",
+      "background": true,
+      "vscode": "1.141.0",
+      "node": "v24.21.0"
+    }
+  ],
+  "distinctExtensionHosts": 2,
+  "serviceLimitObserved": false
+}
